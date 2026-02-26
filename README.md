@@ -65,8 +65,8 @@ Reference implementation of the **Clinical Order Workflow (COW)** between two he
 ### Start the Stack
 
 ```bash
-git clone https://github.com/umzhconnect/umzh-sandbox
-cd umzh-sandbox
+git clone https://github.com/umzhconnect/umzhconnect-sandbox
+cd umzhconnect-sandbox
 
 # Copy and review environment config
 cp .env.example .env
