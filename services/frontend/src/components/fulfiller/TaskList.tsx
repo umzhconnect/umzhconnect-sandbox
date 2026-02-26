@@ -1,17 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { fhirApi } from '../../api/client'
 import { type LogEntry } from '../../hooks/useLog'
 
-interface Task {
-  id: string
-  status: string
-  intent: string
-  priority?: string
-  focus?: { reference: string }
-  owner?: { reference: string }
-  authoredOn?: string
-  lastModified?: string
-}
+type FhirResource = Record<string, unknown>
 
 interface TaskListProps {
   onLog: (entries: LogEntry[]) => void
@@ -28,34 +19,26 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export function TaskList({ onLog, onSelectTask }: TaskListProps) {
-  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasks, setTasks] = useState<FhirResource[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  useEffect(() => {
-    fhirApi.search('partyB', 'Task')
-      .then(data => {
-        onLog(data.log || [])
-        const entries = data.result?.entry?.map((e: { resource: Task }) => e.resource) || []
-        setTasks(entries)
-      })
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false))
-  }, [onLog])
-
-  function refresh() {
+  function loadTasks() {
     setLoading(true)
     setError(null)
     fhirApi.search('partyB', 'Task')
       .then(data => {
         onLog(data.log || [])
-        const entries = data.result?.entry?.map((e: { resource: Task }) => e.resource) || []
+        const entries: FhirResource[] = data.result?.entry?.map((e: { resource: FhirResource }) => e.resource) || []
         setTasks(entries)
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
   }
+
+  useEffect(() => { loadTasks() }, [onLog]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <div style={{ padding: '1rem', color: '#666' }}>Loading tasks...</div>
   if (error) return <div style={{ padding: '1rem', color: '#d32f2f' }}>{error}</div>
@@ -64,7 +47,7 @@ export function TaskList({ onLog, onSelectTask }: TaskListProps) {
     <section style={styles.section}>
       <div style={styles.headerRow}>
         <h2 style={styles.heading}>Tasks (partyB)</h2>
-        <button style={styles.refreshBtn} onClick={refresh}>Refresh</button>
+        <button style={styles.refreshBtn} onClick={loadTasks}>Refresh</button>
       </div>
 
       {tasks.length === 0 ? (
@@ -78,37 +61,46 @@ export function TaskList({ onLog, onSelectTask }: TaskListProps) {
               <th style={styles.th}>Owner</th>
               <th style={styles.th}>Last Modified</th>
               <th style={styles.th}>ID</th>
+              <th style={styles.th}></th>
             </tr>
           </thead>
           <tbody>
-            {tasks.map(task => (
-              <tr
-                key={task.id}
-                style={{
-                  ...styles.tr,
-                  ...(selectedId === task.id ? styles.trSelected : {}),
-                }}
-                onClick={() => {
-                  setSelectedId(task.id)
-                  onSelectTask?.(task.id)
-                }}
-              >
-                <td style={styles.td}>
-                  <span
-                    style={{
-                      ...styles.badge,
-                      background: STATUS_COLORS[task.status] || '#888',
-                    }}
+            {tasks.map(task => {
+              const id = task.id as string
+              const status = task.status as string
+              const isExpanded = expandedId === id
+              const focus = (task.focus as { reference?: string })?.reference || '—'
+              const owner = (task.owner as { reference?: string })?.reference || '—'
+              const lastMod = task.lastModified as string | undefined
+              return (
+                <Fragment key={id}>
+                  <tr
+                    style={{ ...styles.tr, ...(selectedId === id ? styles.trSelected : {}) }}
+                    onClick={() => { setSelectedId(id); onSelectTask?.(id) }}
                   >
-                    {task.status}
-                  </span>
-                </td>
-                <td style={styles.tdMono}>{task.focus?.reference || '—'}</td>
-                <td style={styles.td}>{task.owner?.reference || '—'}</td>
-                <td style={styles.td}>{task.lastModified ? new Date(task.lastModified).toLocaleString() : '—'}</td>
-                <td style={styles.tdMono}>{task.id}</td>
-              </tr>
-            ))}
+                    <td style={styles.td}>
+                      <span style={{ ...styles.badge, background: STATUS_COLORS[status] || '#888' }}>
+                        {status}
+                      </span>
+                    </td>
+                    <td style={styles.tdMono}>{focus}</td>
+                    <td style={styles.td}>{owner}</td>
+                    <td style={styles.td}>{lastMod ? new Date(lastMod).toLocaleString() : '—'}</td>
+                    <td style={styles.tdMono}>{id}</td>
+                    <td style={styles.tdAction} onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : id) }}>
+                      <button style={styles.jsonBtn}>{isExpanded ? '×' : '{ }'}</button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 0 }}>
+                        <pre style={styles.json}>{JSON.stringify(task, null, 2)}</pre>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
           </tbody>
         </table>
       )}
@@ -128,12 +120,8 @@ const styles: Record<string, React.CSSProperties> = {
   trSelected: { background: '#fff0f0' },
   td: { padding: '8px 12px', borderBottom: '1px solid #eee' },
   tdMono: { padding: '8px 12px', borderBottom: '1px solid #eee', fontFamily: 'monospace', fontSize: '0.8rem', color: '#666' },
-  badge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: '12px',
-    color: '#fff',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-  },
+  tdAction: { padding: '4px 8px', borderBottom: '1px solid #eee', textAlign: 'right', width: '56px' },
+  badge: { display: 'inline-block', padding: '2px 8px', borderRadius: '12px', color: '#fff', fontSize: '0.75rem', fontWeight: 600 },
+  jsonBtn: { padding: '2px 7px', fontFamily: 'monospace', fontSize: '0.78rem', background: '#fff8f8', border: '1px solid #f0cece', borderRadius: '4px', cursor: 'pointer', color: '#3d0c02', whiteSpace: 'nowrap' },
+  json: { margin: 0, background: '#0d1117', color: '#79c0ff', padding: '1rem', fontSize: '0.78rem', overflow: 'auto', maxHeight: '400px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
 }
