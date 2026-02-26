@@ -1,0 +1,213 @@
+{
+  "$schema": "https://www.krakend.io/schema/v2.6/krakend.json",
+  "version": 3,
+  "name": "COW Sandbox Gateway — PartyB (Fulfiller)",
+  "timeout": "30s",
+  "cache_ttl": "0s",
+  "output_encoding": "json",
+  "extra_config": {
+    "telemetry/logging": {
+      "level": "INFO",
+      "prefix": "[KRAKEND-B]",
+      "syslog": false,
+      "stdout": true
+    },
+    "security/cors": {
+      "allow_origins": ["*"],
+      "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      "allow_headers": ["Authorization", "Content-Type", "X-HAPI-Partition-Name"],
+      "expose_headers": ["Content-Length"],
+      "max_age": "12h"
+    }
+  },
+  "endpoints": [
+
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "output_encoding": "string",
+      "backend": [
+        {
+          "url_pattern": "/fhir/metadata",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json"
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/{resource_type}",
+      "method": "GET",
+      "output_encoding": "json",
+      "input_headers": ["Authorization", "Content-Type"],
+      "input_query_strings": ["*"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/umzh-sandbox/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-sandbox",
+          "disable_jwk_security": true,
+          "propagate_claims": [
+            ["party_id", "x-party-id"],
+            ["client_id", "x-client-id"],
+            ["scope", "x-scope"]
+          ]
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/fhir/{resource_type}",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json",
+          "extra_config": {
+            "modifier/martian": {
+              "header.Modifier": {
+                "scope": ["request"],
+                "name": "X-HAPI-Partition-Name",
+                "value": "partyB"
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/{resource_type}",
+      "method": "POST",
+      "output_encoding": "json",
+      "input_headers": ["Authorization", "Content-Type"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/umzh-sandbox/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-sandbox",
+          "disable_jwk_security": true
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/fhir/{resource_type}",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json",
+          "extra_config": {
+            "modifier/martian": {
+              "header.Modifier": {
+                "scope": ["request"],
+                "name": "X-HAPI-Partition-Name",
+                "value": "partyB"
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/{resource_type}/{id}",
+      "method": "GET",
+      "output_encoding": "json",
+      "input_headers": ["Authorization", "Content-Type"],
+      "input_query_strings": ["*"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/umzh-sandbox/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-sandbox",
+          "disable_jwk_security": true
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/fhir/{resource_type}/{id}",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json",
+          "extra_config": {
+            "modifier/martian": {
+              "header.Modifier": {
+                "scope": ["request"],
+                "name": "X-HAPI-Partition-Name",
+                "value": "partyB"
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/{resource_type}/{id}",
+      "method": "PUT",
+      "output_encoding": "json",
+      "input_headers": ["Authorization", "Content-Type"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/umzh-sandbox/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-sandbox",
+          "disable_jwk_security": true
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/fhir/{resource_type}/{id}",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json",
+          "extra_config": {
+            "modifier/martian": {
+              "header.Modifier": {
+                "scope": ["request"],
+                "name": "X-HAPI-Partition-Name",
+                "value": "partyB"
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/{resource_type}/{id}",
+      "method": "DELETE",
+      "output_encoding": "json",
+      "input_headers": ["Authorization", "Content-Type"],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/umzh-sandbox/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-sandbox",
+          "disable_jwk_security": true
+        }
+      },
+      "backend": [
+        {
+          "url_pattern": "/fhir/{resource_type}/{id}",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json",
+          "extra_config": {
+            "modifier/martian": {
+              "header.Modifier": {
+                "scope": ["request"],
+                "name": "X-HAPI-Partition-Name",
+                "value": "partyB"
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "endpoint": "/fhir/metadata",
+      "method": "GET",
+      "output_encoding": "json",
+      "backend": [
+        {
+          "url_pattern": "/fhir/metadata",
+          "host": ["http://hapi-fhir:8080"],
+          "encoding": "json"
+        }
+      ]
+    }
+  ]
+}

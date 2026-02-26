@@ -1,0 +1,28 @@
+version: "3.9"
+
+# Development overrides: hot-reload for backend and frontend
+
+services:
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./services/backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      ENVIRONMENT: development
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./services/frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_KEYCLOAK_URL: http://localhost:8180
+      VITE_KEYCLOAK_REALM: umzh-sandbox
+      VITE_KEYCLOAK_CLIENT_ID: frontend-client
+      VITE_BACKEND_URL: http://localhost:8000

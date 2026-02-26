@@ -1,0 +1,244 @@
+version: "3.9"
+
+# =============================================================================
+# UMZH-Connect COW Sandbox — Full Stack
+# =============================================================================
+
+volumes:
+  postgres-kc-data:
+  postgres-fhir-data:
+
+networks:
+  sandbox-net:
+    driver: bridge
+
+services:
+
+  # ── PostgreSQL for Keycloak ─────────────────────────────────────────────────
+  postgres-kc:
+    image: postgres:16
+    container_name: postgres-kc
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloakpass}
+    volumes:
+      - postgres-kc-data:/var/lib/postgresql/data
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Keycloak ────────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-kc:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloakpass}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+    ports:
+      - "${KC_PORT:-8180}:8080"
+    volumes:
+      - ./infrastructure/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - sandbox-net
+    depends_on:
+      postgres-kc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/umzh-sandbox/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -c 200 <&3 | grep -q '200 OK' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+
+  # ── PostgreSQL for HAPI FHIR ────────────────────────────────────────────────
+  postgres-fhir:
+    image: postgres:16
+    container_name: postgres-fhir
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hapi
+      POSTGRES_USER: hapi
+      POSTGRES_PASSWORD: ${HAPI_DB_PASSWORD:-hapipass}
+    volumes:
+      - postgres-fhir-data:/var/lib/postgresql/data
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── HAPI FHIR ───────────────────────────────────────────────────────────────
+  hapi-fhir:
+    image: hapiproject/hapi:v7.6.0
+    container_name: hapi-fhir
+    restart: unless-stopped
+    ports:
+      - "${HAPI_PORT:-8282}:8080"
+    environment:
+      spring.config.location: file:///app/config/application.yaml
+    volumes:
+      - ./infrastructure/hapi-fhir/application.yaml:/app/config/application.yaml:ro
+      - ./infrastructure/hapi-fhir/HealthCheck.java:/app/HealthCheck.java:ro
+    networks:
+      - sandbox-net
+    depends_on:
+      postgres-fhir:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "java", "--source", "17", "/app/HealthCheck.java"]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
+
+  # ── OPA — partyA ────────────────────────────────────────────────────────────
+  opa-a:
+    image: openpolicyagent/opa:latest-debug
+    container_name: opa-a
+    restart: unless-stopped
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies/policy.rego
+      - /policies/data.json
+    ports:
+      - "${OPA_PORT_A:-8181}:8181"
+    volumes:
+      - ./infrastructure/opa:/policies:ro
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8181/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── OPA — partyB ────────────────────────────────────────────────────────────
+  opa-b:
+    image: openpolicyagent/opa:latest-debug
+    container_name: opa-b
+    restart: unless-stopped
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies/policy.rego
+      - /policies/data.json
+    ports:
+      - "${OPA_PORT_B:-8182}:8181"
+    volumes:
+      - ./infrastructure/opa:/policies:ro
+    networks:
+      - sandbox-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8181/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── KrakenD — partyA ────────────────────────────────────────────────────────
+  krakend-a:
+    image: devopsfaith/krakend:2.6
+    container_name: krakend-a
+    restart: unless-stopped
+    command: run -c /etc/krakend/krakend.json
+    ports:
+      - "${KRAKEND_PORT_A:-8484}:8080"
+    volumes:
+      - ./infrastructure/krakend/krakend-a.json:/etc/krakend/krakend.json:ro
+    networks:
+      - sandbox-net
+    depends_on:
+      hapi-fhir:
+        condition: service_healthy
+      opa-a:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── KrakenD — partyB ────────────────────────────────────────────────────────
+  krakend-b:
+    image: devopsfaith/krakend:2.6
+    container_name: krakend-b
+    restart: unless-stopped
+    command: run -c /etc/krakend/krakend.json
+    ports:
+      - "${KRAKEND_PORT_B:-8485}:8080"
+    volumes:
+      - ./infrastructure/krakend/krakend-b.json:/etc/krakend/krakend.json:ro
+    networks:
+      - sandbox-net
+    depends_on:
+      hapi-fhir:
+        condition: service_healthy
+      opa-b:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      HAPI_FHIR_URL: http://hapi-fhir:8080
+      KRAKEND_A_URL: http://krakend-a:8080
+      KRAKEND_B_URL: http://krakend-b:8080
+      OPA_A_URL: http://opa-a:8181
+      OPA_B_URL: http://opa-b:8182
+    networks:
+      - sandbox-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      hapi-fhir:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── React Frontend ──────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    networks:
+      - sandbox-net
+    depends_on:
+      - backend

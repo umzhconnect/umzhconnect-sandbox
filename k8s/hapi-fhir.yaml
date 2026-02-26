@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hapi-fhir
+  namespace: cow-sandbox
+  labels:
+    app: hapi-fhir
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hapi-fhir
+  template:
+    metadata:
+      labels:
+        app: hapi-fhir
+    spec:
+      containers:
+        - name: hapi-fhir
+          image: hapiproject/hapi:latest
+          env:
+            - name: spring.config.location
+              value: file:///app/config/application.yaml
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: hapi-config
+              mountPath: /app/config
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /fhir/metadata
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+      volumes:
+        - name: hapi-config
+          configMap:
+            name: hapi-config
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hapi-config
+  namespace: cow-sandbox
+data:
+  application.yaml: |
+    spring:
+      datasource:
+        url: jdbc:postgresql://postgres-fhir:5432/hapi
+        username: hapi
+        password: ${HAPI_DB_PASSWORD}
+        driverClassName: org.postgresql.Driver
+    hapi:
+      fhir:
+        fhir_version: R4
+        partitioning:
+          enabled: true
+          cross_partition_reference_mode: ALLOWED
+        cors:
+          allow_Credentials: true
+          allowed_origin: ["*"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hapi-fhir
+  namespace: cow-sandbox
+spec:
+  selector:
+    app: hapi-fhir
+  ports:
+    - port: 8080
+      targetPort: 8080

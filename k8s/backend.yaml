@@ -1,0 +1,91 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: cow-sandbox
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: cow-sandbox-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KEYCLOAK_URL
+              value: http://keycloak:8080
+            - name: HAPI_FHIR_URL
+              value: http://hapi-fhir:8080
+            - name: KRAKEND_A_URL
+              value: http://krakend-a:8080
+            - name: KRAKEND_B_URL
+              value: http://krakend-b:8080
+            - name: OPA_A_URL
+              value: http://opa-a:8181
+            - name: OPA_B_URL
+              value: http://opa-b:8181
+            - name: KEYCLOAK_REALM
+              value: umzh-sandbox
+            - name: PLACER_CLIENT_ID
+              value: placer-client
+            - name: PLACER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cow-sandbox-secrets
+                  key: placer-client-secret
+            - name: FULFILLER_CLIENT_ID
+              value: fulfiller-client
+            - name: FULFILLER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cow-sandbox-secrets
+                  key: fulfiller-client-secret
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: cow-sandbox
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  namespace: cow-sandbox
+spec:
+  rules:
+    - host: api.sandbox.umzhconnect.ch
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000

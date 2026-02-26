@@ -1,0 +1,48 @@
+{
+  "phase": 1,
+  "scope_map": {
+    "Patient": {
+      "GET": "system/Patient.r"
+    },
+    "ServiceRequest": {
+      "GET": "system/ServiceRequest.cruds",
+      "POST": "system/ServiceRequest.cruds",
+      "PUT": "system/ServiceRequest.cruds",
+      "DELETE": "system/ServiceRequest.cruds"
+    },
+    "Consent": {
+      "GET": "system/Consent.cruds",
+      "POST": "system/Consent.cruds",
+      "PUT": "system/Consent.cruds",
+      "DELETE": "system/Consent.cruds"
+    },
+    "Task": {
+      "GET": "system/Task.cruds",
+      "POST": "system/Task.cruds",
+      "PUT": "system/Task.cruds",
+      "DELETE": "system/Task.cruds"
+    },
+    "Condition": {
+      "GET": "system/Condition.r"
+    },
+    "Medication": {
+      "GET": "system/Medication.r"
+    },
+    "MedicationStatement": {
+      "GET": "system/MedicationStatement.r"
+    },
+    "Practitioner": {
+      "GET": "system/Practitioner.r"
+    },
+    "Organization": {
+      "GET": "system/Organization.r"
+    },
+    "Appointment": {
+      "GET": "system/Appointment.cruds",
+      "POST": "system/Appointment.cruds",
+      "PUT": "system/Appointment.cruds",
+      "DELETE": "system/Appointment.cruds"
+    }
+  },
+  "trusted_parties": ["partyA", "partyB"]
+}

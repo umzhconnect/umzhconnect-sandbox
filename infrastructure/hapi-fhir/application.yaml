@@ -1,0 +1,67 @@
+spring:
+  main:
+    allow-circular-references: true
+  datasource:
+    url: jdbc:postgresql://postgres-fhir:5432/hapi
+    username: hapi
+    password: ${HAPI_DB_PASSWORD:hapipass}
+    driverClassName: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      hibernate.search.enabled: false
+
+hapi:
+  fhir:
+    fhir_version: R4
+    server_address: http://hapi-fhir:8080/fhir
+
+    # ── Partitioning (multi-tenant) ──────────────────────────────────────────
+    partitioning:
+      enabled: true
+      cross_partition_reference_mode: ALLOWED
+      partitioning_include_in_search_hash: false
+
+    # ── CORS ────────────────────────────────────────────────────────────────
+    cors:
+      allow_Credentials: true
+      allowed_origin:
+        - "*"
+
+    # ── Validation ──────────────────────────────────────────────────────────
+    validation:
+      enabled: false
+
+    # ── Narrative ───────────────────────────────────────────────────────────
+    narratives_enabled: false
+
+    # ── Subscriptions ───────────────────────────────────────────────────────
+    subscription:
+      resthook_enabled: false
+      websocket_enabled: false
+      email_enabled: false
+
+    # ── Binary Storage ──────────────────────────────────────────────────────
+    bulk_export_enabled: false
+    expunge_enabled: true
+
+    # ── Allow external references ────────────────────────────────────────────
+    allow_external_references: true
+    allow_multiple_delete: true
+    enforce_referential_integrity_on_write: false
+
+    # ── Server defaults ──────────────────────────────────────────────────────
+    default_page_size: 20
+    max_page_size: 200
+    reuse_cached_search_results_millis: 60000
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    readinessstate:
+      enabled: true
+    livenessstate:
+      enabled: true

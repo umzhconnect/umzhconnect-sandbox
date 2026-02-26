@@ -1,0 +1,284 @@
+{
+  "realm": "umzh-sandbox",
+  "displayName": "UMZH-Connect Sandbox",
+  "enabled": true,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "refreshTokenMaxReuse": 0,
+  "attributes": {
+    "frontendUrl": "http://localhost:8180"
+  },
+  "clients": [
+    {
+      "clientId": "frontend-client",
+      "name": "COW Sandbox Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "+"
+      ],
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "placer-client",
+      "name": "PartyA Placer M2M Client",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "placer-secret-change-me",
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "openid"
+      ],
+      "optionalClientScopes": [
+        "system/Patient.r",
+        "system/ServiceRequest.cruds",
+        "system/Consent.cruds",
+        "system/Condition.r",
+        "system/Medication.r",
+        "system/MedicationStatement.r",
+        "system/Practitioner.r",
+        "system/Organization.r"
+      ],
+      "attributes": {
+        "client_credentials.use_refresh_token": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "party-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "partyA",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "party_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "fulfiller-client",
+      "name": "PartyB Fulfiller M2M Client",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "fulfiller-secret-change-me",
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "openid"
+      ],
+      "optionalClientScopes": [
+        "system/Task.cruds",
+        "system/ServiceRequest.rs",
+        "system/Patient.r",
+        "system/Condition.r",
+        "system/Medication.r",
+        "system/Appointment.cruds"
+      ],
+      "attributes": {
+        "client_credentials.use_refresh_token": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "party-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.value": "partyB",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "party_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "backend-client",
+      "name": "COW Sandbox Backend Admin",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "backend-secret-change-me",
+      "protocol": "openid-connect",
+      "defaultClientScopes": ["openid"],
+      "optionalClientScopes": []
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "system/Patient.r",
+      "description": "Read access to Patient resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/ServiceRequest.cruds",
+      "description": "Full access to ServiceRequest resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Consent.cruds",
+      "description": "Full access to Consent resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Task.cruds",
+      "description": "Full access to Task resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/ServiceRequest.rs",
+      "description": "Read and search access to ServiceRequest resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Condition.r",
+      "description": "Read access to Condition resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Medication.r",
+      "description": "Read access to Medication resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/MedicationStatement.r",
+      "description": "Read access to MedicationStatement resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Practitioner.r",
+      "description": "Read access to Practitioner resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Organization.r",
+      "description": "Read access to Organization resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    },
+    {
+      "name": "system/Appointment.cruds",
+      "description": "Full access to Appointment resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      }
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "placer",
+        "description": "PartyA placer/referrer role"
+      },
+      {
+        "name": "fulfiller",
+        "description": "PartyB fulfiller role"
+      },
+      {
+        "name": "sandbox-admin",
+        "description": "Sandbox administrator"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "PartyA",
+      "realmRoles": ["placer"]
+    },
+    {
+      "name": "PartyB",
+      "realmRoles": ["fulfiller"]
+    }
+  ],
+  "users": [
+    {
+      "username": "demo-user",
+      "email": "demo@umzh-sandbox.local",
+      "firstName": "Demo",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["placer", "fulfiller", "sandbox-admin"]
+    }
+  ]
+}
