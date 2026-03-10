@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env.local
+.env.production
+postgres_data/
+*.log
+.DS_Store
+web-app/node_modules/
+web-app/dist/
+.claude/settings.local.json
+

@@ -1,0 +1,60 @@
+spring:
+  main:
+    # Required for HAPI FHIR v7.x — known circular dependency in SearchParamRegistry
+    allow-circular-references: true
+  datasource:
+    url: jdbc:postgresql://postgres:5432/hapi_fhir
+    username: umzh
+    password: umzh_sandbox_2025
+    driverClassName: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+      hibernate.format_sql: false
+      hibernate.show_sql: false
+      hibernate.hbm2ddl.auto: update
+      hibernate.jdbc.batch_size: 20
+      hibernate.cache.use_query_cache: false
+      hibernate.cache.use_second_level_cache: false
+      hibernate.cache.use_structured_entries: false
+      hibernate.cache.use_minimal_puts: false
+
+hapi:
+  fhir:
+    fhir_version: R4
+    server_address: http://localhost:8090/fhir
+    # URL-based multi-tenancy: /fhir/{partitionName}/{resourceType}
+    # Partitions must be created before use via $partition-management-create-partition
+    partitioning:
+      multitenancy_enabled: true
+      cross_partition_reference_mode: true
+      partitioning_include_in_search_hashes: false
+    # General settings
+    allow_external_references: true
+    allow_multiple_delete: true
+    allow_placeholder_references: true
+    auto_create_placeholder_reference_targets: true
+    default_encoding: JSON
+    default_pretty_print: true
+    enable_index_missing_fields: false
+    defer_indexing_for_codesystems_of_size: 0
+    # Narrative generation
+    narrative_enabled: false
+    # CORS settings
+    cors:
+      allow_credentials: true
+      allowed_origin:
+        - "*"
+    # Paging
+    default_page_size: 20
+    max_page_size: 200
+    # Validation
+    validation:
+      requests_enabled: false
+      responses_enabled: false
+    # Bulk export
+    bulk_export_enabled: false
+    # Subscription
+    subscription:
+      resthook_enabled: false
+      websocket_enabled: false

@@ -1,0 +1,111 @@
+{
+  "resourceType": "Bundle",
+  "id": "fulfiller-seed-bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "fulfiller-HospitalP",
+        "meta": {
+          "profile": [
+            "http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-organization"
+          ],
+          "tag": [
+            {
+              "system": "urn:umzh:keycloak:client-id",
+              "code": "placer-client"
+            },
+            {
+              "system": "urn:umzh:api:external-host",
+              "code": "__PLACER_EXTERNAL_URL__"
+            }
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.51.1.3",
+            "value": "7601000000001"
+          }
+        ],
+        "active": true,
+        "name": "University Hospital P",
+        "alias": [
+          "HospitalP"
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+41 44 255 11 11"
+          }
+        ],
+        "address": [
+          {
+            "line": [
+              "Raemistrasse 100"
+            ],
+            "city": "Zurich",
+            "postalCode": "8091",
+            "country": "CH"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization/fulfiller-HospitalP"
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Organization",
+        "id": "fulfiller-HospitalF",
+        "meta": {
+          "profile": [
+            "http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-organization"
+          ],
+          "tag": [
+            {
+              "system": "urn:umzh:keycloak:client-id",
+              "code": "fulfiller-client"
+            },
+            {
+              "system": "urn:umzh:api:external-host",
+              "code": "__FULFILLER_EXTERNAL_URL__"
+            }
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.51.1.3",
+            "value": "7601000000002"
+          }
+        ],
+        "active": true,
+        "name": "University Hospital F",
+        "alias": [
+          "HospitalF"
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+41 44 255 22 22"
+          }
+        ],
+        "address": [
+          {
+            "line": [
+              "Seestrasse 200"
+            ],
+            "city": "Zurich",
+            "postalCode": "8008",
+            "country": "CH"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization/fulfiller-HospitalF"
+      }
+    }
+  ]
+}

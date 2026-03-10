@@ -1,0 +1,1019 @@
+{
+  "resourceType": "Bundle",
+  "id": "placer-seed-bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:org-hospitalp",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "placer-HospitalP",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-organization"],
+          "tag": [
+            {
+              "system": "urn:umzh:keycloak:client-id",
+              "code": "placer-client"
+            },
+            {
+              "system": "urn:umzh:api:external-host",
+              "code": "__PLACER_EXTERNAL_URL__"
+            }
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.51.1.3",
+            "value": "7601000000001"
+          }
+        ],
+        "active": true,
+        "name": "University Hospital P",
+        "alias": ["HospitalP"],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+41 44 255 11 11"
+          }
+        ],
+        "address": [
+          {
+            "line": ["Raemistrasse 100"],
+            "city": "Zurich",
+            "postalCode": "8091",
+            "country": "CH"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization/placer-HospitalP"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:org-hospitalf",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "placer-HospitalF",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-organization"],
+          "tag": [
+            {
+              "system": "urn:umzh:keycloak:client-id",
+              "code": "fulfiller-client"
+            },
+            {
+              "system": "urn:umzh:api:external-host",
+              "code": "__FULFILLER_EXTERNAL_URL__"
+            }
+          ]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.51.1.3",
+            "value": "7601000000002"
+          }
+        ],
+        "active": true,
+        "name": "University Hospital F",
+        "alias": ["HospitalF"],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+41 44 255 22 22"
+          }
+        ],
+        "address": [
+          {
+            "line": ["Seestrasse 200"],
+            "city": "Zurich",
+            "postalCode": "8008",
+            "country": "CH"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization/placer-HospitalF"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:patient-petra",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "PetraMeier",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-patient"]
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR"
+                }
+              ]
+            },
+            "system": "urn:oid:2.16.756.5.32",
+            "value": "7562295883070"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "family": "Meier",
+            "given": ["Petra"]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1992-03-26",
+        "address": [
+          {
+            "line": ["Musterstrasse 1"],
+            "city": "Zurich",
+            "postalCode": "8000",
+            "country": "CH"
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+41 33 333 33 33",
+            "use": "mobile"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient/PetraMeier"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:practitioner-hans",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "HansMuster",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-practitioner"]
+        },
+        "identifier": [
+          {
+            "system": "urn:oid:2.51.1.3",
+            "value": "7601000000100"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "family": "Muster",
+            "given": ["Hans"],
+            "prefix": ["Dr. med."]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Practitioner/HansMuster"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:practitionerrole-hans",
+      "resource": {
+        "resourceType": "PractitionerRole",
+        "id": "HansMusterRole",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-core/StructureDefinition/ch-core-practitionerrole"]
+        },
+        "active": true,
+        "practitioner": {
+          "reference": "Practitioner/HansMuster"
+        },
+        "organization": {
+          "reference": "Organization/placer-HospitalP"
+        },
+        "code": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "309343006",
+                "display": "Physician"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "PractitionerRole/HansMusterRole"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:condition-acl",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "SuspectedACLRupture",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-etoc/StructureDefinition/ch-etoc-primary-diagnosis"]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "provisional"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "698065004",
+              "display": "Rupture of anterior cruciate ligament"
+            }
+          ],
+          "text": "Suspected rupture of the left anterior cruciate ligament (ACL). Positive Lachman test."
+        },
+        "bodySite": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "82169009",
+                "display": "Structure of anterior cruciate ligament of knee joint"
+              }
+            ],
+            "text": "Left knee - anterior cruciate ligament"
+          }
+        ],
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "recordedDate": "2025-12-15"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/SuspectedACLRupture"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:condition-hf",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "HeartFailureHFrEF",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-etoc/StructureDefinition/ch-etoc-secondary-diagnosis"]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "problem-list-item"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "441481004",
+              "display": "Chronic systolic heart failure"
+            }
+          ],
+          "text": "Chronic systolic (congestive) heart failure (HFrEF)"
+        },
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/HeartFailureHFrEF"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:condition-sarcoma",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "SarcomaKnee",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-etoc/StructureDefinition/ch-etoc-primary-diagnosis"]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "424413001",
+              "display": "Synovial sarcoma"
+            }
+          ],
+          "text": "Synovial sarcoma of the right knee, histologically confirmed"
+        },
+        "bodySite": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "72696002",
+                "display": "Knee region structure"
+              }
+            ],
+            "text": "Right knee"
+          }
+        ],
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "recordedDate": "2026-01-20"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/SarcomaKnee"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:med-entresto",
+      "resource": {
+        "resourceType": "MedicationStatement",
+        "id": "MedicationEntresto",
+        "status": "active",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "716107003",
+              "display": "Product containing sacubitril and valsartan"
+            }
+          ],
+          "text": "Entresto 200mg film tablet (Sacubitril/Valsartan)"
+        },
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "dosage": [
+          {
+            "text": "1 tablet oral, morning/noon/evening",
+            "timing": {
+              "repeat": {
+                "frequency": 3,
+                "period": 1,
+                "periodUnit": "d"
+              }
+            },
+            "route": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "26643006",
+                  "display": "Oral route"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "MedicationStatement/MedicationEntresto"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:med-concor",
+      "resource": {
+        "resourceType": "MedicationStatement",
+        "id": "MedicationConcor",
+        "status": "active",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "318475005",
+              "display": "Product containing bisoprolol"
+            }
+          ],
+          "text": "Concor 10mg film tablet (Bisoprolol fumarat)"
+        },
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "dosage": [
+          {
+            "text": "1 tablet oral, morning",
+            "timing": {
+              "repeat": {
+                "frequency": 1,
+                "period": 1,
+                "periodUnit": "d"
+              }
+            },
+            "route": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "26643006",
+                  "display": "Oral route"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "MedicationStatement/MedicationConcor"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:coverage-meier",
+      "resource": {
+        "resourceType": "Coverage",
+        "id": "CoverageMeier",
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+              "code": "HIP",
+              "display": "health insurance plan policy"
+            }
+          ]
+        },
+        "beneficiary": {
+          "reference": "Patient/PetraMeier"
+        },
+        "payor": [
+          {
+            "display": "Krankenkasse AG"
+          }
+        ],
+        "identifier": [
+          {
+            "system": "http://ehic.com/insurer",
+            "value": "80756015090002647590"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Coverage/CoverageMeier"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:allergy-gado",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "AllergyGado",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "type": "allergy",
+        "category": ["medication"],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "764847006",
+              "display": "Gadolinium"
+            }
+          ],
+          "text": "Gadolinium contrast (Gadotersaeure-type)"
+        },
+        "patient": {
+          "reference": "Patient/PetraMeier"
+        },
+        "recordedDate": "2024-06-15"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "AllergyIntolerance/AllergyGado"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:doc-cardiology",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "DocCardiologyAttachment",
+        "status": "current",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "34133-9",
+              "display": "Summary of episode note"
+            }
+          ],
+          "text": "Cardiology clinic report"
+        },
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "date": "2025-12-19T10:00:00+01:00",
+        "content": [
+          {
+            "attachment": {
+              "contentType": "application/pdf",
+              "title": "Cardiology_Report_PetraMeier_2025.pdf",
+              "creation": "2025-12-19"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "DocumentReference/DocCardiologyAttachment"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:imaging-ct",
+      "resource": {
+        "resourceType": "ImagingStudy",
+        "id": "ImagingCT",
+        "status": "available",
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "started": "2025-12-18T14:30:00+01:00",
+        "numberOfSeries": 1,
+        "modality": [
+          {
+            "system": "http://dicom.nema.org/resources/ontology/DCM",
+            "code": "CT"
+          }
+        ],
+        "description": "CT scan of right knee",
+        "series": [
+          {
+            "uid": "2.16.124.113543.6003.2588828330.45298.17418.2723805630",
+            "modality": {
+              "system": "http://dicom.nema.org/resources/ontology/DCM",
+              "code": "CT"
+            },
+            "description": "CT Right Knee",
+            "numberOfInstances": 45,
+            "bodySite": {
+              "system": "http://snomed.info/sct",
+              "code": "72696002",
+              "display": "Knee region structure"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "ImagingStudy/ImagingCT"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:imaging-pet",
+      "resource": {
+        "resourceType": "ImagingStudy",
+        "id": "ImagingPET",
+        "status": "available",
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "started": "2026-01-18T09:00:00+01:00",
+        "numberOfSeries": 3,
+        "modality": [
+          {
+            "system": "http://dicom.nema.org/resources/ontology/DCM",
+            "code": "PT"
+          }
+        ],
+        "description": "PET scan whole body",
+        "series": [
+          {
+            "uid": "2.16.124.113543.6003.2588828330.45298.17418.2723805631",
+            "modality": {
+              "system": "http://dicom.nema.org/resources/ontology/DCM",
+              "code": "PT"
+            },
+            "description": "PET Whole Body Series 1",
+            "numberOfInstances": 120
+          },
+          {
+            "uid": "2.16.124.113543.6003.2588828330.45298.17418.2723805632",
+            "modality": {
+              "system": "http://dicom.nema.org/resources/ontology/DCM",
+              "code": "PT"
+            },
+            "description": "PET Whole Body Series 2",
+            "numberOfInstances": 120
+          },
+          {
+            "uid": "2.16.124.113543.6003.2588828330.45298.17418.2723805633",
+            "modality": {
+              "system": "http://dicom.nema.org/resources/ontology/DCM",
+              "code": "CT"
+            },
+            "description": "CT Attenuation Correction",
+            "numberOfInstances": 250
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "ImagingStudy/ImagingPET"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:sr-ortho",
+      "resource": {
+        "resourceType": "ServiceRequest",
+        "id": "ReferralOrthopedicSurgery",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-umzh-connect/StructureDefinition/ch-umzh-connect-servicerequest"]
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PLAC"
+                }
+              ]
+            },
+            "value": "REF-2025-001"
+          }
+        ],
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "183545006",
+                "display": "Referral to orthopedic service (procedure)"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "authoredOn": "2025-12-15",
+        "requester": {
+          "reference": "PractitionerRole/HansMusterRole"
+        },
+        "performer": [
+          {
+            "reference": "Organization/placer-HospitalF"
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/SuspectedACLRupture"
+          }
+        ],
+        "insurance": [
+          {
+            "reference": "Coverage/CoverageMeier"
+          }
+        ],
+        "supportingInfo": [
+          {
+            "reference": "Condition/HeartFailureHFrEF"
+          },
+          {
+            "reference": "MedicationStatement/MedicationEntresto"
+          },
+          {
+            "reference": "MedicationStatement/MedicationConcor"
+          },
+          {
+            "reference": "DocumentReference/DocCardiologyAttachment"
+          }
+        ],
+        "note": [
+          {
+            "text": "Suspected rupture of the left ACL. Patient fell on ice. Positive Lachman test. Please evaluate for surgical intervention."
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "ServiceRequest/ReferralOrthopedicSurgery"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:sr-tumorboard",
+      "resource": {
+        "resourceType": "ServiceRequest",
+        "id": "ReferralTumorboard",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-umzh-connect/StructureDefinition/ch-umzh-connect-servicerequest"]
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PLAC"
+                }
+              ]
+            },
+            "value": "REF-2025-002"
+          }
+        ],
+        "status": "active",
+        "intent": "order",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "720006006",
+                "display": "Cancer care review (procedure)"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient/PetraMeier"
+        },
+        "authoredOn": "2026-01-26",
+        "requester": {
+          "reference": "PractitionerRole/HansMusterRole"
+        },
+        "performer": [
+          {
+            "reference": "Organization/placer-HospitalF"
+          }
+        ],
+        "reasonReference": [
+          {
+            "reference": "Condition/SarcomaKnee"
+          }
+        ],
+        "supportingInfo": [
+          {
+            "reference": "AllergyIntolerance/AllergyGado"
+          },
+          {
+            "reference": "ImagingStudy/ImagingCT"
+          },
+          {
+            "reference": "ImagingStudy/ImagingPET"
+          }
+        ],
+        "note": [
+          {
+            "text": "Histologically confirmed synovial sarcoma of the right knee. Please review therapy recommendations at tumor board."
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "ServiceRequest/ReferralTumorboard"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:consent-ortho",
+      "resource": {
+        "resourceType": "Consent",
+        "id": "ConsentOrthopedicReferral",
+        "status": "active",
+        "scope": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/consentscope",
+              "code": "patient-privacy",
+              "display": "Privacy Consent"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "59284-0",
+                "display": "Consent Document"
+              }
+            ]
+          }
+        ],
+        "patient": {
+          "reference": "Patient/PetraMeier"
+        },
+        "dateTime": "2025-12-15T10:00:00+01:00",
+        "organization": [
+          {
+            "reference": "Organization/placer-HospitalP"
+          }
+        ],
+        "performer": [
+          {
+            "reference": "Organization/placer-HospitalF"
+          }
+        ],
+        "sourceReference": {
+          "reference": "ServiceRequest/ReferralOrthopedicSurgery"
+        },
+        "provision": {
+          "type": "permit",
+          "period": {
+            "start": "2025-12-15",
+            "end": "2026-06-15"
+          },
+          "actor": [
+            {
+              "role": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "IRCP",
+                    "display": "information recipient"
+                  }
+                ]
+              },
+              "reference": {
+                "reference": "Organization/placer-HospitalF"
+              }
+            }
+          ],
+          "data": [
+            { "meaning": "related", "reference": { "reference": "ServiceRequest/ReferralOrthopedicSurgery" } },
+            { "meaning": "related", "reference": { "reference": "Patient/PetraMeier" } },
+            { "meaning": "related", "reference": { "reference": "Condition/SuspectedACLRupture" } },
+            { "meaning": "related", "reference": { "reference": "Condition/HeartFailureHFrEF" } },
+            { "meaning": "related", "reference": { "reference": "MedicationStatement/MedicationEntresto" } },
+            { "meaning": "related", "reference": { "reference": "MedicationStatement/MedicationConcor" } },
+            { "meaning": "related", "reference": { "reference": "Coverage/CoverageMeier" } },
+            { "meaning": "related", "reference": { "reference": "DocumentReference/DocCardiologyAttachment" } },
+            { "meaning": "related", "reference": { "reference": "Practitioner/HansMuster" } },
+            { "meaning": "related", "reference": { "reference": "PractitionerRole/HansMusterRole" } },
+            { "meaning": "related", "reference": { "reference": "Organization/placer-HospitalP" } }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Consent/ConsentOrthopedicReferral"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:consent-tumor",
+      "resource": {
+        "resourceType": "Consent",
+        "id": "ConsentTumorboardReferral",
+        "status": "active",
+        "scope": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/consentscope",
+              "code": "patient-privacy",
+              "display": "Privacy Consent"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "59284-0",
+                "display": "Consent Document"
+              }
+            ]
+          }
+        ],
+        "patient": {
+          "reference": "Patient/PetraMeier"
+        },
+        "dateTime": "2026-01-26T08:00:00+01:00",
+        "organization": [
+          {
+            "reference": "Organization/placer-HospitalP"
+          }
+        ],
+        "performer": [
+          {
+            "reference": "Organization/placer-HospitalF"
+          }
+        ],
+        "sourceReference": {
+          "reference": "ServiceRequest/ReferralTumorboard"
+        },
+        "provision": {
+          "type": "permit",
+          "period": {
+            "start": "2026-01-26",
+            "end": "2026-07-26"
+          },
+          "actor": [
+            {
+              "role": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "IRCP",
+                    "display": "information recipient"
+                  }
+                ]
+              },
+              "reference": {
+                "reference": "Organization/placer-HospitalF"
+              }
+            }
+          ],
+          "data": [
+            { "meaning": "related", "reference": { "reference": "ServiceRequest/ReferralTumorboard" } },
+            { "meaning": "related", "reference": { "reference": "Patient/PetraMeier" } },
+            { "meaning": "related", "reference": { "reference": "Condition/SarcomaKnee" } },
+            { "meaning": "related", "reference": { "reference": "AllergyIntolerance/AllergyGado" } },
+            { "meaning": "related", "reference": { "reference": "ImagingStudy/ImagingCT" } },
+            { "meaning": "related", "reference": { "reference": "ImagingStudy/ImagingPET" } },
+            { "meaning": "related", "reference": { "reference": "Practitioner/HansMuster" } },
+            { "meaning": "related", "reference": { "reference": "PractitionerRole/HansMusterRole" } },
+            { "meaning": "related", "reference": { "reference": "Organization/placer-HospitalP" } }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Consent/ConsentTumorboardReferral"
+      }
+    }
+  ]
+}
