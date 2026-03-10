@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm;
+  }
+  .btn-success {
+    @apply px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm;
+  }
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-ready {
+    @apply badge bg-yellow-100 text-yellow-800;
+  }
+  .badge-in-progress {
+    @apply badge bg-blue-100 text-blue-800;
+  }
+  .badge-completed {
+    @apply badge bg-green-100 text-green-800;
+  }
+  .badge-active {
+    @apply badge bg-green-100 text-green-800;
+  }
+  .log-entry {
+    @apply font-mono text-xs p-2 border-l-4 mb-1;
+  }
+  .log-request {
+    @apply log-entry border-blue-400 bg-blue-50;
+  }
+  .log-response {
+    @apply log-entry border-green-400 bg-green-50;
+  }
+  .log-error {
+    @apply log-entry border-red-400 bg-red-50;
+  }
+  .log-info {
+    @apply log-entry border-gray-400 bg-gray-50;
+  }
+}

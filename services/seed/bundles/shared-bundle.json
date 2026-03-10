@@ -1,0 +1,71 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Questionnaire",
+        "id": "QuestionnaireSmokingStatus",
+        "url": "http://hospitalf.example.org/ch-umzh-connect/QuestionnaireSmokingStatus",
+        "version": "1.0.0",
+        "name": "SmokingStatusQuestionnaire",
+        "title": "Smoking Status Assessment",
+        "status": "active",
+        "date": "2025-12-01",
+        "publisher": "HospitalF",
+        "description": "Questionnaire to assess patient smoking status and pack-year history",
+        "item": [
+          {
+            "linkId": "smoking-status",
+            "text": "What is the patient's current smoking status?",
+            "type": "choice",
+            "required": true,
+            "answerOption": [
+              {
+                "valueCoding": {
+                  "system": "http://snomed.info/sct",
+                  "code": "266919005",
+                  "display": "Never smoked tobacco"
+                }
+              },
+              {
+                "valueCoding": {
+                  "system": "http://snomed.info/sct",
+                  "code": "8517006",
+                  "display": "Ex-smoker"
+                }
+              },
+              {
+                "valueCoding": {
+                  "system": "http://snomed.info/sct",
+                  "code": "77176002",
+                  "display": "Smoker"
+                }
+              }
+            ]
+          },
+          {
+            "linkId": "pack-years",
+            "text": "Pack-years (if applicable)",
+            "type": "decimal",
+            "required": false,
+            "enableWhen": [
+              {
+                "question": "smoking-status",
+                "operator": "!=",
+                "answerCoding": {
+                  "system": "http://snomed.info/sct",
+                  "code": "266919005"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Questionnaire/QuestionnaireSmokingStatus"
+      }
+    }
+  ]
+}

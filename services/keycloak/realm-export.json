@@ -1,0 +1,376 @@
+{
+  "id": "umzh-connect",
+  "realm": "umzh-connect",
+  "displayName": "UMZH Connect Sandbox",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "placer",
+        "description": "Placer/Referrer role - can create service requests and tasks"
+      },
+      {
+        "name": "fulfiller",
+        "description": "Fulfiller/Performer role - can process tasks and fetch resources"
+      },
+      {
+        "name": "admin",
+        "description": "Sandbox administrator"
+      }
+    ]
+  },
+  "scopeMappings": [],
+  "clientScopes": [
+    {
+      "name": "smart-patient-read",
+      "description": "SMART on FHIR: Read patient data",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Read patient demographic data"
+      },
+      "protocolMappers": [
+        {
+          "name": "smart-scope-patient-read",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "scope",
+            "claim.value": "system/Patient.r",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "smart-task-write",
+      "description": "SMART on FHIR: Create/update tasks",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Create and update task resources"
+      }
+    },
+    {
+      "name": "smart-servicerequest-read",
+      "description": "SMART on FHIR: Read service requests",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Read service request data"
+      }
+    },
+    {
+      "name": "smart-clinical-read",
+      "description": "SMART on FHIR: Read clinical resources (conditions, medications, allergies, etc.)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Read clinical data (conditions, medications, allergies)"
+      }
+    },
+    {
+      "name": "smart-questionnaire-write",
+      "description": "SMART on FHIR: Create/update questionnaire responses",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Create and update questionnaire responses"
+      }
+    },
+    {
+      "name": "consent",
+      "description": "Dynamic consent scope — parameterized as consent:<consentId>. Adds consent_id claim to the access token for fine-grained policy enforcement at the remote API gateway.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false",
+        "is.dynamic.scope": "true",
+        "dynamic.scope.regexp": "consent:(.*)"
+      },
+      "protocolMappers": [
+        {
+          "name": "consent-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-dynamic-scope-mapper",
+          "config": {
+            "claim.name": "consent_id",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "web-app",
+      "name": "UMZH Connect Sandbox Web App",
+      "description": "React SPA for the sandbox UI",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "rootUrl": "http://localhost:3000",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:8080"
+      ],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "smart-patient-read",
+        "smart-task-write",
+        "smart-servicerequest-read",
+        "smart-clinical-read",
+        "smart-questionnaire-write"
+      ],
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "placer-client",
+      "name": "Placer (HospitalP) Machine Client",
+      "description": "M2M client for HospitalP - Level 1 client credentials",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "placer-secret-2025",
+      "protocol": "openid-connect",
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "smart-task-write",
+        "smart-servicerequest-read",
+        "smart-clinical-read",
+        "smart-questionnaire-write",
+        "consent"
+      ],
+      "protocolMappers": [
+        {
+          "name": "party-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "party_id",
+            "claim.value": "hospitalp",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "party-name-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "party_name",
+            "claim.value": "HospitalP",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "placer",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "smart-scopes-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "smart_scopes",
+            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "fulfiller-client",
+      "name": "Fulfiller (HospitalF) Machine Client",
+      "description": "M2M client for HospitalF - Level 1 client credentials",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "fulfiller-secret-2025",
+      "protocol": "openid-connect",
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "smart-task-write",
+        "smart-servicerequest-read",
+        "smart-clinical-read",
+        "smart-patient-read",
+        "smart-questionnaire-write",
+        "consent"
+      ],
+      "protocolMappers": [
+        {
+          "name": "party-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "party_id",
+            "claim.value": "hospitalf",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "party-name-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "party_name",
+            "claim.value": "HospitalF",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "fulfiller",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "smart-scopes-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "smart_scopes",
+            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "placer-user",
+      "email": "placer@hospitalp.example.org",
+      "firstName": "Hans",
+      "lastName": "Muster",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "placer123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["placer"]
+    },
+    {
+      "username": "fulfiller-user",
+      "email": "fulfiller@hospitalf.example.org",
+      "firstName": "Anna",
+      "lastName": "Schmidt",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "fulfiller123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["fulfiller"]
+    },
+    {
+      "username": "admin-user",
+      "email": "admin@umzh.example.org",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin", "placer", "fulfiller"]
+    }
+  ]
+}

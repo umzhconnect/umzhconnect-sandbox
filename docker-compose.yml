@@ -1,0 +1,331 @@
+services:
+  # ===========================================================================
+  # PostgreSQL - Shared database for HAPI FHIR and Keycloak
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: umzh-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+    ports:
+      - "5431:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # Keycloak - Authorization Server (shared by both parties)
+  # ===========================================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: umzh-keycloak
+    command: start-dev --import-realm --features=dynamic-scopes
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    ports:
+      - "${KEYCLOAK_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Keycloak 25 exposes /health/ready on the management port 9000
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3;grep -q '200' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # HAPI FHIR Server - URL-based multi-tenancy
+  #   /fhir/placer    -> HospitalP partition
+  #   /fhir/fulfiller -> HospitalF partition
+  # ===========================================================================
+  hapi-fhir:
+    image: hapiproject/hapi:v7.4.0
+    container_name: umzh-hapi-fhir
+    environment:
+      SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
+    volumes:
+      - ./services/hapi-fhir/application.yaml:/app/config/application.yaml
+    ports:
+      - "${HAPI_FHIR_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Note: hapiproject/hapi image is distroless (no shell), so Docker
+    # healthchecks are not possible. Dependent services use their own
+    # retry logic to wait for HAPI FHIR readiness.
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # nginx-proxy — nginx reverse/rewriting proxy serving two roles:
+  #   Ports 80–83: proxy in front of HAPI FHIR, rewrites partition self-links
+  #                to the correct KrakenD gateway base URL.
+  #   Ports 84–85: proxy in front of external KrakenD gateways, rewrites the
+  #                partner's self-links to the calling party's /proxy/fhir/ path.
+  # ===========================================================================
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: umzh-nginx-proxy
+    volumes:
+      - ./services/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # OPA - Policy Engine for HospitalP (Placer)
+  # ===========================================================================
+  opa-placer:
+    image: openpolicyagent/opa:0.70.0
+    platform: linux/amd64
+    container_name: umzh-opa-placer
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies
+    volumes:
+      - ./services/opa/policies:/policies
+    ports:
+      - "${OPA_PLACER_PORT}:8181"
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # OPA - Policy Engine for HospitalF (Fulfiller)
+  # ===========================================================================
+  opa-fulfiller:
+    image: openpolicyagent/opa:0.70.0
+    platform: linux/amd64
+    container_name: umzh-opa-fulfiller
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies
+    volumes:
+      - ./services/opa/policies:/policies
+    ports:
+      - "${OPA_FULFILLER_PORT}:8181"
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # KrakenD - Internal API Gateway for HospitalP (Placer)  port 8080
+  #   /fhir/{resource}        -> HAPI /fhir/placer/* (placer reads own data)
+  #   /proxy/fhir/{resource}  -> HAPI /fhir/fulfiller/* (placer reads fulfiller data)
+  #   /api/actions/*          -> composite actions (create-referral, create-task, all-tasks)
+  #   /api/policy/check       -> opa-placer:8181
+  # ===========================================================================
+  krakend-placer:
+    image: devopsfaith/krakend:2.7
+    container_name: umzh-krakend-placer
+    volumes:
+      - ./services/krakend-placer:/etc/krakend
+    ports:
+      - "${KRAKEND_PLACER_PORT}:8080"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+      nginx-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      opa-placer:
+        condition: service_started
+      krakend-fulfiller-external:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # KrakenD - External API Gateway for HospitalP (Placer)  port 8081
+  #   Consumed by the Fulfiller party to read Placer data and write Tasks.
+  #   /fhir/{resource}        -> HAPI /fhir/placer/* (read, consent-gated)
+  #   /fhir/{resource}/{id}   -> HAPI /fhir/placer/* (read by id, consent-gated)
+  #   /fhir/Task              -> HAPI /fhir/placer/Task (POST — fulfiller creates task)
+  # ===========================================================================
+  krakend-placer-external:
+    image: devopsfaith/krakend:2.7
+    container_name: umzh-krakend-placer-external
+    volumes:
+      - ./services/krakend-placer-external:/etc/krakend
+    ports:
+      - "${KRAKEND_PLACER_EXTERNAL_PORT}:8080"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+      nginx-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # KrakenD - Internal API Gateway for HospitalF (Fulfiller)  port 8083
+  #   /fhir/{resource}        -> HAPI /fhir/fulfiller/* (fulfiller reads own data)
+  #   /proxy/fhir/{resource}  -> HAPI /fhir/placer/* (fulfiller reads placer data)
+  #   /api/actions/*          -> composite actions (create-task, all-tasks)
+  #   /api/policy/check       -> opa-fulfiller:8181
+  # ===========================================================================
+  krakend-fulfiller:
+    image: devopsfaith/krakend:2.7
+    container_name: umzh-krakend-fulfiller
+    volumes:
+      - ./services/krakend-fulfiller:/etc/krakend
+    ports:
+      - "${KRAKEND_FULFILLER_PORT}:8080"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+      nginx-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+      opa-fulfiller:
+        condition: service_started
+      krakend-placer-external:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # KrakenD - External API Gateway for HospitalF (Fulfiller)  port 8084
+  #   Consumed by the Placer party to write and read Tasks.
+  #   /fhir/Task              -> HAPI /fhir/fulfiller/Task (POST — placer creates task)
+  #   /fhir/Task/{id}         -> HAPI /fhir/fulfiller/Task/{id} (PUT — status update)
+  #   /fhir/Task              -> HAPI /fhir/fulfiller/Task (GET — placer reads tasks)
+  # ===========================================================================
+  krakend-fulfiller-external:
+    image: devopsfaith/krakend:2.7
+    container_name: umzh-krakend-fulfiller-external
+    volumes:
+      - ./services/krakend-fulfiller-external:/etc/krakend
+    ports:
+      - "${KRAKEND_FULFILLER_EXTERNAL_PORT}:8080"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+      nginx-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # Seed Loader - Creates partitions and loads FHIR data into each partition
+  # ===========================================================================
+  seed-loader:
+    build:
+      context: ./services/seed
+      dockerfile: Dockerfile
+    container_name: umzh-seed-loader
+    environment:
+      FHIR_BASE_URL: http://hapi-fhir:8080/fhir
+      PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
+      FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
+    volumes:
+      - ./services/seed:/seed
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # Reseed API - Admin utility to expunge + reload all FHIR seed data
+  # ===========================================================================
+  reseed-api:
+    build:
+      context: ./services/reseed-api
+      dockerfile: Dockerfile
+    container_name: umzh-reseed-api
+    environment:
+      FHIR_BASE_URL: http://hapi-fhir:8080/fhir
+      PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
+      FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
+    volumes:
+      - ./services/seed/bundles:/seed/bundles:ro
+    ports:
+      - "9001:9001"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # Web Application - React SPA
+  # nginx routes each party's API paths to the correct KrakenD instance
+  # ===========================================================================
+  web-app:
+    build:
+      context: ./web-app
+      dockerfile: Dockerfile
+    container_name: umzh-web-app
+    ports:
+      - "${WEB_APP_PORT}:80"
+    depends_on:
+      krakend-placer:
+        condition: service_healthy
+      krakend-fulfiller:
+        condition: service_healthy
+    networks:
+      - umzh-net
+
+volumes:
+  postgres_data:
+
+networks:
+  umzh-net:
+    driver: bridge
