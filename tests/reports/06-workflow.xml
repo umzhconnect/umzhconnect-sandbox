@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><testsuites><testsuite tests="1" errors="0" failures="1"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="0.135"><failure>Assert status code
+  --&gt; /Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl:33:6
+   |
+   | POST {{placer_url}}/api/actions/create-task
+   | ...
+33 | HTTP 201
+   |      ^^^ actual value is &lt;409&gt;
+   |</failure></testcase></testsuite><testsuite tests="1" errors="0" failures="1"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="3.104"><failure>Assert status code
+   --&gt; /Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl:35:6
+    |
+    | POST {{placer_url}}/api/actions/create-task
+    | ...
+ 35 | HTTP 201
+    |      ^^^ actual value is &lt;409&gt;
+    |</failure></testcase></testsuite><testsuite tests="1" errors="0" failures="1"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="0.021"><failure>Assert status code
+  --&gt; /Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl:20:6
+   |
+   | POST {{placer_url}}/api/actions/create-task
+   | ...
+20 | HTTP 201
+   |      ^^^ actual value is &lt;409&gt;
+   |</failure></testcase></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="0.036" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="0.050" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/06-workflow.hurl" time="0.055" /></testsuite></testsuites>

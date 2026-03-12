@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?><testsuites><testsuite tests="1" errors="0" failures="1"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.006"><failure>Assert status code
+   --&gt; /Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl:17:6
+    |
+    | POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
+    | ...
+ 17 | HTTP 200
+    |      ^^^ actual value is &lt;400&gt;
+    |</failure></testcase></testsuite><testsuite tests="1" errors="0" failures="1"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.076"><failure>Assert status code
+   --&gt; /Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl:129:6
+    |
+    | POST {{fulfiller_url}}/api/actions/scoped-token
+    | ...
+129 | HTTP 200
+    |      ^^^ actual value is &lt;500&gt;
+    |</failure></testcase></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.042" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.064" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.038" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.038" /></testsuite><testsuite tests="1" errors="0" failures="0"><testcase id="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" name="/Users/andreasahlm/Projects/UMZH/Repo/umzhconnect-sandbox/tests/scripts/../hurl/05-cross-party-consent.hurl" time="0.058" /></testsuite></testsuites>
