@@ -8,4 +8,5 @@ postgres_data/
 web-app/node_modules/
 web-app/dist/
 .claude/settings.local.json
+tests/reports/
 
