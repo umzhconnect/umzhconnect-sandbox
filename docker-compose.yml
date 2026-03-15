@@ -146,7 +146,7 @@ services:
   #   /api/policy/check       -> opa-placer:8181
   # ===========================================================================
   krakend-placer:
-    image: devopsfaith/krakend:2.7
+    image: krakend:2.13.2
     container_name: umzh-krakend-placer
     volumes:
       - ./services/krakend-placer:/etc/krakend
@@ -179,7 +179,7 @@ services:
   #   /fhir/Task              -> HAPI /fhir/placer/Task (POST — fulfiller creates task)
   # ===========================================================================
   krakend-placer-external:
-    image: devopsfaith/krakend:2.7
+    image: krakend:2.13.2
     container_name: umzh-krakend-placer-external
     volumes:
       - ./services/krakend-placer-external:/etc/krakend
@@ -208,7 +208,7 @@ services:
   #   /api/policy/check       -> opa-fulfiller:8181
   # ===========================================================================
   krakend-fulfiller:
-    image: devopsfaith/krakend:2.7
+    image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller
     volumes:
       - ./services/krakend-fulfiller:/etc/krakend
@@ -241,7 +241,7 @@ services:
   #   /fhir/Task              -> HAPI /fhir/fulfiller/Task (GET — placer reads tasks)
   # ===========================================================================
   krakend-fulfiller-external:
-    image: devopsfaith/krakend:2.7
+    image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller-external
     volumes:
       - ./services/krakend-fulfiller-external:/etc/krakend
