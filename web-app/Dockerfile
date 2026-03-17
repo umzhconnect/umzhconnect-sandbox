@@ -7,8 +7,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+ARG NPM_FLAGS=""
 COPY package.json ./
-RUN npm install
+RUN npm install ${NPM_FLAGS}
 
 COPY . .
 RUN npm run build
