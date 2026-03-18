@@ -189,6 +189,7 @@ check_resource "placer"    "Consent"        "ConsentOrthopedicReferral"
 # Fulfiller partition
 check_resource "fulfiller" "Organization"   "fulfiller-HospitalP"
 check_resource "fulfiller" "Organization"   "fulfiller-HospitalF"
+check_resource "fulfiller" "Task"           "TaskOrthopedicReferral"
 
 # Organizations — both partitions carry both orgs (partition-prefixed IDs)
 check_resource "placer"    "Organization"   "placer-HospitalP"

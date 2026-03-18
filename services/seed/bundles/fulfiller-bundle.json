@@ -56,6 +56,67 @@
       }
     },
     {
+      "fullUrl": "urn:uuid:task-ortho",
+      "resource": {
+        "resourceType": "Task",
+        "id": "TaskOrthopedicReferral",
+        "meta": {
+          "profile": ["http://fhir.ch/ig/ch-umzh-connect/StructureDefinition/ch-umzh-connect-task"]
+        },
+        "status": "requested",
+        "intent": "order",
+        "authoredOn": "2025-12-15T11:00:00+01:00",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "3457005",
+              "display": "Patient referral"
+            }
+          ],
+          "text": "Orthopedic surgery evaluation — ACL rupture"
+        },
+        "basedOn": [
+          {
+            "reference": "__PLACER_EXTERNAL_URL__/fhir/ServiceRequest/ReferralOrthopedicSurgery"
+          }
+        ],
+        "focus": {
+          "reference": "__PLACER_EXTERNAL_URL__/fhir/ServiceRequest/ReferralOrthopedicSurgery"
+        },
+        "for": {
+          "display": "Petra Meier",
+          "reference": "__PLACER_EXTERNAL_URL__/fhir/Patient/PetraMeier"
+        },
+        "requester": {
+          "reference": "__PLACER_EXTERNAL_URL__/fhir/PractitionerRole/HansMusterRole"
+        },
+        "owner": {
+          "reference": "Organization/fulfiller-HospitalF"
+        },
+        "input": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                  "code": "IRCP",
+                  "display": "information recipient"
+                }
+              ]
+            },
+            "valueReference": {
+              "reference": "__PLACER_EXTERNAL_URL__/fhir/Consent/ConsentOrthopedicReferral"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Task/TaskOrthopedicReferral"
+      }
+    },
+    {
       "resource": {
         "resourceType": "Organization",
         "id": "fulfiller-HospitalF",

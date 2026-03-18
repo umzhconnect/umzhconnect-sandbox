@@ -182,10 +182,8 @@
           "encoding": "json",
           "extra_config": {
             "modifier/lua-backend": {
-              "sources": ["lua/proxy_inject_token.lua", "lua/proxy_rewrite.lua"],
-              "allow_open_libs": true,
-              "pre": "inject_token(request)",
-              "post": "rewriteUrls()"
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
             }
           }
         }
@@ -202,6 +200,11 @@
         },
         "proxy": {
           "sequential": true
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_response.lua"],
+          "allow_open_libs": true,
+          "post": "post_proxy(response)"
         }
       }
     },
@@ -233,10 +236,8 @@
           "encoding": "json",
           "extra_config": {
             "modifier/lua-backend": {
-              "sources": ["lua/proxy_inject_token.lua", "lua/proxy_rewrite.lua"],
-              "allow_open_libs": true,
-              "pre": "inject_token(request)",
-              "post": "rewriteUrls()"
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
             }
           }
         }
@@ -253,38 +254,11 @@
         },
         "proxy": {
           "sequential": true
-        }
-      }
-    },
-    {
-      "comment": "=== Scoped Token — exchanges X-Consent-Id for a service-account JWT that carries consent:<id> in scope ===",
-      "endpoint": "/api/actions/scoped-token",
-      "method": "POST",
-      "input_headers": ["Authorization", "X-Consent-Id"],
-      "output_encoding": "no-op",
-      "backend": [
-        {
-          "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
-          "host": ["{{ env "KEYCLOAK_URL" }}"],
-          "encoding": "no-op",
-          "method": "POST",
-          "extra_config": {
-            "modifier/lua-backend": {
-              "sources": ["lua/scoped_token.lua"],
-              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
-            }
-          }
-        }
-      ],
-      "extra_config": {
-        "auth/validator": {
-          "alg": "RS256",
-          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
-          "issuer": "http://localhost:8180/realms/umzh-connect",
-          "disable_jwk_security": true,
-          "cache": true,
-          "roles_key": "realm_roles",
-          "roles": ["{{ env "PARTY" }}"]
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_response.lua"],
+          "allow_open_libs": true,
+          "post": "post_proxy(response)"
         }
       }
     },
@@ -316,10 +290,8 @@
           "encoding": "json",
           "extra_config": {
             "modifier/lua-backend": {
-              "sources": ["lua/proxy_inject_token.lua", "lua/proxy_rewrite_json.lua"],
-              "allow_open_libs": true,
-              "pre": "inject_token(request)",
-              "post": "rewriteUrlsInJson()"
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
             }
           }
         }
@@ -336,6 +308,11 @@
         },
         "proxy": {
           "sequential": true
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_response.lua"],
+          "allow_open_libs": true,
+          "post": "post_proxy(response)"
         }
       }
     },
@@ -376,10 +353,8 @@
           "group": "remote",
           "extra_config": {
             "modifier/lua-backend": {
-              "sources": ["lua/proxy_inject_token.lua", "lua/proxy_rewrite_json.lua"],
-              "allow_open_libs": true,
-              "pre": "inject_token(request)",
-              "post": "rewriteUrlsInJson()"
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
             }
           }
         }
@@ -398,8 +373,9 @@
           "sequential": true
         },
         "modifier/lua-proxy": {
-          "sources": ["lua/strip_token_exchange.lua"],
-          "post": "strip_token_exchange(response)"
+          "sources": ["lua/proxy_response.lua"],
+          "allow_open_libs": true,
+          "post": "post_proxy(response)"
         }
       }
     },
