@@ -33,6 +33,12 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [Auth Mechanism — Internal vs External APIs](#auth-mechanism--internal-vs-external-apis)
   - [Collection Structure](#collection-structure)
   - [Running Requests](#running-requests)
+- [Testing](#testing)
+  - [Test Framework](#test-framework)
+  - [Test Suite Overview](#test-suite-overview)
+  - [Running the Tests](#running-the-tests)
+  - [How the Runner Works](#how-the-runner-works)
+  - [Reports](#reports)
 - [Development](#development)
 - [Project Structure](#project-structure)
 
@@ -1261,6 +1267,133 @@ Always run the auth requests first in the same session before making API calls. 
 | `fulfillerUrl` | `http://localhost:8082` | Fulfiller internal gateway |
 | `fulfillerExternalUrl` | `http://localhost:8083` | Fulfiller external gateway |
 | `consentId` | `ConsentOrthopedicReferral` | Consent ID used when requesting scoped party tokens |
+
+---
+
+## Testing
+
+### Test Framework
+
+The integration tests use **[Hurl](https://hurl.dev)** — a plain-text HTTP testing tool that executes sequences of requests with assertions, captures, and variable interpolation. Each `.hurl` file is self-describing and can be read like a test script without any test framework knowledge.
+
+**Install Hurl:**
+
+```bash
+# macOS
+brew install hurl
+
+# Linux
+curl -LO https://github.com/Orange-OpenSource/hurl/releases/latest/download/hurl-x.y.z-x86_64-linux.tar.gz
+# (or use the installer from https://hurl.dev/docs/installation.html)
+
+# Verify
+hurl --version
+```
+
+---
+
+### Test Suite Overview
+
+Seven test files in `tests/hurl/`, run in numeric order:
+
+| File | What it tests |
+|---|---|
+| `01-health.hurl` | All service health endpoints respond — smoke test for the full stack |
+| `02-auth.hurl` | Keycloak token acquisition for all client types (M2M + user password grant) |
+| `03-fhir-crud.hurl` | FHIR read and search operations on both internal gateways |
+| `04-security-negative.hurl` | JWT enforcement — missing/invalid tokens must return 401; partition isolation |
+| `05-cross-party-consent.hurl` | Fulfiller reads Placer data through the external gateway with a consent-scoped token; both consent scenarios |
+| `06-workflow.hurl` | End-to-end clinical order workflow: create Task at Fulfiller → read via proxy → update status |
+| `07-storage.hurl` | FHIR write operations and partition isolation verification |
+
+---
+
+### Running the Tests
+
+Ensure all services are running first (`docker compose up -d`), then:
+
+```bash
+# Run the full suite
+./tests/scripts/run-tests.sh
+
+# Run a single file manually
+hurl --test \
+  --variable "placer_url=http://localhost:8080" \
+  --variable "placer_token=<token>" \
+  tests/hurl/01-health.hurl
+```
+
+**Expected output:**
+```
+=============================================
+ UMZH Connect Sandbox — Integration Tests
+=============================================
+=== Waiting for services ===
+  Waiting for Keycloak...              OK (0s)
+  Waiting for HAPI FHIR...             OK (0s)
+  ...
+=== All tokens acquired ===
+
+--- Running: 01-health ---
+--- Running: 02-auth ---
+...
+=============================================
+ Results: 7/7 passed, 0 failed
+=============================================
+```
+
+---
+
+### How the Runner Works
+
+`tests/scripts/run-tests.sh` orchestrates three steps:
+
+**1. Wait for services** (`wait-for-services.sh`)
+
+Polls all service health endpoints with a configurable timeout (default 120 s, `MAX_WAIT` env var). Fails fast if any service is unreachable.
+
+**2. Acquire tokens** (`get-token.sh`)
+
+Fetches five tokens from Keycloak before any test runs — all are injected as Hurl variables so individual test files do not contain credentials:
+
+| Variable | Grant type | Client / User | Scope |
+|---|---|---|---|
+| `placer_token` | `client_credentials` | `placer-client` | SMART scopes (no consent) |
+| `fulfiller_token` | `client_credentials` | `fulfiller-client` | SMART scopes (no consent) |
+| `fulfiller_consent_token` | `client_credentials` | `fulfiller-client` | SMART + `consent:ConsentOrthopedicReferral` |
+| `placer_user_token` | `password` | `placer-user` / `web-app` | SMART scopes |
+| `fulfiller_user_token` | `password` | `fulfiller-user` / `web-app` | SMART scopes |
+
+**3. Run each Hurl file**
+
+Each file is executed with `hurl --test`, injecting all URL variables and tokens. Results are written as JUnit XML to `tests/reports/`. The runner tracks pass/fail counts and exits with a non-zero code if any file fails — suitable for use in CI pipelines.
+
+**Environment variable overrides** (useful in CI or Docker-based runs):
+
+| Variable | Default | Description |
+|---|---|---|
+| `KEYCLOAK_URL` | `http://localhost:8180` | Keycloak base URL |
+| `KRAKEND_PLACER_URL` | `http://localhost:8080` | Placer internal gateway |
+| `KRAKEND_PLACER_EXT_URL` | `http://localhost:8081` | Placer external gateway |
+| `KRAKEND_FULFILLER_URL` | `http://localhost:8082` | Fulfiller internal gateway |
+| `KRAKEND_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
+| `HAPI_FHIR_URL` | `http://localhost:8090` | HAPI FHIR direct access |
+| `OPA_PLACER_URL` | `http://localhost:8181` | OPA Placer |
+| `OPA_FULFILLER_URL` | `http://localhost:8182` | OPA Fulfiller |
+| `MAX_WAIT` | `120` | Max seconds to wait for services before timing out |
+
+---
+
+### Reports
+
+JUnit XML reports are written to `tests/reports/` after each run (one file per `.hurl` file). The directory is gitignored — only a `.gitkeep` placeholder is tracked.
+
+```bash
+# View a report summary (requires xmllint or a JUnit viewer)
+cat tests/reports/05-cross-party-consent.xml
+```
+
+Reports can be consumed directly by CI systems (GitHub Actions, Jenkins, GitLab CI) as JUnit test results.
 
 ---
 
