@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.krakend.io/schema/krakend.json",
   "version": 3,
-  "name": "UMZH Connect — HospitalP (Placer) External API Gateway",
+  "name": "UMZH Connect — {{ env "GATEWAY_NAME" }} API Gateway",
   "port": 8080,
   "timeout": "30s",
   "cache_ttl": "0s",
@@ -12,7 +12,7 @@
     },
     "security/cors": {
       "allow_origins": ["http://localhost:3000", "*"],
-      "allow_methods": ["GET", "POST", "OPTIONS"],
+      "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       "allow_headers": ["Authorization", "Content-Type", "Accept", "X-Consent-Id"],
       "expose_headers": ["Content-Length", "Content-Type"],
       "max_age": "12h",
@@ -20,9 +20,8 @@
     }
   },
   "endpoints": [
-
     {
-      "comment": "=== External FHIR API — Fulfiller reads Placer data (consent-gated) ===",
+      "comment": "=== External FHIR API — partner reads data (consent-gated) ===",
       "endpoint": "/fhir/{resource}",
       "method": "GET",
       "input_headers": ["Authorization", "Content-Type", "Accept", "X-Consent-Id"],
@@ -30,22 +29,22 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/placer/{resource}",
-          "host": ["http://nginx-proxy:81"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
           "propagate_claims": [
             ["party_id", "x-party-id"],
             ["smart_scopes", "x-smart-scopes"],
-            ["tenant", "x-tenant"],
+            {{ if eq (env "PARTY") "placer" }}["tenant", "x-tenant"],{{ end }}
             ["scope", "x-scope"],
             ["consent_id", "x-consent-id"]
           ]
@@ -59,46 +58,45 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/placer/{resource}/{id}",
-          "host": ["http://nginx-proxy:81"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}/{id}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
           "propagate_claims": [
             ["party_id", "x-party-id"],
             ["smart_scopes", "x-smart-scopes"],
-            ["tenant", "x-tenant"],
+            {{ if eq (env "PARTY") "placer" }}["tenant", "x-tenant"],{{ end }}
             ["scope", "x-scope"],
             ["consent_id", "x-consent-id"]
           ]
         }
       }
     },
-
     {
-      "comment": "=== External FHIR API — Fulfiller creates Task at Placer ===",
+      "comment": "=== External FHIR API — partner creates Task ===",
       "endpoint": "/fhir/Task",
       "method": "POST",
       "input_headers": ["Authorization", "Content-Type", "Accept"],
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/placer/Task",
-          "host": ["http://nginx-proxy:81"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/Task",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
@@ -110,6 +108,35 @@
         }
       }
     }
-
+    {{ if eq (env "PARTY") "fulfiller" }}
+    ,{
+      "comment": "=== External FHIR API — partner updates Task status ===",
+      "endpoint": "/fhir/Task/{id}",
+      "method": "PUT",
+      "input_headers": ["Authorization", "Content-Type", "Accept"],
+      "output_encoding": "no-op",
+      "backend": [
+        {
+          "url_pattern": "/fhir/{{ env "PARTY" }}/Task/{id}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
+          "encoding": "no-op"
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-connect",
+          "disable_jwk_security": true,
+          "cache": true,
+          "propagate_claims": [
+            ["party_id", "x-party-id"],
+            ["smart_scopes", "x-smart-scopes"],
+            ["scope", "x-scope"]
+          ]
+        }
+      }
+    }
+    {{ end }}
   ]
 }

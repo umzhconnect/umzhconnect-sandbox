@@ -1,0 +1,16 @@
+meta {
+  name: All Tasks (local + remote merged)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{fulfillerUrl}}/api/actions/all-tasks
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}

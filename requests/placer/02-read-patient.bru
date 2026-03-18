@@ -1,0 +1,16 @@
+meta {
+  name: Read Patient (own partition)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{placerUrl}}/fhir/Patient/PetraMeier
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}

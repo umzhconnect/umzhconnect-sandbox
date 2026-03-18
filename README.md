@@ -28,6 +28,17 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [Seed Data](#seed-data)
   - [Web Application](#web-application)
 - [Usage Guide](#usage-guide)
+- [Bruno API Collection](#bruno-api-collection)
+  - [Setup](#setup)
+  - [Auth Mechanism — Internal vs External APIs](#auth-mechanism--internal-vs-external-apis)
+  - [Collection Structure](#collection-structure)
+  - [Running Requests](#running-requests)
+- [Testing](#testing)
+  - [Test Framework](#test-framework)
+  - [Test Suite Overview](#test-suite-overview)
+  - [Running the Tests](#running-the-tests)
+  - [How the Runner Works](#how-the-runner-works)
+  - [Reports](#reports)
 - [Development](#development)
 - [Project Structure](#project-structure)
 
@@ -761,11 +772,12 @@ In the **Credentials tab**, enter an optional Consent ID before requesting a tok
 
 ### KrakenD API Gateways
 
-**Configs:**
-- `services/krakend-placer/krakend.json` (internal, port 8080)
-- `services/krakend-placer-external/krakend.json` (external, port 8081)
-- `services/krakend-fulfiller/krakend.json` (internal, port 8082)
-- `services/krakend-fulfiller-external/krakend.json` (external, port 8083)
+**Configs:** All four gateways share a single directory using [KrakenD Flexible Configuration](https://www.krakend.io/docs/configuration/flexible-config/) — Go templates rendered at container startup from environment variables:
+- `services/krakend/krakend-internal-gateway.tmpl` — used by `krakend-placer` and `krakend-fulfiller`
+- `services/krakend/krakend-external-gateway.tmpl` — used by `krakend-placer-external` and `krakend-fulfiller-external`
+- `services/krakend/lua/` — shared Lua scripts for token exchange and URL rewriting
+
+> **Sandbox note — network addressing:** All inter-service communication (gateway → Keycloak, gateway → partner external gateway) uses Docker Compose service names (e.g. `keycloak:8080`, `krakend-fulfiller-external:8080`) rather than `localhost` ports. This is intentional: inside a Docker container `localhost` refers to the container itself, not the host machine, so Docker DNS is the correct addressing mechanism within the shared `umzh-net` network. In a real deployment each party would run on a separate host and these hostnames would be replaced with public DNS names.
 
 All four gateways use the same JWT validation configuration:
 
@@ -778,6 +790,8 @@ All four gateways use the same JWT validation configuration:
   "cache": true
 }
 ```
+
+Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from within the container network), while `issuer` uses `localhost:8180` — the URL that appears in the `iss` claim of JWTs issued by Keycloak in response to browser-initiated flows.
 
 #### Full Endpoint Reference — Placer Internal Gateway (`:8080`)
 
@@ -1075,6 +1089,311 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
     }
   }' | jq '.result | {allow, consent_id, reason}'
 ```
+
+---
+
+## Bruno API Collection
+
+The `requests/` directory contains a [Bruno](https://www.usebruno.com) collection covering every API endpoint in the sandbox. Bruno is an open-source, Git-native API client — collections are plain `.bru` text files and require no account or cloud sync.
+
+### Setup
+
+**VS Code extension**
+1. Install the **Bruno** extension (search `Bruno` in the VS Code marketplace)
+2. Click the Bruno icon in the Activity Bar → **Open Collection** → select `requests/`
+3. In the collection panel, select the **local** environment from the environment dropdown
+
+**Desktop app**
+1. Download from [usebruno.com](https://www.usebruno.com) and open
+2. Click **Open Collection** → select `requests/`
+3. Select **local** from the environment dropdown in the top-right
+
+**CLI (for scripting / CI)**
+```bash
+npm install -g @usebruno/cli
+
+# Run a single request
+bru run requests/auth/get-admin-token.bru --env local
+
+# Run the entire collection in sequence
+bru run requests/ --env local --recursive
+```
+
+> **Note:** Auth tokens are stored as runtime variables (`bru.setVar`) and are session-scoped. Always run the three auth requests before making API calls. When running via the CLI, execute the `auth/` folder first or use `--recursive` to run the full collection in sequence.
+
+---
+
+### Auth Mechanism — Internal vs External APIs
+
+The sandbox uses two distinct token models, reflecting how real-world deployments separate intra-hospital access from inter-hospital access.
+
+#### Internal gateways — role-based access (`adminToken`)
+
+| Gateway | Port | Keycloak grant | Client | Required role |
+|---|---|---|---|---|
+| krakend-placer | 8080 | `password` | `web-app` | `placer` |
+| krakend-fulfiller | 8082 | `password` | `web-app` | `fulfiller` |
+
+Internal gateways represent access from within the hospital (e.g. a clinical web application or admin tool). They validate JWT signatures and check that the token carries the correct **realm role** — `placer` for the Placer gateway, `fulfiller` for the Fulfiller gateway. No SMART scopes or consent claims are required.
+
+The `admin-user` account holds both `placer` and `fulfiller` roles, making it suitable for exercising all internal endpoints in the sandbox.
+
+```
+Web app / admin tool
+        │
+        │  POST /token  grant_type=password  client=web-app
+        ▼
+    Keycloak ──────► JWT with realm_roles: ["placer", "fulfiller", "admin"]
+        │
+        │  Authorization: Bearer <adminToken>
+        ▼
+krakend-placer :8080  (validates role == "placer")
+krakend-fulfiller :8082  (validates role == "fulfiller")
+```
+
+`get-admin-token.bru` fetches this token and stores it as `{{adminToken}}`.
+
+#### External gateways — SMART scopes + consent (`placerToken` / `fulfillerToken`)
+
+| Gateway | Port | Keycloak grant | Client | Validated by |
+|---|---|---|---|---|
+| krakend-placer-external | 8081 | `client_credentials` | `fulfiller-client` | OPA (party + scope + consent) |
+| krakend-fulfiller-external | 8083 | `client_credentials` | `placer-client` | OPA (party + scope + consent) |
+
+External gateways represent access from a **partner hospital**. They validate the JWT and then forward token claims (`party_id`, `smart_scopes`, `scope`) to OPA for policy evaluation. OPA enforces:
+
+- **Party check**: the token's `party_id` must match the expected partner (e.g. `hospitalp` calling the Fulfiller external gateway)
+- **SMART scope check**: token must carry the required system-level SMART scope (e.g. `system/Patient.r`)
+- **Consent check**: for Patient and ServiceRequest resources the token's `scope` must carry `consent:<id>` matching a valid Consent resource; Task resources are exempt
+
+```
+Partner hospital system
+        │
+        │  POST /token  grant_type=client_credentials  client=placer-client
+        ▼
+    Keycloak ──────► JWT with party_id, smart_scopes, scope=consent:<id>
+        │
+        │  Authorization: Bearer <placerToken>
+        ▼
+krakend-fulfiller-external :8083
+        │  forwards token claims as X-* headers
+        ▼
+      OPA  ──────► allow / deny based on party + scopes + consent
+        │
+        ▼
+   HAPI FHIR (fulfiller partition)
+```
+
+`get-placer-token.bru` and `get-fulfiller-token.bru` fetch these tokens using the consent ID from `{{consentId}}` (default: `ConsentOrthopedicReferral`) and store them as `{{placerToken}}` and `{{fulfillerToken}}`.
+
+#### Cross-domain calls — automatic M2M token exchange
+
+For internal endpoints that call the partner's external gateway (`/proxy/fhir/*`, `/api/actions/create-task`, `/api/actions/all-tasks`), the internal gateway performs a silent **M2M token exchange** on behalf of the caller:
+
+```
+Web app  ──►  krakend-placer :8080  (validates adminToken, role=placer)
+                     │
+                     │  POST /token  grant_type=client_credentials
+                     ▼
+                 Keycloak  ──► M2M JWT (placer-client + consent scope)
+                     │
+                     │  Authorization: Bearer <m2mToken>  (injected via Lua)
+                     ▼
+          krakend-fulfiller-external :8083  (OPA: party + scopes + consent)
+```
+
+The caller only ever sends `adminToken`. The gateway handles obtaining and injecting the correct M2M credential automatically.
+
+---
+
+### Collection Structure
+
+```
+requests/
+├── auth/
+│   ├── get-placer-token.bru       Fetches M2M token for placer-client (→ {{placerToken}})
+│   ├── get-fulfiller-token.bru    Fetches M2M token for fulfiller-client (→ {{fulfillerToken}})
+│   └── get-admin-token.bru        Fetches user token for admin-user (→ {{adminToken}})
+│
+├── placer/                         All calls to krakend-placer :8080 — requires {{adminToken}}
+│   ├── 01-metadata.bru            FHIR /metadata (no auth)
+│   ├── 02-read-patient.bru        Read own Patient resource
+│   ├── 03-read-service-requests.bru  Read own ServiceRequests
+│   ├── 04-read-tasks.bru          Read own Tasks
+│   ├── 05-create-task-at-fulfiller.bru  Create Task at Fulfiller via /api/actions/create-task
+│   ├── 06-all-tasks.bru           Fetch merged Task list (local + remote) via /api/actions/all-tasks
+│   ├── 07-proxy-read-fulfiller-tasks.bru  Read Fulfiller Tasks via /proxy/fhir/* (consent-gated)
+│   └── 08-policy-check.bru        Direct OPA policy evaluation via /api/policy/check
+│
+├── fulfiller/                      All calls to krakend-fulfiller :8082 — requires {{adminToken}}
+│   ├── 01-read-tasks.bru          Read own Tasks
+│   ├── 02-proxy-read-placer-patient.bru  Read Placer Patient via /proxy/fhir/* (consent-gated)
+│   └── 03-all-tasks.bru           Fetch merged Task list (local + remote)
+│
+├── external/                       Direct calls to external gateways — requires party token
+│   ├── 01-placer-external-read-patient.bru   Fulfiller reads Placer Patient (→ {{fulfillerToken}})
+│   ├── 02-fulfiller-external-read-tasks.bru  Placer reads Fulfiller Tasks (→ {{placerToken}})
+│   └── 03-fulfiller-external-create-task.bru Placer creates Task at Fulfiller (→ {{placerToken}})
+│
+└── environments/
+    └── local.bru                  Base URLs + consentId for local Docker Compose setup
+```
+
+---
+
+### Running Requests
+
+#### Recommended sequence
+
+Always run the auth requests first in the same session before making API calls. Tokens are short-lived (5 minutes by default) and must be refreshed by re-running the auth requests.
+
+```
+1. auth/get-placer-token       → sets {{placerToken}}
+2. auth/get-fulfiller-token    → sets {{fulfillerToken}}
+3. auth/get-admin-token        → sets {{adminToken}}
+
+4. placer/*                    → use {{adminToken}}
+5. fulfiller/*                 → use {{adminToken}}
+6. external/*                  → use {{placerToken}} or {{fulfillerToken}}
+```
+
+#### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `keycloakUrl` | `http://localhost:8180` | Keycloak base URL |
+| `placerUrl` | `http://localhost:8080` | Placer internal gateway |
+| `placerExternalUrl` | `http://localhost:8081` | Placer external gateway |
+| `fulfillerUrl` | `http://localhost:8082` | Fulfiller internal gateway |
+| `fulfillerExternalUrl` | `http://localhost:8083` | Fulfiller external gateway |
+| `consentId` | `ConsentOrthopedicReferral` | Consent ID used when requesting scoped party tokens |
+
+---
+
+## Testing
+
+### Test Framework
+
+The integration tests use **[Hurl](https://hurl.dev)** — a plain-text HTTP testing tool that executes sequences of requests with assertions, captures, and variable interpolation. Each `.hurl` file is self-describing and can be read like a test script without any test framework knowledge.
+
+**Install Hurl:**
+
+```bash
+# macOS
+brew install hurl
+
+# Linux
+curl -LO https://github.com/Orange-OpenSource/hurl/releases/latest/download/hurl-x.y.z-x86_64-linux.tar.gz
+# (or use the installer from https://hurl.dev/docs/installation.html)
+
+# Verify
+hurl --version
+```
+
+---
+
+### Test Suite Overview
+
+Seven test files in `tests/hurl/`, run in numeric order:
+
+| File | What it tests |
+|---|---|
+| `01-health.hurl` | All service health endpoints respond — smoke test for the full stack |
+| `02-auth.hurl` | Keycloak token acquisition for all client types (M2M + user password grant) |
+| `03-fhir-crud.hurl` | FHIR read and search operations on both internal gateways |
+| `04-security-negative.hurl` | JWT enforcement — missing/invalid tokens must return 401; partition isolation |
+| `05-cross-party-consent.hurl` | Fulfiller reads Placer data through the external gateway with a consent-scoped token; both consent scenarios |
+| `06-workflow.hurl` | End-to-end clinical order workflow: create Task at Fulfiller → read via proxy → update status |
+| `07-storage.hurl` | FHIR write operations and partition isolation verification |
+
+---
+
+### Running the Tests
+
+Ensure all services are running first (`docker compose up -d`), then:
+
+```bash
+# Run the full suite
+./tests/scripts/run-tests.sh
+
+# Run a single file manually
+hurl --test \
+  --variable "placer_url=http://localhost:8080" \
+  --variable "placer_token=<token>" \
+  tests/hurl/01-health.hurl
+```
+
+**Expected output:**
+```
+=============================================
+ UMZH Connect Sandbox — Integration Tests
+=============================================
+=== Waiting for services ===
+  Waiting for Keycloak...              OK (0s)
+  Waiting for HAPI FHIR...             OK (0s)
+  ...
+=== All tokens acquired ===
+
+--- Running: 01-health ---
+--- Running: 02-auth ---
+...
+=============================================
+ Results: 7/7 passed, 0 failed
+=============================================
+```
+
+---
+
+### How the Runner Works
+
+`tests/scripts/run-tests.sh` orchestrates three steps:
+
+**1. Wait for services** (`wait-for-services.sh`)
+
+Polls all service health endpoints with a configurable timeout (default 120 s, `MAX_WAIT` env var). Fails fast if any service is unreachable.
+
+**2. Acquire tokens** (`get-token.sh`)
+
+Fetches five tokens from Keycloak before any test runs — all are injected as Hurl variables so individual test files do not contain credentials:
+
+| Variable | Grant type | Client / User | Scope |
+|---|---|---|---|
+| `placer_token` | `client_credentials` | `placer-client` | SMART scopes (no consent) |
+| `fulfiller_token` | `client_credentials` | `fulfiller-client` | SMART scopes (no consent) |
+| `fulfiller_consent_token` | `client_credentials` | `fulfiller-client` | SMART + `consent:ConsentOrthopedicReferral` |
+| `placer_user_token` | `password` | `placer-user` / `web-app` | SMART scopes |
+| `fulfiller_user_token` | `password` | `fulfiller-user` / `web-app` | SMART scopes |
+
+**3. Run each Hurl file**
+
+Each file is executed with `hurl --test`, injecting all URL variables and tokens. Results are written as JUnit XML to `tests/reports/`. The runner tracks pass/fail counts and exits with a non-zero code if any file fails — suitable for use in CI pipelines.
+
+**Environment variable overrides** (useful in CI or Docker-based runs):
+
+| Variable | Default | Description |
+|---|---|---|
+| `KEYCLOAK_URL` | `http://localhost:8180` | Keycloak base URL |
+| `KRAKEND_PLACER_URL` | `http://localhost:8080` | Placer internal gateway |
+| `KRAKEND_PLACER_EXT_URL` | `http://localhost:8081` | Placer external gateway |
+| `KRAKEND_FULFILLER_URL` | `http://localhost:8082` | Fulfiller internal gateway |
+| `KRAKEND_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
+| `HAPI_FHIR_URL` | `http://localhost:8090` | HAPI FHIR direct access |
+| `OPA_PLACER_URL` | `http://localhost:8181` | OPA Placer |
+| `OPA_FULFILLER_URL` | `http://localhost:8182` | OPA Fulfiller |
+| `MAX_WAIT` | `120` | Max seconds to wait for services before timing out |
+
+---
+
+### Reports
+
+JUnit XML reports are written to `tests/reports/` after each run (one file per `.hurl` file). The directory is gitignored — only a `.gitkeep` placeholder is tracked.
+
+```bash
+# View a report summary (requires xmllint or a JUnit viewer)
+cat tests/reports/05-cross-party-consent.xml
+```
+
+Reports can be consumed directly by CI systems (GitHub Actions, Jenkins, GitLab CI) as JUnit test results.
 
 ---
 

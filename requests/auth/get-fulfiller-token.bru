@@ -1,0 +1,22 @@
+meta {
+  name: Get Fulfiller Token
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{keycloakUrl}}/realms/umzh-connect/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  client_id: fulfiller-client
+  client_secret: fulfiller-secret-2025
+  scope: openid consent:{{consentId}}
+}
+
+script:post-response {
+  bru.setVar("fulfillerToken", res.getBody().access_token);
+}

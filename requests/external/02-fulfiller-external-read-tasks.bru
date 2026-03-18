@@ -1,0 +1,24 @@
+meta {
+  name: Fulfiller External — Read Tasks (as Placer)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{fulfillerExternalUrl}}/fhir/Task
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{placerToken}}
+  Accept: application/fhir+json
+}
+
+docs {
+  Simulates the Placer calling the Fulfiller's external gateway directly.
+  JWT is validated by krakend-fulfiller-external. Claims party_id, smart_scopes
+  and scope are propagated as X-* headers to the backend.
+
+  Run "Get Placer Token" first.
+}

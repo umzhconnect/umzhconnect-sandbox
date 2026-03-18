@@ -1,0 +1,43 @@
+# =============================================================================
+# Test Runner — extends the main docker-compose.yml
+#
+# Usage (CI):
+#   docker compose -f docker-compose.yml -f tests/docker-compose.test.yml up \
+#     --build --abort-on-container-exit --exit-code-from test-runner
+#
+# The test-runner service waits for all services, acquires tokens, and runs
+# every Hurl test file in sequence. Exit code 0 = all passed, 1 = failures.
+# =============================================================================
+
+services:
+  test-runner:
+    image: ghcr.io/orange-opensource/hurl:6.0.0
+    container_name: umzh-test-runner
+    working_dir: /tests
+    volumes:
+      - ./tests:/tests:ro
+    entrypoint: ["/bin/sh", "/tests/scripts/run-tests.sh"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ISSUER: http://localhost:8180/realms/umzh-connect
+      KRAKEND_PLACER_URL: http://krakend-placer:8080
+      KRAKEND_PLACER_EXT_URL: http://krakend-placer-external:8080
+      KRAKEND_FULFILLER_URL: http://krakend-fulfiller:8080
+      KRAKEND_FULFILLER_EXT_URL: http://krakend-fulfiller-external:8080
+      HAPI_FHIR_URL: http://hapi-fhir:8080
+      OPA_PLACER_URL: http://opa-placer:8181
+      OPA_FULFILLER_URL: http://opa-fulfiller:8181
+      RESEED_API_URL: http://reseed-api:9001
+    depends_on:
+      krakend-placer:
+        condition: service_healthy
+      krakend-fulfiller:
+        condition: service_healthy
+      krakend-placer-external:
+        condition: service_healthy
+      krakend-fulfiller-external:
+        condition: service_healthy
+      seed-loader:
+        condition: service_completed_successfully
+    networks:
+      - umzh-net
