@@ -1,0 +1,23 @@
+meta {
+  name: Get Admin User Token
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{keycloakUrl}}/realms/umzh-connect/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: password
+  client_id: web-app
+  username: admin-user
+  password: admin123
+  scope: openid
+}
+
+script:post-response {
+  bru.setVar("adminToken", res.getBody().access_token);
+}

@@ -81,11 +81,10 @@ services:
       - umzh-net
 
   # ===========================================================================
-  # nginx-proxy — nginx reverse/rewriting proxy serving two roles:
-  #   Ports 80–83: proxy in front of HAPI FHIR, rewrites partition self-links
-  #                to the correct KrakenD gateway base URL.
-  #   Ports 84–85: proxy in front of external KrakenD gateways, rewrites the
-  #                partner's self-links to the calling party's /proxy/fhir/ path.
+  # nginx-proxy — nginx reverse/rewriting proxy in front of HAPI FHIR.
+  #   Ports 80–83: rewrites partition self-links to the correct KrakenD
+  #                gateway base URL.
+  #   (URL rewriting for cross-party proxy responses is handled by KrakenD Lua.)
   # ===========================================================================
   nginx-proxy:
     image: nginx:alpine
@@ -139,17 +138,33 @@ services:
       - umzh-net
 
   # ===========================================================================
-  # KrakenD - Internal API Gateway for HospitalP (Placer)  port 8080
-  #   /fhir/{resource}        -> HAPI /fhir/placer/* (placer reads own data)
-  #   /proxy/fhir/{resource}  -> HAPI /fhir/fulfiller/* (placer reads fulfiller data)
-  #   /api/actions/*          -> composite actions (create-referral, create-task, all-tasks)
-  #   /api/policy/check       -> opa-placer:8181
+  # KrakenD API Gateways
+  #
+  # All four gateways share a single config template (services/krakend/)
+  # parameterized via environment variables and KrakenD Flexible Configuration.
+  #
+  #   krakend-placer            (internal) — placer reads own + proxies fulfiller data
+  #   krakend-placer-external   (external) — consumed by fulfiller to read placer data
+  #   krakend-fulfiller         (internal) — fulfiller reads own + proxies placer data
+  #   krakend-fulfiller-external(external) — consumed by placer to read fulfiller data
   # ===========================================================================
   krakend-placer:
     image: krakend:2.13.2
     container_name: umzh-krakend-placer
+    command: ["krakend", "run", "-c", "krakend-internal-gateway.tmpl"]
     volumes:
-      - ./services/krakend-placer:/etc/krakend
+      - ./services/krakend:/etc/krakend
+    environment:
+      FC_ENABLE: "1"
+      GATEWAY_NAME: "HospitalP (Placer)"
+      PARTY: placer
+      NGINX_PORT: "80"
+      KEYCLOAK_URL: "http://keycloak:8080"
+      PARTNER_EXTERNAL_HOST: "krakend-fulfiller-external:8080"
+      OPA_HOST: "opa-placer:8181"
+      REWRITE_URLS: "http://localhost:8083/fhir/|http://localhost:8080/proxy/fhir/"
+      CLIENT_ID: placer-client
+      CLIENT_SECRET: placer-secret-2025
     ports:
       - "${KRAKEND_PLACER_PORT}:8080"
     depends_on:
@@ -171,18 +186,18 @@ services:
     networks:
       - umzh-net
 
-  # ===========================================================================
-  # KrakenD - External API Gateway for HospitalP (Placer)  port 8081
-  #   Consumed by the Fulfiller party to read Placer data and write Tasks.
-  #   /fhir/{resource}        -> HAPI /fhir/placer/* (read, consent-gated)
-  #   /fhir/{resource}/{id}   -> HAPI /fhir/placer/* (read by id, consent-gated)
-  #   /fhir/Task              -> HAPI /fhir/placer/Task (POST — fulfiller creates task)
-  # ===========================================================================
   krakend-placer-external:
     image: krakend:2.13.2
     container_name: umzh-krakend-placer-external
+    command: ["krakend", "run", "-c", "krakend-external-gateway.tmpl"]
     volumes:
-      - ./services/krakend-placer-external:/etc/krakend
+      - ./services/krakend:/etc/krakend
+    environment:
+      FC_ENABLE: "1"
+      GATEWAY_NAME: "HospitalP (Placer) External"
+      PARTY: placer
+      NGINX_PORT: "81"
+      KEYCLOAK_URL: "http://keycloak:8080"
     ports:
       - "${KRAKEND_PLACER_EXTERNAL_PORT}:8080"
     depends_on:
@@ -200,18 +215,23 @@ services:
     networks:
       - umzh-net
 
-  # ===========================================================================
-  # KrakenD - Internal API Gateway for HospitalF (Fulfiller)  port 8083
-  #   /fhir/{resource}        -> HAPI /fhir/fulfiller/* (fulfiller reads own data)
-  #   /proxy/fhir/{resource}  -> HAPI /fhir/placer/* (fulfiller reads placer data)
-  #   /api/actions/*          -> composite actions (create-task, all-tasks)
-  #   /api/policy/check       -> opa-fulfiller:8181
-  # ===========================================================================
   krakend-fulfiller:
     image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller
+    command: ["krakend", "run", "-c", "krakend-internal-gateway.tmpl"]
     volumes:
-      - ./services/krakend-fulfiller:/etc/krakend
+      - ./services/krakend:/etc/krakend
+    environment:
+      FC_ENABLE: "1"
+      GATEWAY_NAME: "HospitalF (Fulfiller)"
+      PARTY: fulfiller
+      NGINX_PORT: "82"
+      KEYCLOAK_URL: "http://keycloak:8080"
+      PARTNER_EXTERNAL_HOST: "krakend-placer-external:8080"
+      OPA_HOST: "opa-fulfiller:8181"
+      REWRITE_URLS: "http://localhost:8081/fhir/|http://localhost:8082/proxy/fhir/"
+      CLIENT_ID: fulfiller-client
+      CLIENT_SECRET: fulfiller-secret-2025
     ports:
       - "${KRAKEND_FULFILLER_PORT}:8080"
     depends_on:
@@ -233,18 +253,18 @@ services:
     networks:
       - umzh-net
 
-  # ===========================================================================
-  # KrakenD - External API Gateway for HospitalF (Fulfiller)  port 8084
-  #   Consumed by the Placer party to write and read Tasks.
-  #   /fhir/Task              -> HAPI /fhir/fulfiller/Task (POST — placer creates task)
-  #   /fhir/Task/{id}         -> HAPI /fhir/fulfiller/Task/{id} (PUT — status update)
-  #   /fhir/Task              -> HAPI /fhir/fulfiller/Task (GET — placer reads tasks)
-  # ===========================================================================
   krakend-fulfiller-external:
     image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller-external
+    command: ["krakend", "run", "-c", "krakend-external-gateway.tmpl"]
     volumes:
-      - ./services/krakend-fulfiller-external:/etc/krakend
+      - ./services/krakend:/etc/krakend
+    environment:
+      FC_ENABLE: "1"
+      GATEWAY_NAME: "HospitalF (Fulfiller) External"
+      PARTY: fulfiller
+      NGINX_PORT: "83"
+      KEYCLOAK_URL: "http://keycloak:8080"
     ports:
       - "${KRAKEND_FULFILLER_EXTERNAL_PORT}:8080"
     depends_on:

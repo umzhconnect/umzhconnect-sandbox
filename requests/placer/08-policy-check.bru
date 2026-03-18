@@ -1,0 +1,42 @@
+meta {
+  name: OPA Policy Check
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{placerUrl}}/api/policy/check
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": {
+      "method": "GET",
+      "path": "/fhir/Patient/PetraMeier",
+      "resource_type": "Patient",
+      "resource_id": "PetraMeier",
+      "token": {
+        "party_id": "hospitalp",
+        "smart_scopes": "system/Patient.r system/Task.cru",
+        "scope": "openid consent:ConsentOrthopedicReferral"
+      },
+      "consent_id": "",
+      "consent": null
+    }
+  }
+}
+
+docs {
+  Proxies to OPA placer instance at opa-placer:8181/v1/data/umzh/authz/allow.
+  Returns { "result": true } or { "result": false }.
+
+  To get the full decision object with reason and consent_id,
+  call OPA directly: POST http://localhost:8181/v1/data/umzh/authz/decision
+}

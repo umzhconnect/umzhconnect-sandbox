@@ -1,0 +1,25 @@
+meta {
+  name: Proxy — Read Fulfiller Tasks (consent-gated)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{placerUrl}}/proxy/fhir/Task
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}
+
+docs {
+  Routed via krakend-placer → krakend-fulfiller-external (second JWT validation).
+  Self-links in the response are rewritten to localhost:8080/proxy/fhir/...
+  so the web-app can navigate them without a direct call to the fulfiller gateway.
+
+  The token must carry scope=consent:<consentId> for this request to be authorised
+  by the fulfiller's OPA policy. Run "Get Placer Token" first.
+}

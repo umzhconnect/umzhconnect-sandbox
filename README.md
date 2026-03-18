@@ -761,11 +761,12 @@ In the **Credentials tab**, enter an optional Consent ID before requesting a tok
 
 ### KrakenD API Gateways
 
-**Configs:**
-- `services/krakend-placer/krakend.json` (internal, port 8080)
-- `services/krakend-placer-external/krakend.json` (external, port 8081)
-- `services/krakend-fulfiller/krakend.json` (internal, port 8082)
-- `services/krakend-fulfiller-external/krakend.json` (external, port 8083)
+**Configs:** All four gateways share a single directory using [KrakenD Flexible Configuration](https://www.krakend.io/docs/configuration/flexible-config/) — Go templates rendered at container startup from environment variables:
+- `services/krakend/krakend-internal-gateway.tmpl` — used by `krakend-placer` and `krakend-fulfiller`
+- `services/krakend/krakend-external-gateway.tmpl` — used by `krakend-placer-external` and `krakend-fulfiller-external`
+- `services/krakend/lua/` — shared Lua scripts for token exchange and URL rewriting
+
+> **Sandbox note — network addressing:** All inter-service communication (gateway → Keycloak, gateway → partner external gateway) uses Docker Compose service names (e.g. `keycloak:8080`, `krakend-fulfiller-external:8080`) rather than `localhost` ports. This is intentional: inside a Docker container `localhost` refers to the container itself, not the host machine, so Docker DNS is the correct addressing mechanism within the shared `umzh-net` network. In a real deployment each party would run on a separate host and these hostnames would be replaced with public DNS names.
 
 All four gateways use the same JWT validation configuration:
 
@@ -778,6 +779,8 @@ All four gateways use the same JWT validation configuration:
   "cache": true
 }
 ```
+
+Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from within the container network), while `issuer` uses `localhost:8180` — the URL that appears in the `iss` claim of JWTs issued by Keycloak in response to browser-initiated flows.
 
 #### Full Endpoint Reference — Placer Internal Gateway (`:8080`)
 

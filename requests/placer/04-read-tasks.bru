@@ -1,0 +1,16 @@
+meta {
+  name: Read Tasks (own partition)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{placerUrl}}/fhir/Task
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}

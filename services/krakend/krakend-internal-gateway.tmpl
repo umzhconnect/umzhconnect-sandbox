@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.krakend.io/schema/krakend.json",
   "version": 3,
-  "name": "UMZH Connect — HospitalF (Fulfiller) API Gateway",
+  "name": "UMZH Connect — {{ env "GATEWAY_NAME" }} API Gateway",
   "port": 8080,
   "timeout": "30s",
   "cache_ttl": "0s",
@@ -20,7 +20,6 @@
     }
   },
   "endpoints": [
-
     {
       "comment": "=== FHIR Metadata (no auth) ===",
       "endpoint": "/fhir/metadata",
@@ -29,15 +28,14 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/metadata",
-          "host": ["http://nginx-proxy:82"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/metadata",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ]
     },
-
     {
-      "comment": "=== CATEGORY 1: Internal FHIR API — Fulfiller reads own partition ===",
+      "comment": "=== CATEGORY 1: Internal FHIR API — reads own partition ===",
       "endpoint": "/fhir/{resource}",
       "method": "GET",
       "input_headers": ["Authorization", "Content-Type", "Accept"],
@@ -45,18 +43,20 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/{resource}",
-          "host": ["http://nginx-proxy:82"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
-          "cache": true
+          "cache": true,
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },
@@ -67,18 +67,20 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/{resource}/{id}",
-          "host": ["http://nginx-proxy:82"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}/{id}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
-          "cache": true
+          "cache": true,
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },
@@ -89,18 +91,20 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/{resource}",
-          "host": ["http://nginx-proxy:82"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
-          "cache": true
+          "cache": true,
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },
@@ -111,24 +115,25 @@
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/{resource}/{id}",
-          "host": ["http://nginx-proxy:82"],
+          "url_pattern": "/fhir/{{ env "PARTY" }}/{resource}/{id}",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
           "encoding": "no-op"
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
-          "cache": true
+          "cache": true,
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },
-
     {
-      "comment": "=== CATEGORY 3: Proxy API — Fulfiller proxies Placer resources with inline token exchange ===",
+      "comment": "=== CATEGORY 3: Proxy API — proxies partner resources with inline token exchange ===",
       "comment2": "Sequential proxy: Backend 0 obtains a consent-scoped M2M token from Keycloak via client_credentials, Backend 1 forwards the FHIR request to the partner external gateway using the M2M token. Lua post-script strips the token from the merged response.",
       "endpoint": "/proxy/fhir/{resource}",
       "method": "GET",
@@ -139,21 +144,21 @@
         {
           "comment": "Backend 0: Obtain consent-scoped M2M token from Keycloak",
           "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
-          "host": ["http://keycloak:8080"],
+          "host": ["{{ env "KEYCLOAK_URL" }}"],
           "encoding": "json",
           "method": "POST",
           "group": "token_exchange",
           "extra_config": {
             "modifier/lua-backend": {
               "sources": ["lua/scoped_token.lua"],
-              "pre": "pre_backend(request)"
+              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
             }
           }
         },
         {
           "comment": "Backend 1: Forward FHIR request to partner external gateway with M2M token",
           "url_pattern": "/fhir/{resource}",
-          "host": ["http://krakend-placer-external:8080"],
+          "host": ["http://{{ env "PARTNER_EXTERNAL_HOST" }}"],
           "encoding": "json",
           "extra_config": {
             "modifier/lua-backend": {
@@ -166,16 +171,12 @@
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
-          "propagate_claims": [
-            ["party_id", "x-party-id"],
-            ["smart_scopes", "x-smart-scopes"],
-            ["tenant", "x-tenant"],
-            ["scope", "x-scope"]
-          ]
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         },
         "proxy": {
           "sequential": true
@@ -188,7 +189,7 @@
       }
     },
     {
-      "comment": "=== CATEGORY 3: Proxy API — Fulfiller proxies single Placer resource with inline token exchange ===",
+      "comment": "=== CATEGORY 3: Proxy API — proxies single partner resource with inline token exchange ===",
       "endpoint": "/proxy/fhir/{resource}/{id}",
       "method": "GET",
       "input_headers": ["Authorization", "Content-Type", "Accept", "X-Consent-Id"],
@@ -197,21 +198,21 @@
         {
           "comment": "Backend 0: Obtain consent-scoped M2M token from Keycloak",
           "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
-          "host": ["http://keycloak:8080"],
+          "host": ["{{ env "KEYCLOAK_URL" }}"],
           "encoding": "json",
           "method": "POST",
           "group": "token_exchange",
           "extra_config": {
             "modifier/lua-backend": {
               "sources": ["lua/scoped_token.lua"],
-              "pre": "pre_backend(request)"
+              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
             }
           }
         },
         {
           "comment": "Backend 1: Forward FHIR request to partner external gateway with M2M token",
           "url_pattern": "/fhir/{resource}/{id}",
-          "host": ["http://krakend-placer-external:8080"],
+          "host": ["http://{{ env "PARTNER_EXTERNAL_HOST" }}"],
           "encoding": "json",
           "extra_config": {
             "modifier/lua-backend": {
@@ -224,16 +225,12 @@
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
-          "propagate_claims": [
-            ["party_id", "x-party-id"],
-            ["smart_scopes", "x-smart-scopes"],
-            ["tenant", "x-tenant"],
-            ["scope", "x-scope"]
-          ]
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         },
         "proxy": {
           "sequential": true
@@ -245,70 +242,84 @@
         }
       }
     },
-
     {
-      "comment": "=== CATEGORY 4: Actions API — Create task at partner's external endpoint (Placer) ===",
-      "endpoint": "/api/actions/create-task",
+      "comment": "=== Scoped Token — exchanges X-Consent-Id for a service-account JWT that carries consent:<id> in scope ===",
+      "endpoint": "/api/actions/scoped-token",
       "method": "POST",
-      "input_headers": ["Authorization", "Content-Type", "Accept"],
+      "input_headers": ["Authorization", "X-Consent-Id"],
       "output_encoding": "no-op",
       "backend": [
         {
-          "url_pattern": "/fhir/Task",
-          "host": ["http://krakend-placer-external:8080"],
-          "encoding": "no-op"
+          "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
+          "host": ["{{ env "KEYCLOAK_URL" }}"],
+          "encoding": "no-op",
+          "method": "POST",
+          "extra_config": {
+            "modifier/lua-backend": {
+              "sources": ["lua/scoped_token.lua"],
+              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
+            }
+          }
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
-          "propagate_claims": [
-            ["party_id", "x-party-id"],
-            ["smart_scopes", "x-smart-scopes"],
-            ["scope", "x-scope"]
-          ]
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },
-
     {
-      "comment": "=== CATEGORY 4: Actions API — Fetch all tasks (local fulfiller + remote placer external) ===",
-      "comment2": "Remote backend routes directly to krakend-placer-external with Lua post-processing for URL rewriting (localhost:8081/fhir/ -> localhost:8082/proxy/fhir/).",
-      "endpoint": "/api/actions/all-tasks",
-      "method": "GET",
+      "comment": "=== CATEGORY 4: Actions API — Create task at partner's external endpoint ===",
+      "endpoint": "/api/actions/create-task",
+      "method": "POST",
       "input_headers": ["Authorization", "Content-Type", "Accept"],
-      "input_query_strings": ["*"],
       "output_encoding": "json",
       "backend": [
         {
-          "url_pattern": "/fhir/fulfiller/Task",
-          "host": ["http://nginx-proxy:82"],
+          "comment": "Backend 0: Obtain M2M token from Keycloak",
+          "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
+          "host": ["{{ env "KEYCLOAK_URL" }}"],
           "encoding": "json",
-          "group": "local"
+          "method": "POST",
+          "group": "token_exchange",
+          "extra_config": {
+            "modifier/lua-backend": {
+              "sources": ["lua/scoped_token.lua"],
+              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
+            }
+          }
         },
         {
+          "comment": "Backend 1: POST Task to partner external gateway with M2M token",
           "url_pattern": "/fhir/Task",
-          "host": ["http://krakend-placer-external:8080"],
+          "host": ["http://{{ env "PARTNER_EXTERNAL_HOST" }}"],
           "encoding": "json",
-          "group": "remote"
+          "extra_config": {
+            "modifier/lua-backend": {
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
+            }
+          }
         }
       ],
       "extra_config": {
         "auth/validator": {
           "alg": "RS256",
-          "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
           "issuer": "http://localhost:8180/realms/umzh-connect",
           "disable_jwk_security": true,
           "cache": true,
-          "propagate_claims": [
-            ["party_id", "x-party-id"],
-            ["smart_scopes", "x-smart-scopes"],
-            ["scope", "x-scope"]
-          ]
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
+        },
+        "proxy": {
+          "sequential": true
         },
         "modifier/lua-proxy": {
           "sources": ["lua/proxy_response.lua"],
@@ -317,9 +328,71 @@
         }
       }
     },
-
     {
-      "comment": "=== OPA Policy Check (routes to Fulfiller OPA instance) ===",
+      "comment": "=== CATEGORY 4: Actions API — Fetch all tasks (local + remote partner external) ===",
+      "endpoint": "/api/actions/all-tasks",
+      "method": "GET",
+      "input_headers": ["Authorization", "Content-Type", "Accept"],
+      "input_query_strings": ["*"],
+      "output_encoding": "json",
+      "backend": [
+        {
+          "comment": "Backend 0: Obtain M2M token from Keycloak",
+          "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
+          "host": ["{{ env "KEYCLOAK_URL" }}"],
+          "encoding": "json",
+          "method": "POST",
+          "group": "token_exchange",
+          "extra_config": {
+            "modifier/lua-backend": {
+              "sources": ["lua/scoped_token.lua"],
+              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
+            }
+          }
+        },
+        {
+          "comment": "Backend 1: Fetch local tasks from own partition",
+          "url_pattern": "/fhir/{{ env "PARTY" }}/Task",
+          "host": ["http://nginx-proxy:{{ env "NGINX_PORT" }}"],
+          "encoding": "json",
+          "group": "local"
+        },
+        {
+          "comment": "Backend 2: Fetch remote tasks from partner external gateway with M2M token",
+          "url_pattern": "/fhir/Task",
+          "host": ["http://{{ env "PARTNER_EXTERNAL_HOST" }}"],
+          "encoding": "json",
+          "group": "remote",
+          "extra_config": {
+            "modifier/lua-backend": {
+              "sources": ["lua/proxy_inject_token.lua"],
+              "pre": "inject_token(request)"
+            }
+          }
+        }
+      ],
+      "extra_config": {
+        "auth/validator": {
+          "alg": "RS256",
+          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
+          "issuer": "http://localhost:8180/realms/umzh-connect",
+          "disable_jwk_security": true,
+          "cache": true,
+          "roles_key": "realm_roles",
+          "roles": ["{{ env "PARTY" }}"]
+        },
+        "proxy": {
+          "sequential": true
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_response.lua"],
+          "allow_open_libs": true,
+          "post": "post_proxy(response)"
+        }
+      }
+    },
+    {
+      "comment": "=== OPA Policy Check ===",
       "endpoint": "/api/policy/check",
       "method": "POST",
       "input_headers": ["Authorization", "Content-Type"],
@@ -327,11 +400,10 @@
       "backend": [
         {
           "url_pattern": "/v1/data/umzh/authz/allow",
-          "host": ["http://opa-fulfiller:8181"],
+          "host": ["http://{{ env "OPA_HOST" }}"],
           "encoding": "no-op"
         }
       ]
     }
-
   ]
 }

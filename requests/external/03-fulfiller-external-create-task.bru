@@ -1,0 +1,43 @@
+meta {
+  name: Fulfiller External — Create Task (as Placer)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{fulfillerExternalUrl}}/fhir/Task
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{placerToken}}
+  Content-Type: application/fhir+json
+  Accept: application/fhir+json
+}
+
+body:json {
+  {
+    "resourceType": "Task",
+    "status": "requested",
+    "intent": "order",
+    "priority": "routine",
+    "description": "Demo task created directly via fulfiller external gateway",
+    "for": {
+      "reference": "http://localhost:8080/fhir/Patient/PetraMeier"
+    },
+    "requester": {
+      "reference": "http://localhost:8080/fhir/Organization/placer-HospitalP"
+    },
+    "owner": {
+      "reference": "http://localhost:8083/fhir/Organization/fulfiller-HospitalF"
+    }
+  }
+}
+
+docs {
+  Writes a Task directly into the Fulfiller's partition via the external gateway.
+  This is the same backend call used by krakend-placer's /api/actions/create-task.
+
+  Run "Get Placer Token" first.
+}

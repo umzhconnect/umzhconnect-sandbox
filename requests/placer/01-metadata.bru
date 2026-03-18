@@ -1,0 +1,15 @@
+meta {
+  name: FHIR Metadata (no auth)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{placerUrl}}/fhir/metadata
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/fhir+json
+}

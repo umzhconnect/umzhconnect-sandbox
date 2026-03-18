@@ -1,0 +1,41 @@
+meta {
+  name: Create Task at Fulfiller (action)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{placerUrl}}/api/actions/create-task
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Content-Type: application/fhir+json
+  Accept: application/fhir+json
+}
+
+body:json {
+  {
+    "resourceType": "Task",
+    "status": "requested",
+    "intent": "order",
+    "priority": "routine",
+    "description": "Demo referral task created from Bruno",
+    "for": {
+      "reference": "http://localhost:8080/fhir/Patient/PetraMeier"
+    },
+    "requester": {
+      "reference": "http://localhost:8080/fhir/Organization/placer-HospitalP"
+    },
+    "owner": {
+      "reference": "http://localhost:8083/fhir/Organization/fulfiller-HospitalF"
+    },
+    "basedOn": [
+      {
+        "reference": "http://localhost:8080/fhir/ServiceRequest/ReferralOrthopedicSurgery"
+      }
+    ]
+  }
+}

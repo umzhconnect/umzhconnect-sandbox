@@ -1,0 +1,16 @@
+meta {
+  name: Read ServiceRequests (own partition)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{placerUrl}}/fhir/ServiceRequest
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}
