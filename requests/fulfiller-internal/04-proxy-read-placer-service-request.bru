@@ -1,0 +1,24 @@
+meta {
+  name: Proxy — Read Placer Service Request (consent-gated)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{fulfillerUrl}}/proxy/placer/fhir/ServiceRequest/ReferralOrthopedicSurgery
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{adminToken}}
+  Accept: application/fhir+json
+}
+
+docs {
+  Routed via krakend-fulfiller → krakend-placer-external (second JWT validation + consent check).
+  The placer's external gateway enforces X-Consent-Id / scope=consent:<id>.
+
+  The token must carry scope=consent:<consentId> for this request to pass
+  the placer's OPA policy. Run "Get Fulfiller Token" first.
+}
