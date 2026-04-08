@@ -1,0 +1,52 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run integration tests
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            up --build --exit-code-from test-runner --abort-on-container-exit
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            logs --no-color 2>&1 | tee /tmp/compose-logs.txt
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: /tmp/compose-logs.txt
+
+      - name: Upload Hurl test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hurl-reports
+          path: tests/reports/*.xml
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            down --volumes --remove-orphans

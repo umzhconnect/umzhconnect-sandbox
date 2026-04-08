@@ -15,7 +15,7 @@ services:
     container_name: umzh-test-runner
     working_dir: /tests
     volumes:
-      - ./tests:/tests:ro
+      - ./tests:/tests
     entrypoint: ["/bin/sh", "/tests/scripts/run-tests.sh"]
     environment:
       KEYCLOAK_URL: http://keycloak:8080
