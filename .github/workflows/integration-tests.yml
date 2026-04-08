@@ -13,12 +13,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build and run integration tests
+      - name: Start stack and run integration tests
         run: |
+          # Start all services detached — avoids --abort-on-container-exit firing
+          # when seed-loader (a one-shot container) exits before test-runner starts.
           docker compose \
             -f docker-compose.yml \
             -f tests/docker-compose.test.yml \
-            up --build --exit-code-from test-runner --abort-on-container-exit
+            up --build --detach
+
+          # Block until test-runner exits; propagate its exit code.
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            wait test-runner
 
       - name: Dump container logs on failure
         if: failure()
