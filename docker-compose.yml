@@ -13,9 +13,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./services/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     ports:
-      - "5431:5432"
+      - '5431:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -36,20 +36,25 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_HEALTH_ENABLED: "true"
+      KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
-      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME: 'http://localhost:8180'
+      KC_HOSTNAME_STRICT: 'false'
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
     ports:
-      - "${KEYCLOAK_PORT}:8080"
+      - '${KEYCLOAK_PORT}:8080'
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
       # Keycloak 25 exposes /health/ready on the management port 9000
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3;grep -q '200' <&3"]
+      test:
+        [
+          'CMD-SHELL',
+          "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3;grep -q '200' <&3",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -70,7 +75,7 @@ services:
     volumes:
       - ./services/hapi-fhir/application.yaml:/app/config/application.yaml
     ports:
-      - "${HAPI_FHIR_PORT}:8080"
+      - '${HAPI_FHIR_PORT}:8080'
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,7 +118,7 @@ services:
     volumes:
       - ./services/opa/policies:/policies
     ports:
-      - "${OPA_PLACER_PORT}:8181"
+      - '${OPA_PLACER_PORT}:8181'
     networks:
       - umzh-net
 
@@ -133,7 +138,7 @@ services:
     volumes:
       - ./services/opa/policies:/policies
     ports:
-      - "${OPA_FULFILLER_PORT}:8181"
+      - '${OPA_FULFILLER_PORT}:8181'
     networks:
       - umzh-net
 
@@ -151,22 +156,22 @@ services:
   krakend-placer:
     image: krakend:2.13.2
     container_name: umzh-krakend-placer
-    command: ["krakend", "run", "-c", "krakend-internal-gateway.tmpl"]
+    command: ['krakend', 'run', '-c', 'krakend-internal-gateway.tmpl']
     volumes:
       - ./services/krakend:/etc/krakend
     environment:
-      FC_ENABLE: "1"
-      GATEWAY_NAME: "HospitalP (Placer)"
+      FC_ENABLE: '1'
+      GATEWAY_NAME: 'HospitalP (Placer)'
       PARTY: placer
-      NGINX_PORT: "80"
-      KEYCLOAK_URL: "http://keycloak:8080"
-      PARTNER_EXTERNAL_HOST: "krakend-fulfiller-external:8080"
-      OPA_HOST: "opa-placer:8181"
-      REWRITE_URLS: "http://localhost:8083/fhir/|http://localhost:8080/proxy/fhir/"
+      NGINX_PORT: '80'
+      KEYCLOAK_URL: 'http://keycloak:8080'
+      PARTNER_EXTERNAL_HOST: 'krakend-fulfiller-external:8080'
+      OPA_HOST: 'opa-placer:8181'
+      REWRITE_URLS: 'http://localhost:8083/|http://localhost:8080/proxy/fulfiller/'
       CLIENT_ID: placer-client
       CLIENT_SECRET: placer-secret-2025
     ports:
-      - "${KRAKEND_PLACER_PORT}:8080"
+      - '${KRAKEND_PLACER_PORT}:8080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -179,7 +184,7 @@ services:
       krakend-fulfiller-external:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -189,17 +194,17 @@ services:
   krakend-placer-external:
     image: krakend:2.13.2
     container_name: umzh-krakend-placer-external
-    command: ["krakend", "run", "-c", "krakend-external-gateway.tmpl"]
+    command: ['krakend', 'run', '-c', 'krakend-external-gateway.tmpl']
     volumes:
       - ./services/krakend:/etc/krakend
     environment:
-      FC_ENABLE: "1"
-      GATEWAY_NAME: "HospitalP (Placer) External"
+      FC_ENABLE: '1'
+      GATEWAY_NAME: 'HospitalP (Placer) External'
       PARTY: placer
-      NGINX_PORT: "81"
-      KEYCLOAK_URL: "http://keycloak:8080"
+      NGINX_PORT: '81'
+      KEYCLOAK_URL: 'http://keycloak:8080'
     ports:
-      - "${KRAKEND_PLACER_EXTERNAL_PORT}:8080"
+      - '${KRAKEND_PLACER_EXTERNAL_PORT}:8080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -208,7 +213,7 @@ services:
       keycloak:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -218,22 +223,22 @@ services:
   krakend-fulfiller:
     image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller
-    command: ["krakend", "run", "-c", "krakend-internal-gateway.tmpl"]
+    command: ['krakend', 'run', '-c', 'krakend-internal-gateway.tmpl']
     volumes:
       - ./services/krakend:/etc/krakend
     environment:
-      FC_ENABLE: "1"
-      GATEWAY_NAME: "HospitalF (Fulfiller)"
+      FC_ENABLE: '1'
+      GATEWAY_NAME: 'HospitalF (Fulfiller)'
       PARTY: fulfiller
-      NGINX_PORT: "82"
-      KEYCLOAK_URL: "http://keycloak:8080"
-      PARTNER_EXTERNAL_HOST: "krakend-placer-external:8080"
-      OPA_HOST: "opa-fulfiller:8181"
-      REWRITE_URLS: "http://localhost:8081/fhir/|http://localhost:8082/proxy/fhir/"
+      NGINX_PORT: '82'
+      KEYCLOAK_URL: 'http://keycloak:8080'
+      PARTNER_EXTERNAL_HOST: 'krakend-placer-external:8080'
+      OPA_HOST: 'opa-fulfiller:8181'
+      REWRITE_URLS: 'http://localhost:8081/|http://localhost:8082/proxy/placer/'
       CLIENT_ID: fulfiller-client
       CLIENT_SECRET: fulfiller-secret-2025
     ports:
-      - "${KRAKEND_FULFILLER_PORT}:8080"
+      - '${KRAKEND_FULFILLER_PORT}:8080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -246,7 +251,7 @@ services:
       krakend-placer-external:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -256,17 +261,17 @@ services:
   krakend-fulfiller-external:
     image: krakend:2.13.2
     container_name: umzh-krakend-fulfiller-external
-    command: ["krakend", "run", "-c", "krakend-external-gateway.tmpl"]
+    command: ['krakend', 'run', '-c', 'krakend-external-gateway.tmpl']
     volumes:
       - ./services/krakend:/etc/krakend
     environment:
-      FC_ENABLE: "1"
-      GATEWAY_NAME: "HospitalF (Fulfiller) External"
+      FC_ENABLE: '1'
+      GATEWAY_NAME: 'HospitalF (Fulfiller) External'
       PARTY: fulfiller
-      NGINX_PORT: "83"
-      KEYCLOAK_URL: "http://keycloak:8080"
+      NGINX_PORT: '83'
+      KEYCLOAK_URL: 'http://keycloak:8080'
     ports:
-      - "${KRAKEND_FULFILLER_EXTERNAL_PORT}:8080"
+      - '${KRAKEND_FULFILLER_EXTERNAL_PORT}:8080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -275,7 +280,7 @@ services:
       keycloak:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/__health"]
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -317,7 +322,7 @@ services:
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro
     ports:
-      - "9001:9001"
+      - '9001:9001'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -334,7 +339,7 @@ services:
       dockerfile: Dockerfile
     container_name: umzh-web-app
     ports:
-      - "${WEB_APP_PORT}:80"
+      - '${WEB_APP_PORT}:80'
     depends_on:
       krakend-placer:
         condition: service_healthy

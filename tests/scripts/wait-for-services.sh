@@ -19,7 +19,7 @@ wait_for() {
     local name="$1" url="$2" elapsed=0
     printf "  Waiting for %-30s" "$name..."
     while [ "$elapsed" -lt "$MAX_WAIT" ]; do
-        if curl -sf "$url" > /dev/null 2>&1; then
+        if wget -q --spider "$url" > /dev/null 2>&1; then
             echo " OK (${elapsed}s)"
             return 0
         fi

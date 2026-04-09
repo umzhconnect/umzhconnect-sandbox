@@ -15,6 +15,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [nginx-proxy — Self-Link Rewriting Layer](#nginx-proxy--self-link-rewriting-layer)
   - [API Gateway Endpoint Categories](#api-gateway-endpoint-categories)
   - [Proxy Walk-Through — Placer Web-App Reads Fulfiller Data](#proxy-walk-through--placer-web-app-reads-fulfiller-data)
+  - [Lua Proxy Scripts — URL Rewriting](#lua-proxy-scripts--url-rewriting)
   - [Security Model](#security-model)
   - [Clinical Order Workflow](#clinical-order-workflow)
 - [Quick Start](#quick-start)
@@ -438,6 +439,127 @@ localhost:3000                                         (enforces its own securit
 | Placer web-app never needs a direct route to the fulfiller's external gateway | The proxy path is entirely managed by krakend-placer |
 
 The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern using `nginx-proxy:85 → krakend-placer-external`. The placer's external gateway additionally enforces the `X-Consent-Id` header for consent-gated access.
+
+---
+
+### Lua Proxy Scripts — URL Rewriting
+
+When a response crosses a domain boundary (placer reads fulfiller data or vice versa), the FHIR URLs embedded in that response still point to the originating server. They need to be rewritten to navigable URLs on the receiving party's gateway so that pagination links and resource references resolve correctly for the caller.
+
+Two Lua scripts handle this, each operating at a different KrakenD hook level with fundamentally different mechanics.
+
+#### The core constraint: two buffer levels in KrakenD
+
+KrakenD processes requests at two distinct levels, each with its own Lua hook and its own response representation:
+
+| Level | Hook | Config key | `r:body()` | `r:data()` | `string`/`os` libs |
+|---|---|---|---|---|---|
+| **Backend** | per-backend response | `modifier/lua-backend` | ✅ raw HTTP body string | ❌ not available | only with `allow_open_libs: true` (but breaks source files) |
+| **Proxy** | merged endpoint response | `modifier/lua-proxy` | ❌ always empty when `output_encoding: json` | ✅ structured data API | ✅ with `allow_open_libs: true` |
+
+At **backend level**, `r:body()` contains the raw JSON response bytes as a Lua string — `string.gsub` replacement works directly. At **proxy level** with `output_encoding: json`, KrakenD has already decoded all backend responses into an in-memory data buffer and discarded the raw bodies. `r:body()` is always an empty string; the only way to read or write fields is through the structured data API (`r:data():get(key)`, `:set(key, val)`, `:len()`, etc.).
+
+A second constraint applies to `modifier/lua-backend`: adding `allow_open_libs: true` (needed for `string.gsub` and `os.getenv`) breaks source file loading — functions defined in `sources` files become undefined. This rules out combining a source-based `pre` script (token injection) with a string-level rewrite `post` script at the same backend.
+
+#### `proxy_rewrite.lua` — backend-level raw body replacement
+
+```
+modifier/lua-backend  →  post: rewriteUrls()
+Requires: allow_open_libs: true
+Used on: /fhir/{resource}, /fhir/{resource}/{id} (single-backend, no-op output)
+```
+
+Used on the simple internal FHIR endpoints that have **one backend and `output_encoding: no-op`**. Because there is no multi-backend merging, `r:body()` at proxy level is also not empty — but the rewrite is done at backend level, where the raw body is available before KrakenD processes it further.
+
+```lua
+function rewriteUrls()
+    local r = response.load()
+    local body = r:body()           -- raw JSON string, e.g. {"link":[{"url":"http://localhost:8083/fhir/Task"}]}
+    for _, pair in ipairs(REWRITE_PAIRS) do
+        body = string.gsub(body, pair[1], pair[2])
+    end
+    r:body(body)
+    -- no response.save() needed at proxy level; save() is backend-level only
+end
+```
+
+Advantages:
+- Simple: operates on a plain string, no knowledge of FHIR structure required
+- Catches every URL occurrence regardless of which field it appears in
+
+Limitation:
+- Requires `allow_open_libs: true`, which **prevents loading source files** in the same `modifier/lua-backend` block. This means it cannot share a backend config with `proxy_inject_token.lua` (which must be a source file). Therefore it is only usable on single-backend endpoints where no token injection is needed.
+
+#### `proxy_response.lua` — proxy-level structured data traversal
+
+```
+modifier/lua-proxy  →  post: post_proxy(response)
+Requires: allow_open_libs: true
+Used on: /proxy/{party}/fhir/*, /api/actions/create-task, /api/actions/all-tasks
+```
+
+Used on **sequential proxy endpoints** that have multiple backends (token exchange + FHIR backend). Because `output_encoding: json` merges all backend responses into a single data buffer, `r:body()` is always empty and string replacement is not possible. The script instead traverses the structured data buffer using the KrakenD data API.
+
+It performs two tasks in a single pass:
+
+1. **Strip the `token_exchange` group** — the Keycloak token response (Backend 0) must not leak to the caller:
+   ```lua
+   r:data():del("token_exchange")
+   ```
+
+2. **Rewrite URL fields** — recursively walk the FHIR response, rewriting any field named `url`, `fullUrl`, or `reference`:
+   ```lua
+   -- Arrays: iterate via :len() / :get(i)
+   -- Objects: probe known FHIR fields from INSPECT_FIELDS list
+   -- Rewrite only when field name ∈ { url, fullUrl, reference }
+   ```
+
+The data API returns `userdata` objects — not plain Lua tables. Arrays and objects are both `userdata`, distinguished by probing a string key: arrays throw on `node:get("__probe")`, objects return `nil`. Crucially, **object userdata does not support key enumeration** (no `pairs()` equivalent), so the traversal relies on a fixed `INSPECT_FIELDS` list of known FHIR field names to know which fields to recurse into.
+
+```lua
+local function is_array(node)
+    local ok = pcall(function() return node:get("__probe") end)
+    return not ok   -- threw → it IS an array
+end
+```
+
+Advantages:
+- Works with multi-backend sequential proxy responses
+- Can combine URL rewriting and token stripping in one script
+- Compatible with source-file-based `pre` scripts (no `allow_open_libs` conflict — open libs are on the *proxy* modifier, not the backend one)
+
+Limitation:
+- Cannot enumerate all object keys generically — only fields listed in `INSPECT_FIELDS` are visited. The list covers the full FHIR R4 resource model for the fields relevant to this use case (`link`, `entry`, `resource`, `basedOn`, `focus`, `input`, etc.).
+
+#### Decision matrix
+
+| Endpoint type | Output encoding | Multiple backends | Token injection | Script used |
+|---|---|---|---|---|
+| `/fhir/{resource}` (GET/POST) | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
+| `/fhir/{resource}/{id}` (GET/PUT) | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
+| `/proxy/{party}/fhir/*` | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
+| `/api/actions/create-task` | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
+| `/api/actions/all-tasks` | `json` | Yes (token + 2× FHIR) | Yes | `proxy_response.lua` (proxy level) |
+
+#### `REWRITE_URLS` environment variable
+
+Both scripts read their replacement pairs from the same environment variable:
+
+```
+REWRITE_URLS=old1|new1;old2|new2;...
+```
+
+Configured in `docker-compose.yml` per gateway:
+
+```yaml
+# krakend-placer — rewrites fulfiller external URLs to proxy paths
+REWRITE_URLS: 'http://localhost:8083/|http://localhost:8080/proxy/fulfiller/'
+
+# krakend-fulfiller — rewrites placer external URLs to proxy paths
+REWRITE_URLS: 'http://localhost:8081/|http://localhost:8082/proxy/placer/'
+```
+
+This ensures that after a cross-domain fetch, all embedded FHIR URLs are navigable by the caller through the receiving party's own internal gateway proxy path.
 
 ---
 

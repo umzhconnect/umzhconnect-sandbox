@@ -57,6 +57,11 @@
           "cache": true,
           "roles_key": "realm_roles",
           "roles": ["{{ env "PARTY" }}"]
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_rewrite.lua"],
+          "allow_open_libs": true,
+          "post": "rewriteUrls()"
         }
       }
     },
@@ -81,6 +86,11 @@
           "cache": true,
           "roles_key": "realm_roles",
           "roles": ["{{ env "PARTY" }}"]
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_rewrite.lua"],
+          "allow_open_libs": true,
+          "post": "rewriteUrls()"
         }
       }
     },
@@ -105,6 +115,11 @@
           "cache": true,
           "roles_key": "realm_roles",
           "roles": ["{{ env "PARTY" }}"]
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_rewrite.lua"],
+          "allow_open_libs": true,
+          "post": "rewriteUrls()"
         }
       }
     },
@@ -129,13 +144,18 @@
           "cache": true,
           "roles_key": "realm_roles",
           "roles": ["{{ env "PARTY" }}"]
+        },
+        "modifier/lua-proxy": {
+          "sources": ["lua/proxy_rewrite.lua"],
+          "allow_open_libs": true,
+          "post": "rewriteUrls()"
         }
       }
     },
     {
       "comment": "=== CATEGORY 3: Proxy API — proxies partner resources with inline token exchange ===",
       "comment2": "Sequential proxy: Backend 0 obtains a consent-scoped M2M token from Keycloak via client_credentials, Backend 1 forwards the FHIR request to the partner external gateway using the M2M token. Lua post-script strips the token from the merged response.",
-      "endpoint": "/proxy/fhir/{resource}",
+      "endpoint": "/proxy/{party}/fhir/{resource}",
       "method": "GET",
       "input_headers": ["Authorization", "Content-Type", "Accept", "X-Consent-Id"],
       "input_query_strings": ["*"],
@@ -190,7 +210,7 @@
     },
     {
       "comment": "=== CATEGORY 3: Proxy API — proxies single partner resource with inline token exchange ===",
-      "endpoint": "/proxy/fhir/{resource}/{id}",
+      "endpoint": "/proxy/{party}/fhir/{resource}/{id}",
       "method": "GET",
       "input_headers": ["Authorization", "Content-Type", "Accept", "X-Consent-Id"],
       "output_encoding": "json",
@@ -239,38 +259,6 @@
           "sources": ["lua/proxy_response.lua"],
           "allow_open_libs": true,
           "post": "post_proxy(response)"
-        }
-      }
-    },
-    {
-      "comment": "=== Scoped Token — exchanges X-Consent-Id for a service-account JWT that carries consent:<id> in scope ===",
-      "endpoint": "/api/actions/scoped-token",
-      "method": "POST",
-      "input_headers": ["Authorization", "X-Consent-Id"],
-      "output_encoding": "no-op",
-      "backend": [
-        {
-          "url_pattern": "/realms/umzh-connect/protocol/openid-connect/token",
-          "host": ["{{ env "KEYCLOAK_URL" }}"],
-          "encoding": "no-op",
-          "method": "POST",
-          "extra_config": {
-            "modifier/lua-backend": {
-              "sources": ["lua/scoped_token.lua"],
-              "pre": "pre_backend(request, '{{ env "CLIENT_ID" }}', '{{ env "CLIENT_SECRET" }}')"
-            }
-          }
-        }
-      ],
-      "extra_config": {
-        "auth/validator": {
-          "alg": "RS256",
-          "jwk_url": "{{ env "KEYCLOAK_URL" }}/realms/umzh-connect/protocol/openid-connect/certs",
-          "issuer": "http://localhost:8180/realms/umzh-connect",
-          "disable_jwk_security": true,
-          "cache": true,
-          "roles_key": "realm_roles",
-          "roles": ["{{ env "PARTY" }}"]
         }
       }
     },

@@ -1,0 +1,60 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start stack and run integration tests
+        run: |
+          # Start all services detached — avoids --abort-on-container-exit firing
+          # when seed-loader (a one-shot container) exits before test-runner starts.
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            up --build --detach
+
+          # Block until test-runner exits; propagate its exit code.
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            wait test-runner
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            logs --no-color 2>&1 | tee /tmp/compose-logs.txt
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: /tmp/compose-logs.txt
+
+      - name: Upload Hurl test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hurl-reports
+          path: tests/reports/*.xml
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            down --volumes --remove-orphans
