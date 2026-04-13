@@ -1,0 +1,44 @@
+meta {
+  name: Allow — Granted (resource in consent graph)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{opaPlacerUrl}}/v1/data/umzh/authz/allow
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": {
+      "method": "GET",
+      "path": "/fhir/Condition/SuspectedACLRupture",
+      "resource_type": "Condition",
+      "resource_id": "SuspectedACLRupture",
+      "token": {
+        "party_id": "hospitalf",
+        "smart_scopes": "system/Patient.r system/Condition.r system/ServiceRequest.r",
+        "scope": "openid smart-clinical-read consent:ConsentOrthopedicReferral"
+      },
+      "consent_id": "",
+      "consent": null,
+      "fhir_base": "http://localhost:8090/fhir/placer"
+    }
+  }
+}
+
+docs {
+  Queries the allow rule directly for a resource that IS in the consent graph.
+
+  ConsentOrthopedicReferral.provision.data includes Condition/SuspectedACLRupture
+  and the performer references "hospitalf" → OPA should return { "result": true }.
+
+  Endpoint: POST /v1/data/umzh/authz/allow
+  Returns:  { "result": true }
+}

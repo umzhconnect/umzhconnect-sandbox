@@ -911,19 +911,6 @@
                 "reference": "Organization/placer-HospitalF"
               }
             }
-          ],
-          "data": [
-            { "meaning": "related", "reference": { "reference": "ServiceRequest/ReferralOrthopedicSurgery" } },
-            { "meaning": "related", "reference": { "reference": "Patient/PetraMeier" } },
-            { "meaning": "related", "reference": { "reference": "Condition/SuspectedACLRupture" } },
-            { "meaning": "related", "reference": { "reference": "Condition/HeartFailureHFrEF" } },
-            { "meaning": "related", "reference": { "reference": "MedicationStatement/MedicationEntresto" } },
-            { "meaning": "related", "reference": { "reference": "MedicationStatement/MedicationConcor" } },
-            { "meaning": "related", "reference": { "reference": "Coverage/CoverageMeier" } },
-            { "meaning": "related", "reference": { "reference": "DocumentReference/DocCardiologyAttachment" } },
-            { "meaning": "related", "reference": { "reference": "Practitioner/HansMuster" } },
-            { "meaning": "related", "reference": { "reference": "PractitionerRole/HansMusterRole" } },
-            { "meaning": "related", "reference": { "reference": "Organization/placer-HospitalP" } }
           ]
         }
       },
@@ -996,17 +983,6 @@
                 "reference": "Organization/placer-HospitalF"
               }
             }
-          ],
-          "data": [
-            { "meaning": "related", "reference": { "reference": "ServiceRequest/ReferralTumorboard" } },
-            { "meaning": "related", "reference": { "reference": "Patient/PetraMeier" } },
-            { "meaning": "related", "reference": { "reference": "Condition/SarcomaKnee" } },
-            { "meaning": "related", "reference": { "reference": "AllergyIntolerance/AllergyGado" } },
-            { "meaning": "related", "reference": { "reference": "ImagingStudy/ImagingCT" } },
-            { "meaning": "related", "reference": { "reference": "ImagingStudy/ImagingPET" } },
-            { "meaning": "related", "reference": { "reference": "Practitioner/HansMuster" } },
-            { "meaning": "related", "reference": { "reference": "PractitionerRole/HansMusterRole" } },
-            { "meaning": "related", "reference": { "reference": "Organization/placer-HospitalP" } }
           ]
         }
       },

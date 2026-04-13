@@ -1,0 +1,62 @@
+meta {
+  name: Package Evaluation (allow + http_status + decision)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{opaPlacerUrl}}/v1/data/umzh/authz
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": {
+      "method": "GET",
+      "path": "/fhir/Condition/SuspectedACLRupture",
+      "resource_type": "Condition",
+      "resource_id": "SuspectedACLRupture",
+      "token": {
+        "party_id": "hospitalf",
+        "smart_scopes": "system/Patient.r system/Condition.r system/ServiceRequest.r",
+        "scope": "openid smart-clinical-read consent:ConsentOrthopedicReferral"
+      },
+      "consent_id": "",
+      "consent": null,
+      "fhir_base": "http://localhost:8090/fhir/placer"
+    }
+  }
+}
+
+docs {
+  Queries the full package (umzh.authz) and returns all top-level rule values
+  in a single response. This is the endpoint used by the KrakenD sequential
+  proxy (opa_gate.lua) to retrieve the numeric http_status field, since
+  KrakenD's Lua data binding does not propagate JSON booleans.
+
+  Endpoint: POST /v1/data/umzh/authz
+  Returns:
+  {
+    "result": {
+      "allow":       true,
+      "http_status": 200,
+      "decision": {
+        "allow":         true,
+        "party_id":      "hospitalf",
+        "resource_type": "Condition",
+        "method":        "GET",
+        "consent_id":    "ConsentOrthopedicReferral",
+        "reason":        "Resource access granted via valid consent"
+      }
+    }
+  }
+
+  Note: OPA's REST API always returns HTTP 200 for successful evaluations
+  regardless of the http_status rule value. The http_status field in the
+  response body is a convention for callers (gateways, sidecars) to use.
+}

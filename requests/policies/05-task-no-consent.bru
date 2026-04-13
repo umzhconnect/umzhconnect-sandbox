@@ -1,0 +1,42 @@
+meta {
+  name: Task — Allowed Without Consent (Rule 1)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{opaPlacerUrl}}/v1/data/umzh/authz/decision
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": {
+      "method": "GET",
+      "path": "/fhir/Task/placer-TaskOrthopedicReferral",
+      "resource_type": "Task",
+      "resource_id": "placer-TaskOrthopedicReferral",
+      "token": {
+        "party_id": "hospitalf",
+        "smart_scopes": "system/Task.cru",
+        "scope": "openid smart-task-write"
+      },
+      "consent_id": "",
+      "consent": null,
+      "fhir_base": "http://localhost:8090/fhir/placer"
+    }
+  }
+}
+
+docs {
+  Demonstrates Rule 1: Task operations are owner-based and do not require a
+  consent scope in the JWT. Any party with system/Task.cru in smart_scopes
+  can read Tasks.
+
+  Returns reason: "Task operations are owner-based, no consent needed"
+}
