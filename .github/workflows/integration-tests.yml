@@ -28,6 +28,14 @@ jobs:
             -f tests/docker-compose.test.yml \
             wait test-runner
 
+      - name: Show hurl test results
+        if: always()
+        run: |
+          echo "=== Hurl JUnit XML reports ==="
+          for f in tests/reports/*.xml; do
+            [ -f "$f" ] && echo "--- $f ---" && cat "$f" || true
+          done
+
       - name: Print test-runner output
         if: always()
         run: |
@@ -35,21 +43,17 @@ jobs:
           docker compose \
             -f docker-compose.yml \
             -f tests/docker-compose.test.yml \
-            logs --no-color --tail=200 test-runner || true
+            logs --no-color --tail=300 test-runner 2>&1 | tail -200 || true
 
       - name: Print OPA and KrakenD logs on failure
         if: failure()
         run: |
-          echo "=== opa-placer logs ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-placer || true
-          echo "=== opa-fulfiller logs ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-fulfiller || true
-          echo "=== krakend-placer-external logs ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 krakend-placer-external || true
-          echo "=== krakend-fulfiller-external logs ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 krakend-fulfiller-external || true
-          echo "=== seed-loader logs ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 seed-loader || true
+          echo "=== opa-placer logs (last 50) ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-placer 2>&1 || true
+          echo "=== krakend-placer-external logs (last 30) ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=30 krakend-placer-external 2>&1 || true
+          echo "=== seed-loader logs (last 20) ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=20 seed-loader 2>&1 || true
 
       - name: Dump container logs on failure
         if: failure()
