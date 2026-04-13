@@ -28,6 +28,29 @@ jobs:
             -f tests/docker-compose.test.yml \
             wait test-runner
 
+      - name: Print test-runner output
+        if: always()
+        run: |
+          echo "=== test-runner logs ==="
+          docker compose \
+            -f docker-compose.yml \
+            -f tests/docker-compose.test.yml \
+            logs --no-color --tail=200 test-runner || true
+
+      - name: Print OPA and KrakenD logs on failure
+        if: failure()
+        run: |
+          echo "=== opa-placer logs ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-placer || true
+          echo "=== opa-fulfiller logs ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-fulfiller || true
+          echo "=== krakend-placer-external logs ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 krakend-placer-external || true
+          echo "=== krakend-fulfiller-external logs ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 krakend-fulfiller-external || true
+          echo "=== seed-loader logs ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 seed-loader || true
+
       - name: Dump container logs on failure
         if: failure()
         run: |
