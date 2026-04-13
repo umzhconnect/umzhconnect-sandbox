@@ -5,7 +5,8 @@
 #   client_type:  placer | fulfiller | placer-user | fulfiller-user
 #   consent_id:   optional — appends consent:<id> dynamic scope
 #
-# Uses curl + sed (no jq) to be compatible with the hurl Docker image.
+# Uses curl or wget + sed (no jq) to be compatible with both the hurl Docker
+# image (wget only) and macOS dev environments (curl only).
 
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
 TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
@@ -14,11 +15,17 @@ CLIENT_TYPE="$1"
 CONSENT_ID="$2"
 
 fetch_token() {
-    curl -sf \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "$1" \
-        "$TOKEN_URL" \
-    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
+    if command -v curl > /dev/null 2>&1; then
+        curl -sf \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "$1" \
+            "$TOKEN_URL"
+    else
+        wget -qO- \
+            --header="Content-Type: application/x-www-form-urlencoded" \
+            --post-data="$1" \
+            "$TOKEN_URL"
+    fi | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
 }
 
 case "$CLIENT_TYPE" in
