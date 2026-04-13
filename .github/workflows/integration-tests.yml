@@ -31,10 +31,24 @@ jobs:
       - name: Show hurl test results
         if: always()
         run: |
-          echo "=== Hurl JUnit XML reports ==="
+          echo "## Hurl Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          FOUND=0
           for f in tests/reports/*.xml; do
-            [ -f "$f" ] && echo "--- $f ---" && cat "$f" || true
+            if [ -f "$f" ]; then
+              FOUND=1
+              echo "### $f" >> $GITHUB_STEP_SUMMARY
+              echo '```xml' >> $GITHUB_STEP_SUMMARY
+              cat "$f" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
           done
+          if [ "$FOUND" = "0" ]; then
+            echo "⚠️ No XML reports found at tests/reports/" >> $GITHUB_STEP_SUMMARY
+            echo "Checking alternate paths..." >> $GITHUB_STEP_SUMMARY
+            ls -la tests/ >> $GITHUB_STEP_SUMMARY 2>&1 || echo "tests/ not found" >> $GITHUB_STEP_SUMMARY
+            ls -la tests/reports/ >> $GITHUB_STEP_SUMMARY 2>&1 || echo "tests/reports/ not found" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Print test-runner output
         if: always()
