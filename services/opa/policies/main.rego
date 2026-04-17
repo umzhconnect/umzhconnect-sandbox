@@ -154,9 +154,10 @@ effective_consent := fetched_consent if {
 valid_consent if {
 	effective_consent.status == "active"
 	some performer in effective_consent.performer
-	# Case-insensitive check: party_id (e.g. "hospitalf") must appear inside
-	# the performer reference (e.g. "Organization/placer-HospitalF")
-	contains(lower(performer.reference), lower(input.token.party_id))
+	# Case-insensitive check: party_id (e.g. "hospitalf") must be the suffix of
+	# the performer reference (e.g. "Organization/placer-HospitalF") to prevent
+	# substring bypass where "hospital" would match both HospitalF and HospitalP.
+	endswith(lower(performer.reference), lower(input.token.party_id))
 }
 
 # ==========================================================================
