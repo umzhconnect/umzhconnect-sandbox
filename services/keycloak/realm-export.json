@@ -98,7 +98,7 @@
     },
     {
       "name": "consent",
-      "description": "Dynamic consent scope — parameterized as consent:<consentId>. Adds consent_id claim to the access token for fine-grained policy enforcement at the remote API gateway.",
+      "description": "Dynamic consent scope \u2014 parameterized as consent:<consentId>. Adds consent_id claim to the access token for fine-grained policy enforcement at the remote API gateway.",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -234,7 +234,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru",
+            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/ImagingStudy.r",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -326,7 +326,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r",
+            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r system/ImagingStudy.r",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -364,7 +364,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["placer"]
+      "realmRoles": [
+        "placer"
+      ]
     },
     {
       "username": "fulfiller-user",
@@ -380,7 +382,9 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["fulfiller"]
+      "realmRoles": [
+        "fulfiller"
+      ]
     },
     {
       "username": "admin-user",
@@ -396,19 +400,27 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "placer", "fulfiller"]
+      "realmRoles": [
+        "admin",
+        "placer",
+        "fulfiller"
+      ]
     },
     {
       "username": "service-account-placer-client",
       "enabled": true,
       "serviceAccountClientId": "placer-client",
-      "realmRoles": ["placer"]
+      "realmRoles": [
+        "placer"
+      ]
     },
     {
       "username": "service-account-fulfiller-client",
       "enabled": true,
       "serviceAccountClientId": "fulfiller-client",
-      "realmRoles": ["fulfiller"]
+      "realmRoles": [
+        "fulfiller"
+      ]
     }
   ]
 }

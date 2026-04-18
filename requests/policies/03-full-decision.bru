@@ -1,0 +1,56 @@
+meta {
+  name: Full Decision Object (with reason)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{opaPlacerUrl}}/v1/data/umzh/authz/decision
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": {
+      "method": "GET",
+      "path": "/fhir/Condition/SuspectedACLRupture",
+      "resource_type": "Condition",
+      "resource_id": "SuspectedACLRupture",
+      "token": {
+        "party_id": "hospitalf",
+        "smart_scopes": "system/Patient.r system/Condition.r system/ServiceRequest.r",
+        "scope": "openid smart-clinical-read consent:ConsentOrthopedicReferral"
+      },
+      "consent_id": "",
+      "consent": null,
+      "fhir_base": "http://localhost:8090/fhir/placer"
+    }
+  }
+}
+
+docs {
+  Queries the decision rule which returns a structured object with allow flag,
+  evaluated party_id, resource_type, resolved consent_id and a human-readable
+  reason. Useful for debugging policy decisions.
+
+  Endpoint: POST /v1/data/umzh/authz/decision
+  Returns:
+  {
+    "result": {
+      "allow":         true,
+      "party_id":      "hospitalf",
+      "resource_type": "Condition",
+      "method":        "GET",
+      "consent_id":    "ConsentOrthopedicReferral",
+      "reason":        "Resource access granted via valid consent"
+    }
+  }
+
+  Swap resource_id to "SarcomaKnee" to see a denied decision with reason
+  "Access denied: insufficient scope, missing consent, or resource not in consent graph".
+}

@@ -17,6 +17,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [Proxy Walk-Through — Placer Web-App Reads Fulfiller Data](#proxy-walk-through--placer-web-app-reads-fulfiller-data)
   - [Lua Proxy Scripts — URL Rewriting](#lua-proxy-scripts--url-rewriting)
   - [Security Model](#security-model)
+  - [Consent Enforcement — OPA Gate](#consent-enforcement--opa-gate)
   - [Clinical Order Workflow](#clinical-order-workflow)
 - [Quick Start](#quick-start)
 - [Configuration Reference](#configuration-reference)
@@ -141,9 +142,9 @@ Each party operates **two dedicated KrakenD gateways**: an *internal* gateway fo
                     │   /api/actions/*     → orchestration (create-task, all-tasks)│
                     │                                                              │
                     │  krakend-placer-external :8081                               │
-  Fulfiller calls  ►│   GET /fhir/{resource}   → placer partition (nginx-proxy:81) │
-                    │   GET /fhir/{resource}/{id}                                  │
-                    │   POST /fhir/Task        → placer partition (nginx-proxy:81) │
+  Fulfiller calls  ►│   GET /fhir/{resource}?_id=<id>  → OPA → placer partition   │
+                    │   GET /fhir/{resource}/{id}      → OPA → placer partition   │
+                    │   POST /fhir/Task                → placer partition          │
                      ──────────────────────────────────────────────────────────────
 
                      ── HospitalF (Fulfiller) ───────────────────────────────────
@@ -154,10 +155,10 @@ Each party operates **two dedicated KrakenD gateways**: an *internal* gateway fo
                     │   /api/actions/*     → orchestration                         │
                     │                                                              │
                     │  krakend-fulfiller-external :8083                            │
-  Placer calls     ►│   GET  /fhir/{resource}     → fulfiller partition (nginx-proxy:83) │
-                    │   GET  /fhir/{resource}/{id}                                 │
-                    │   POST /fhir/Task            → fulfiller partition           │
-                    │   PUT  /fhir/Task/{id}       → fulfiller partition           │
+  Placer calls     ►│   GET  /fhir/{resource}?_id=<id>  → OPA → fulfiller partition│
+                    │   GET  /fhir/{resource}/{id}      → OPA → fulfiller partition│
+                    │   POST /fhir/Task                 → fulfiller partition      │
+                    │   PUT  /fhir/Task/{id}            → fulfiller partition      │
                      ──────────────────────────────────────────────────────────────
 ```
 
@@ -279,22 +280,24 @@ Direct FHIR access for the logged-in user to manage their own party's partition.
 
 Endpoints the **partner gateway calls** to read or write data. Each external gateway serves a fixed set of endpoints that always return self-links for its own base URL, regardless of caller.
 
+Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) run through the OPA consent gate before the FHIR backend is called. Task write endpoints are not consent-gated.
+
 **krakend-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
 
-| Endpoint | Method(s) | Backend | Propagated Claims |
-|----------|-----------|---------|-------------------|
-| `/fhir/{resource}` | GET | `nginx-proxy:81/fhir/placer/{resource}` | `party_id`, `smart_scopes`, `tenant`, `scope` |
-| `/fhir/{resource}/{id}` | GET | `nginx-proxy:81/fhir/placer/{resource}/{id}` | `party_id`, `smart_scopes`, `tenant`, `scope` |
-| `/fhir/Task` | POST | `nginx-proxy:81/fhir/placer/Task` | `party_id`, `smart_scopes`, `scope` |
+| Endpoint | Method | Query params | Backend | OPA gate |
+|----------|--------|-------------|---------|----------|
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | ✅ `pre_opa_gate_search` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | ✅ `pre_opa_gate` |
+| `/fhir/Task` | POST | — | `nginx-proxy:81` | — |
 
-**krakend-fulfiller-external `:8083`** — consumed by the Placer to write and read Fulfiller Tasks:
+**krakend-fulfiller-external `:8083`** — consumed by the Placer to read Fulfiller data and write/update Tasks:
 
-| Endpoint | Method(s) | Backend | Propagated Claims |
-|----------|-----------|---------|-------------------|
-| `/fhir/{resource}` | GET | `nginx-proxy:83/fhir/fulfiller/{resource}` | `party_id`, `smart_scopes`, `scope` |
-| `/fhir/{resource}/{id}` | GET | `nginx-proxy:83/fhir/fulfiller/{resource}/{id}` | `party_id`, `smart_scopes`, `scope` |
-| `/fhir/Task` | POST | `nginx-proxy:83/fhir/fulfiller/Task` | `party_id`, `smart_scopes`, `scope` |
-| `/fhir/Task/{id}` | PUT | `nginx-proxy:83/fhir/fulfiller/Task/{id}` | — |
+| Endpoint | Method | Query params | Backend | OPA gate |
+|----------|--------|-------------|---------|----------|
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ `pre_opa_gate_search` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ `pre_opa_gate` |
+| `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
+| `/fhir/Task/{id}` | PUT | — | `nginx-proxy:83` | — |
 
 #### Category 3 — Internal Proxy API (internal gateways only)
 
@@ -308,7 +311,7 @@ The internal gateway proxies requests from the web-app into the **partner's FHIR
 `nginx-proxy:84` forwards to `krakend-fulfiller-external` (second JWT validation)
 `nginx-proxy:85` forwards to `krakend-placer-external` (second JWT validation + consent check)
 
-The `X-Consent-Id` header is passed through on the fulfiller's proxy path because placer data is consent-gated.
+Consent is enforced on both read endpoints of each external gateway via the OPA gate (`/fhir/{resource}?_id=` and `/fhir/{resource}/{id}`); the consent ID is extracted from the JWT `scope` claim (`consent:<id>`) rather than a separate header.
 
 #### Category 4 — Actions & Business API (internal gateways only)
 
@@ -438,7 +441,7 @@ localhost:3000                                         (enforces its own securit
 | Response self-links are navigable by the placer web-app | nginx-proxy:84 (step 9) |
 | Placer web-app never needs a direct route to the fulfiller's external gateway | The proxy path is entirely managed by krakend-placer |
 
-The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern using `nginx-proxy:85 → krakend-placer-external`. The placer's external gateway additionally enforces the `X-Consent-Id` header for consent-gated access.
+The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern using `nginx-proxy:85 → krakend-placer-external`. The placer's external gateway enforces consent on all FHIR read requests (both `?_id=` search and single-resource) via the OPA gate; consent identity is carried in the JWT `scope` claim, not a separate header.
 
 ---
 
@@ -533,13 +536,15 @@ Limitation:
 
 #### Decision matrix
 
-| Endpoint type | Output encoding | Multiple backends | Token injection | Script used |
-|---|---|---|---|---|
-| `/fhir/{resource}` (GET/POST) | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
-| `/fhir/{resource}/{id}` (GET/PUT) | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
-| `/proxy/{party}/fhir/*` | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
-| `/api/actions/create-task` | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
-| `/api/actions/all-tasks` | `json` | Yes (token + 2× FHIR) | Yes | `proxy_response.lua` (proxy level) |
+| Endpoint type | Gateway | Output encoding | Multiple backends | Token injection | Script used |
+|---|---|---|---|---|---|
+| `/fhir/{resource}` (GET/POST) | internal | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
+| `/fhir/{resource}/{id}` (GET/PUT) | internal | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
+| `/fhir/{resource}` (GET, `?_id=`) — consent-enforced | external | `json` | Yes (OPA + FHIR) | No | `opa_gate.lua` (`pre_opa_gate_search` + post) |
+| `/fhir/{resource}/{id}` (GET) — consent-enforced | external | `json` | Yes (OPA + FHIR) | No | `opa_gate.lua` (`pre_opa_gate` + post) |
+| `/proxy/{party}/fhir/*` | internal | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
+| `/api/actions/create-task` | internal | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
+| `/api/actions/all-tasks` | internal | `json` | Yes (token + 2× FHIR) | Yes | `proxy_response.lua` (proxy level) |
 
 #### `REWRITE_URLS` environment variable
 
@@ -615,6 +620,136 @@ The sandbox implements **Level 1** (basic client credentials) of the three-level
 | `system/Immunization.r` | Read immunisations |
 | `system/DiagnosticReport.r` | Read diagnostic reports |
 | `system/QuestionnaireResponse.cru` | Create, read, update QuestionnaireResponses |
+
+---
+
+### Consent Enforcement — OPA Gate
+
+Both external gateway read endpoints enforce consent **at the gateway** using a KrakenD sequential proxy that calls OPA before forwarding the request to HAPI FHIR. The policy decision is taken entirely inside the gateway — no sidecar or separate proxy component is involved.
+
+| Endpoint | Query constraint | OPA pre hook |
+|---|---|---|
+| `GET /fhir/{resource}` | `_id` required, `_include` optional | `pre_opa_gate_search` — parses resource ID from `_id` query param |
+| `GET /fhir/{resource}/{id}` | — | `pre_opa_gate` — parses resource ID from URL path |
+
+#### Architecture
+
+```
+Client
+  │  GET /fhir/Condition/SuspectedACLRupture
+  │  Authorization: Bearer <JWT with scope=consent:ConsentOrthopedicReferral>
+  ▼
+krakend-*-external  (proxy.sequential: true)
+  │
+  ├─── Backend 1: OPA ──────────────────────────────────────────────────────┐
+  │    POST /v1/data/umzh/authz?_r=Condition&_i=SuspectedACLRupture         │
+  │    Body built by pre_opa_gate() from JWT claims + URL params             │
+  │    Group: "opa"                                                          │
+  │    Returns: { "result": { "allow": true, "http_status": 200, ... } }    │
+  │                                                                          │
+  └─── Backend 2: HAPI FHIR ──────────────────────────────────────────────▶│
+       GET /fhir/{party}/Condition/SuspectedACLRupture                      │
+                                                                             │
+  post_opa_gate() reads http_status from merged "opa" group ────────────────┘
+    • http_status == 200 → strip "opa" key, return FHIR resource to client
+    • http_status != 200 → error() → KrakenD CE returns HTTP 500
+```
+
+Both backends run on every request (KrakenD CE sequential proxy does not short-circuit on backend failure). The proxy post hook makes the access control decision after both backends have responded and their results have been merged.
+
+#### JWT Claims → Lua via `propagate_claims`
+
+`propagate_claims` is KrakenD CE's standard mechanism for passing validated JWT claims into backend-level Lua hooks. The `auth/validator` block maps named JWT claims to HTTP request headers, which are then readable in `modifier/lua-backend` pre hooks via `r:headers()`:
+
+```json
+"propagate_claims": [
+    ["party_id",     "x-party-id"],
+    ["smart_scopes", "x-smart-scopes"],
+    ["scope",        "x-scope"]
+]
+```
+
+In `opa_gate.lua`:
+```lua
+local party_id     = r:headers('x-party-id')     or ''
+local scope        = r:headers('x-scope')        or ''
+local smart_scopes = r:headers('x-smart-scopes') or ''
+```
+
+**Why not direct JWT parsing in the Lua script?** KrakenD CE backend Lua hooks do not expose a `ctx.JWT` object or any structured JWT API. The `propagate_claims` → `r:headers()` pipeline is the only supported CE mechanism for accessing JWT claims in backend-level Lua. `output_encoding: json` (required for sequential proxy response merging) must be set on the endpoint for header propagation to work; `no-op` encoding suppresses this header forwarding. `opa_gate.lua` includes a Base64url JWT decode fallback for defensive completeness, but it is dead code in the current configuration — propagated headers are always present with `json` encoding.
+
+**Claims are flat strings.** `propagate_claims` copies claim values verbatim as header strings. There is no structured access to array or object claims. The `scope` claim (`openid consent:ConsentOrthopedicReferral`) and `smart_scopes` (`system/Patient.r system/Condition.r`) are space-delimited strings that OPA splits internally.
+
+#### `opa_gate.lua` — How It Works
+
+**`pre_opa_gate(request, fhir_base)`** — runs before the OPA backend request is dispatched:
+
+1. **Reads `resource_type` and `resource_id` from `r:url()`** — not `r:params()`.  
+   `r:params()` does **not** read query-string substitutions. Even with URL pattern `/v1/data/umzh/authz?_r={resource}&_i={id}`, the `{resource}` and `{id}` wildcard values are substituted into the URL string by KrakenD but are not exposed via the params API. They must be parsed from the resolved URL directly:
+   ```lua
+   local url           = r:url() or ''
+   local resource_type = url:match('[?&]_r=([^&]+)') or ''
+   local resource_id   = url:match('[?&]_i=([^&]+)') or ''
+   ```
+
+2. **Reads JWT claims** from propagated headers (`x-party-id`, `x-scope`, `x-smart-scopes`) with JWT-decode fallback.
+
+3. **Builds and injects the OPA input document** as the POST body:
+   ```json
+   {
+     "input": {
+       "method": "GET",
+       "path": "/fhir/Condition/SuspectedACLRupture",
+       "resource_type": "Condition",
+       "resource_id": "SuspectedACLRupture",
+       "token": { "party_id": "...", "smart_scopes": "...", "scope": "..." },
+       "consent_id": "",
+       "consent": null,
+       "fhir_base": "http://nginx-proxy:<port>/fhir/<party>"
+     }
+   }
+   ```
+
+**`post_opa_gate(response, request)`** — runs after both backends have responded:
+
+1. Reads the OPA decision from the merged data buffer under the `"opa"` group key (set via `group: "opa"` in the backend config).
+2. Reads the numeric `http_status` field — **not** the boolean `allow` field. KrakenD's Lua data binding does not propagate JSON booleans (`true`/`false` map to `nil`). The OPA policy exports a numeric `http_status` (200 = allow, 403 = deny) alongside the boolean `allow` for this reason.
+3. `http_status == 200` → strips the `"opa"` key from the response and passes the FHIR body through.
+4. Otherwise → calls `error()` → KrakenD CE returns HTTP 500.
+
+All three field checks (`opa` group, `result`, `http_status`) are fail-closed: a `nil` value at any step is treated as a deny with a descriptive error message.
+
+#### Known Limitation — HTTP 500 vs HTTP 403
+
+`error()` in `modifier/lua-proxy` always causes KrakenD **CE** to return HTTP 500, not HTTP 403. Returning a semantically correct denial status requires the `security/policies` feature, which is only available in KrakenD **Enterprise**. The sandbox accepts HTTP 500 as a deliberate trade-off — access is denied either way — at the cost of a non-standard response code. A future upgrade to KrakenD Enterprise would resolve this without any Lua or policy changes.
+
+#### OPA Package-Level Query
+
+The gateway queries the package-level endpoint (`POST /v1/data/umzh/authz`) rather than the rule-level boolean endpoint (`/v1/data/umzh/authz/allow`). This returns all top-level rule values in a single response body:
+
+```json
+{
+  "result": {
+    "allow":       true,
+    "http_status": 200,
+    "decision":    { "allow": true, "consent_id": "...", "reason": "..." }
+  }
+}
+```
+
+The gateway reads `result.http_status` (numeric) because the boolean `result.allow` is inaccessible through the KrakenD Lua data binding. Note that OPA's own REST API always returns HTTP 200 for a successful evaluation regardless of the `http_status` rule value — the numeric field is purely a convention for callers.
+
+#### Bruno Policy Requests
+
+`requests/policies/` contains five ready-to-run OPA queries demonstrating all policy scenarios. Each request uses `{{opaPlacerUrl}}` (default: `http://localhost:8181`):
+
+| File | OPA Endpoint | Scenario |
+|------|-------------|---------|
+| `01-allow-granted.bru` | `/v1/data/umzh/authz/allow` | Resource in consent graph → `{ "result": true }` |
+| `02-allow-denied.bru` | `/v1/data/umzh/authz/allow` | Resource NOT in consent graph → `{ "result": false }` |
+| `03-full-decision.bru` | `/v1/data/umzh/authz/decision` | Full decision object with human-readable `reason` |
+| `04-package-eval.bru` | `/v1/data/umzh/authz` | Package-level query — same endpoint the gateway uses |
+| `05-task-no-consent.bru` | `/v1/data/umzh/authz/decision` | Task resource — Rule 1, no consent check required |
 
 ---
 
@@ -931,11 +1066,11 @@ Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from
 
 #### Full Endpoint Reference — Placer External Gateway (`:8081`)
 
-| Endpoint | Method | Backend host | Backend path | Auth | Propagates |
-|----------|--------|-------------|--------------|------|------------|
-| `/fhir/{resource}` | GET | `nginx-proxy:81` | `/fhir/placer/{resource}` | JWT | party_id, smart_scopes, tenant, scope |
-| `/fhir/{resource}/{id}` | GET | `nginx-proxy:81` | `/fhir/placer/{resource}/{id}` | JWT | party_id, smart_scopes, tenant, scope |
-| `/fhir/Task` | POST | `nginx-proxy:81` | `/fhir/placer/Task` | JWT | party_id, smart_scopes, scope |
+| Endpoint | Method | Query params | Backend host(s) | Backend path | Auth | Notes |
+|----------|--------|-------------|----------------|--------------|------|-------|
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | `/v1/data/umzh/authz` → `/fhir/placer/{resource}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate_search` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | `/v1/data/umzh/authz` → `/fhir/placer/{resource}/{id}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate` |
+| `/fhir/Task` | POST | — | `nginx-proxy:81` | `/fhir/placer/Task` | JWT | |
 
 #### Full Endpoint Reference — Fulfiller Internal Gateway (`:8082`)
 
@@ -952,12 +1087,12 @@ Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from
 
 #### Full Endpoint Reference — Fulfiller External Gateway (`:8083`)
 
-| Endpoint | Method | Backend host | Backend path | Auth | Propagates |
-|----------|--------|-------------|--------------|------|------------|
-| `/fhir/{resource}` | GET | `nginx-proxy:83` | `/fhir/fulfiller/{resource}` | JWT | party_id, smart_scopes, scope |
-| `/fhir/{resource}/{id}` | GET | `nginx-proxy:83` | `/fhir/fulfiller/{resource}/{id}` | JWT | party_id, smart_scopes, scope |
-| `/fhir/Task` | POST | `nginx-proxy:83` | `/fhir/fulfiller/Task` | JWT | party_id, smart_scopes, scope |
-| `/fhir/Task/{id}` | PUT | `nginx-proxy:83` | `/fhir/fulfiller/Task/{id}` | JWT | — |
+| Endpoint | Method | Query params | Backend host(s) | Backend path | Auth | Notes |
+|----------|--------|-------------|----------------|--------------|------|-------|
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | `/v1/data/umzh/authz` → `/fhir/fulfiller/{resource}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate_search` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `/v1/data/umzh/authz` → `/fhir/fulfiller/{resource}/{id}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate` |
+| `/fhir/Task` | POST | — | `nginx-proxy:83` | `/fhir/fulfiller/Task` | JWT | |
+| `/fhir/Task/{id}` | PUT | — | `nginx-proxy:83` | `/fhir/fulfiller/Task/{id}` | JWT | |
 
 ---
 
@@ -968,7 +1103,9 @@ Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from
 **OPA version:** 0.70.0 (Rego v1 syntax with `import rego.v1`)
 
 Each party has its own OPA instance (opa-placer, opa-fulfiller) loaded with the same policy. The policy enforces consent-centric access control by evaluating:
-> *"Does the requesting party hold a valid consent that covers the requested resource?"*
+> *"Is the requesting party associated to an active consent, and is the requested resource part of the ServiceRequest graph that consent references?"*
+
+Resource scope is derived dynamically: OPA follows `Consent.sourceReference` to fetch the ServiceRequest and collects all resources referenced by its `subject`, `requester`, `reasonReference`, `supportingInfo`, and `insurance` fields. `Consent.provision.data` is not used; the ServiceRequest graph is the single source of truth for what a given consent covers.
 
 #### Input Schema
 
@@ -987,7 +1124,8 @@ The policy expects a JSON input document sent by the gateway or client:
     "scope":       "openid consent:ConsentOrthopedicReferral"
   },
   "consent_id": "",
-  "consent":    null
+  "consent":    null,
+  "fhir_base":  "http://nginx-proxy:81/fhir/placer"
 }
 ```
 
@@ -998,28 +1136,34 @@ The policy expects a JSON input document sent by the gateway or client:
 | **1 – Task** | `resource_type == "Task"` + SMART scope | Owner-based, no consent check |
 | **2 – QuestionnaireResponse** | `resource_type == "QuestionnaireResponse"` + SMART scope | No consent check |
 | **3 – Questionnaire read** | `resource_type == "Questionnaire"` + GET + SMART scope | No consent check |
-| **4 – Clinical resource read** | GET + SMART scope + `valid_consent` + `resource_in_consent_scope` | Requires valid consent |
+| **4 – Clinical resource read** | GET + SMART scope + `valid_consent` + `resource_in_consent_scope` | Consent active + resource in SR graph |
 | **5 – Metadata** | `path == "/fhir/metadata"` | Always allowed |
 | **6 – Directory** | GET + `Organization \| Practitioner \| PractitionerRole` + SMART scope | No consent check |
 
-#### `effective_consent_id` Helper
+#### Consent and ServiceRequest Resolution
 
-```rego
-# Priority 1: explicit consent_id field in the request body
-effective_consent_id := input.consent_id if {
-    input.consent_id != ""
-}
+The policy resolves scope in two sequential HTTP fetches, both cached by OPA for the lifetime of the process:
 
-# Priority 2: extract from JWT scope claim (consent:<id> dynamic scope)
-effective_consent_id := id if {
-    input.consent_id == ""
-    scope_parts := split(input.token.scope, " ")
-    some part in scope_parts
-    startswith(part, "consent:")
-    id := substring(part, count("consent:"), -1)
-    id != ""
-}
-```
+**1. Resolve consent ID** (`effective_consent_id`):
+- Priority 1: `input.consent_id` if non-empty (legacy explicit override, currently always `""` from the gateway)
+- Priority 2: extract the `consent:<id>` dynamic scope from the JWT `scope` claim
+
+**2. Fetch Consent from HAPI** using `input.fhir_base + "/Consent/" + effective_consent_id`. If unreachable or not HTTP 200, all rules that depend on `valid_consent` fail → deny.
+
+**3. Fetch ServiceRequest from HAPI** via `Consent.sourceReference.reference`. Collects references from:
+
+| SR field | Cardinality | Example |
+|---|---|---|
+| `subject` | single | `Patient/PetraMeier` |
+| `requester` | single | `PractitionerRole/HansMusterRole` |
+| `reasonReference` | array | `Condition/SuspectedACLRupture` |
+| `supportingInfo` | array | `MedicationStatement/MedicationEntresto` |
+| `insurance` | array | `Coverage/CoverageMeier` |
+| *(SR itself)* | — | `ServiceRequest/ReferralOrthopedicSurgery` |
+
+`SR.performer` is intentionally excluded — the receiving organisation is a directory resource already accessible via Rule 6. `Consent.provision.data` is not consulted; the SR graph is the sole source of scope.
+
+`resource_in_consent_scope` checks whether `{resource_type}/{resource_id}` matches the tail of any collected reference, using `endswith` to handle both relative (`Patient/X`) and absolute URL references.
 
 #### OPA Endpoints
 
@@ -1027,8 +1171,9 @@ Both OPA instances expose the same HTTP API on their respective ports (8181/8182
 
 | Endpoint | Returns | Use case |
 |----------|---------|----------|
-| `POST /v1/data/umzh/authz/allow` | `{ "result": true \| false }` | Simple boolean — used by KrakenD proxy |
-| `POST /v1/data/umzh/authz/decision` | Full decision object | Debug, audit, explicit policy check |
+| `POST /v1/data/umzh/authz` | All rule values incl. `http_status` | **Used by external gateway** (sequential proxy OPA gate) |
+| `POST /v1/data/umzh/authz/allow` | `{ "result": true \| false }` | Simple boolean — used by internal gateway `/api/policy/check` |
+| `POST /v1/data/umzh/authz/decision` | Full decision object with `reason` | Debug, audit, explicit policy check |
 | `GET /v1/health` | `{ "status": "ok" }` | Health check |
 
 #### Example Policy Calls
@@ -1052,7 +1197,8 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
         "scope": "openid consent:ConsentOrthopedicReferral"
       },
       "consent_id": "",
-      "consent": null
+      "consent": null,
+      "fhir_base": "http://localhost:8090/fhir/placer"
     }
   }' | jq '.result'
 # → { "allow": true, "consent_id": "ConsentOrthopedicReferral", "reason": "Resource access granted via valid consent" }
@@ -1357,8 +1503,15 @@ requests/
 │   ├── 02-fulfiller-external-read-tasks.bru  Placer reads Fulfiller Tasks (→ {{placerToken}})
 │   └── 03-fulfiller-external-create-task.bru Placer creates Task at Fulfiller (→ {{placerToken}})
 │
+├── policies/                       Direct OPA queries — no auth required (uses {{opaPlacerUrl}})
+│   ├── 01-allow-granted.bru       Resource in consent graph → true
+│   ├── 02-allow-denied.bru        Resource NOT in consent graph → false
+│   ├── 03-full-decision.bru       Full decision object with reason string
+│   ├── 04-package-eval.bru        Package-level query (same endpoint the gateway uses)
+│   └── 05-task-no-consent.bru     Task resource — Rule 1, no consent check
+│
 └── environments/
-    └── local.bru                  Base URLs + consentId for local Docker Compose setup
+    └── local.bru                  Base URLs + consentId + OPA URLs for local Docker Compose setup
 ```
 
 ---
@@ -1618,6 +1771,16 @@ Sandbox/
 │   ├── krakend-fulfiller-external/
 │   │   └── krakend.json            # Fulfiller external gateway (port 8083)
 │   │                               # Category 2 — Placer reads/writes Fulfiller data
+│   │
+│   ├── krakend/
+│   │   └── lua/
+│   │       ├── opa_gate.lua        # Sequential proxy OPA consent gate
+│   │       │                       # pre_opa_gate        — single-resource /{resource}/{id}
+│   │       │                       # pre_opa_gate_search — search /{resource}?_id= (mandatory)
+│   │       │                       # post_opa_gate       — shared; enforces http_status decision
+│   │       ├── proxy_inject_token.lua   # Backend pre — injects M2M Bearer token
+│   │       ├── proxy_response.lua  # Proxy post — strips token_exchange, rewrites FHIR URLs
+│   │       └── proxy_rewrite.lua   # Backend post — raw body URL replacement
 │   │
 │   ├── opa/
 │   │   └── policies/

@@ -3,9 +3,16 @@
 # =============================================================================
 # Main policy package for consent-centric authorization enforcement.
 #
-# The policy engine evaluates:
-# "Is the consent associated to the requesting client and are the resulting
-#  requested resources part of the service request graph?"
+# Scenario 1 — Consent-centric requests:
+# "Is the requesting client associated to the consent, and is the requested
+#  resource part of the service request graph referenced by that consent?"
+#
+# Resource scope is derived dynamically from Consent.sourceReference → the
+# ServiceRequest.  All resources referenced by the SR's subject, requester,
+# reasonReference, supportingInfo, and insurance fields are considered in
+# scope.  provision.data is not used; performer is intentionally excluded
+# (the receiving organisation is a directory resource, already accessible
+# via Rule 6).
 # =============================================================================
 
 package umzh.authz
@@ -14,6 +21,14 @@ import rego.v1
 
 # Default deny
 default allow := false
+
+# Recommended HTTP status code for callers.
+# NOTE: OPA's REST API (/v1/data/...) always returns HTTP 200 for successful
+# evaluations — this value appears in result.http_status in the response body
+# for callers (sidecars, gateways) to use, but does NOT change OPA's own
+# HTTP response code.
+default http_status := 200
+http_status := 403 if { not allow }
 
 # ---------------------------------------------------------------------------
 # Input structure expected from KrakenD / API Gateway:
@@ -25,220 +40,253 @@ default allow := false
 #   "token": {
 #     "party_id": "hospitalf",
 #     "smart_scopes": "system/Patient.r system/Task.cru ...",
-#     "tenant": "fulfiller",
-#     "scope": "openid consent:ConsentOrthopedicReferral"   # <-- JWT scope claim
+#     "scope": "openid consent:ConsentOrthopedicReferral"   # JWT scope claim
 #   },
-#   "consent_id": "consent-ref-001",   # optional explicit override
-#   "consent": {                    # Resolved consent resource (fetched by gateway)
-#     "status": "active",
-#     "scope": { ... },
-#     "patient": { "reference": "Patient/PetraMeier" },
-#     "performer": [{ "reference": "Organization/HospitalF" }],
-#     "sourceReference": { "reference": "ServiceRequest/ReferralOrthopedicSurgery" },
-#     "provision": {
-#       "type": "permit",
-#       "data": [
-#         { "reference": { "reference": "Condition/SuspectedACLRupture" } },
-#         { "reference": { "reference": "MedicationStatement/MedicationEntresto" } }
-#       ]
-#     }
-#   }
+#   "consent_id":  "",           # optional explicit override (legacy)
+#   "consent":     null,         # optional pre-resolved Consent resource
+#   "fhir_base":   "http://nginx-proxy:81/fhir/placer"   # used to fetch Consent + SR
 # }
 # ---------------------------------------------------------------------------
 
 # ==========================================================================
-# Rule 1: Allow Task operations without consent (Task access is owner-based)
+# Rule 1: Allow Task operations (owner-based, no consent needed)
 # ==========================================================================
 allow if {
-    input.resource_type == "Task"
-    has_smart_scope("Task", method_to_action(input.method))
+	input.resource_type == "Task"
+	has_smart_scope("Task", method_to_action(input.method))
 }
 
 # ==========================================================================
-# Rule 2: Allow QuestionnaireResponse operations without consent
+# Rule 2: Allow QuestionnaireResponse operations (no consent needed)
 # ==========================================================================
 allow if {
-    input.resource_type == "QuestionnaireResponse"
-    has_smart_scope("QuestionnaireResponse", method_to_action(input.method))
+	input.resource_type == "QuestionnaireResponse"
+	has_smart_scope("QuestionnaireResponse", method_to_action(input.method))
 }
 
 # ==========================================================================
 # Rule 3: Allow Questionnaire read operations
 # ==========================================================================
 allow if {
-    input.resource_type == "Questionnaire"
-    input.method == "GET"
-    has_smart_scope("Questionnaire", "r")
+	input.resource_type == "Questionnaire"
+	input.method == "GET"
+	has_smart_scope("Questionnaire", "r")
 }
 
 # ==========================================================================
-# Rule 4: Allow read of resources with valid consent
+# Rule 4: Allow read of resources within the consent's service request graph
 # ==========================================================================
 allow if {
-    input.method == "GET"
-    input.resource_type != "Task"
-    input.resource_type != "QuestionnaireResponse"
-    has_smart_scope(input.resource_type, "r")
-    valid_consent
-    resource_in_consent_scope
+	input.method == "GET"
+	input.resource_type != "Task"
+	input.resource_type != "QuestionnaireResponse"
+	has_smart_scope(input.resource_type, "r")
+	valid_consent
+	resource_in_consent_scope
 }
 
 # ==========================================================================
 # Rule 5: Allow metadata endpoint always
 # ==========================================================================
 allow if {
-    input.path == "/fhir/metadata"
+	input.path == "/fhir/metadata"
 }
 
 # ==========================================================================
-# Rule 6: Allow Organization and Practitioner reads (directory data)
+# Rule 6: Allow Organisation and Practitioner directory reads
 # ==========================================================================
 allow if {
-    input.method == "GET"
-    input.resource_type in {"Organization", "Practitioner", "PractitionerRole"}
-    has_smart_scope(input.resource_type, "r")
+	input.method == "GET"
+	input.resource_type in {"Organization", "Practitioner", "PractitionerRole"}
+	has_smart_scope(input.resource_type, "r")
 }
 
 # ==========================================================================
-# Helper: Check if token has the required SMART scope
+# Consent resolution
+# ==========================================================================
+
+# Branch 1: explicit consent_id field in input takes priority
+effective_consent_id := input.consent_id if {
+	input.consent_id != ""
+}
+
+# Branch 2: extract consent:<id> from the JWT scope claim
+effective_consent_id := id if {
+	input.consent_id == ""
+	scope_parts := split(input.token.scope, " ")
+	some part in scope_parts
+	startswith(part, "consent:")
+	id := substring(part, count("consent:"), -1)
+	id != ""
+}
+
+# Fetch the Consent resource from HAPI FHIR when not provided inline.
+# Requires input.fhir_base to be set by the calling gateway.
+# The result is cached within the evaluation by OPA's built-in http.send caching.
+fetched_consent := consent if {
+	effective_consent_id != ""
+	input.consent == null
+	input.fhir_base != ""
+	url := concat("/", [input.fhir_base, "Consent", effective_consent_id])
+	resp := http.send({
+		"method":            "GET",
+		"url":               url,
+		"headers":           {"Accept": "application/fhir+json"},
+		"force_json_decode": true,
+		"cache":             true,
+	})
+	resp.status_code == 200
+	consent := resp.body
+}
+
+# Effective consent: prefer inline input, fall back to fetched.
+effective_consent := input.consent if {
+	input.consent != null
+}
+
+effective_consent := fetched_consent if {
+	input.consent == null
+}
+
+# ==========================================================================
+# Helper: Validate consent is active and issued to the requesting party
+# ==========================================================================
+valid_consent if {
+	effective_consent.status == "active"
+	some performer in effective_consent.performer
+	# Case-insensitive check: party_id (e.g. "hospitalf") must be the suffix of
+	# the performer reference (e.g. "Organization/placer-HospitalF") to prevent
+	# substring bypass where "hospital" would match both HospitalF and HospitalP.
+	endswith(lower(performer.reference), lower(input.token.party_id))
+}
+
+# ==========================================================================
+# ServiceRequest graph — derive resource scope from Consent.sourceReference
+# ==========================================================================
+
+# Fetch the ServiceRequest referenced by Consent.sourceReference.
+# Cached for the lifetime of the OPA process.
+fetched_service_request := sr if {
+	effective_consent.sourceReference != null
+	url := concat("/", [input.fhir_base, effective_consent.sourceReference.reference])
+	resp := http.send({
+		"method":            "GET",
+		"url":               url,
+		"headers":           {"Accept": "application/fhir+json"},
+		"force_json_decode": true,
+		"cache":             true,
+	})
+	resp.status_code == 200
+	sr := resp.body
+}
+
+# Collect all resource references from the ServiceRequest into a set.
+# performer is intentionally excluded — it is the receiving organisation, not
+# a clinical data resource, and is already accessible via Rule 6 (directory reads).
+
+service_request_refs contains ref if {
+	ref := fetched_service_request.subject.reference
+}
+
+service_request_refs contains ref if {
+	ref := fetched_service_request.requester.reference
+}
+
+service_request_refs contains ref if {
+	some item in fetched_service_request.reasonReference
+	ref := item.reference
+}
+
+service_request_refs contains ref if {
+	some item in fetched_service_request.supportingInfo
+	ref := item.reference
+}
+
+service_request_refs contains ref if {
+	some item in fetched_service_request.insurance
+	ref := item.reference
+}
+
+# The ServiceRequest itself is always in scope.
+service_request_refs contains ref if {
+	ref := effective_consent.sourceReference.reference
+}
+
+# ==========================================================================
+# Helper: Check that the requested resource is within the consent's scope
+# ==========================================================================
+
+# Resource appears in the ServiceRequest graph
+resource_in_consent_scope if {
+	resource_ref := concat("/", [input.resource_type, input.resource_id])
+	some ref in service_request_refs
+	# endswith handles both relative ("Patient/X") and absolute URL references
+	endswith(ref, resource_ref)
+}
+
+# Search operations with no specific resource_id pass the scope check.
+# The gateway always supplies a concrete _id on the external endpoint, so
+# this branch is unreachable from there but preserved for direct OPA calls.
+resource_in_consent_scope if {
+	input.resource_id == ""
+}
+
+# ==========================================================================
+# Helper: Check if token carries the required SMART on FHIR scope
 # ==========================================================================
 has_smart_scope(resource, action) if {
-    scopes := split(input.token.smart_scopes, " ")
-    some scope in scopes
-    scope_parts := split(scope, "/")
-    count(scope_parts) == 2
-    resource_action := scope_parts[1]
-    ra_parts := split(resource_action, ".")
-    ra_parts[0] == resource
-    contains(ra_parts[1], action)
+	scopes := split(input.token.smart_scopes, " ")
+	some scope in scopes
+	scope_parts := split(scope, "/")
+	count(scope_parts) == 2
+	resource_action := scope_parts[1]
+	ra_parts := split(resource_action, ".")
+	ra_parts[0] == resource
+	contains(ra_parts[1], action)
 }
 
 # ==========================================================================
-# Helper: Map HTTP method to SMART action
+# Helper: Map HTTP method to SMART on FHIR action letter
 # ==========================================================================
 method_to_action(method) := action if {
-    actions := {
-        "GET": "r",
-        "POST": "c",
-        "PUT": "u",
-        "PATCH": "u",
-        "DELETE": "d"
-    }
-    action := actions[method]
+	actions := {
+		"GET":    "r",
+		"POST":   "c",
+		"PUT":    "u",
+		"PATCH":  "u",
+		"DELETE": "d",
+	}
+	action := actions[method]
 }
 
 # ==========================================================================
-# Helper: Extract consent_id from the JWT scope claim.
-#
-# Keycloak dynamic scope places the consent ID inside the space-separated
-# `scope` claim as "consent:<consentId>". KrakenD propagates this via the
-# `x-scope` header and the gateway includes it as `input.token.scope`.
-#
-# Priority order:
-#   1. Explicit `input.consent_id` field in the request body (legacy / manual)
-#   2. `consent:*` token in `input.token.scope` (JWT dynamic scope)
-#
-# Two separate incremental rules — OPA resolves to the first one that fires.
-# ==========================================================================
-
-# Branch 1: explicit consent_id field takes priority
-effective_consent_id := input.consent_id if {
-    input.consent_id != ""
-}
-
-# Branch 2: extract from JWT scope claim (consent:<id> dynamic scope)
-effective_consent_id := id if {
-    input.consent_id == ""
-    scope_parts := split(input.token.scope, " ")
-    some part in scope_parts
-    startswith(part, "consent:")
-    id := substring(part, count("consent:"), -1)
-    id != ""
-}
-
-# ==========================================================================
-# Helper: Validate consent is active and matches requesting party
-# ==========================================================================
-valid_consent if {
-    input.consent != null
-    input.consent.status == "active"
-    # Consent performer matches requesting party's organization
-    some performer in input.consent.performer
-    contains(performer.reference, input.token.party_id)
-}
-
-# Fallback: If no consent object provided but an effective consent_id is
-# present (from request body or JWT scope), optimistically allow.
-# (In production, the gateway would resolve the consent resource first.)
-valid_consent if {
-    effective_consent_id != ""
-    input.consent == null
-}
-
-# ==========================================================================
-# Helper: Check if requested resource is within the consent's scope
-# ==========================================================================
-resource_in_consent_scope if {
-    # If consent has explicit data provisions, check membership
-    input.consent.provision.data != null
-    some data_item in input.consent.provision.data
-    resource_ref := concat("/", [input.resource_type, input.resource_id])
-    data_item.reference.reference == resource_ref
-}
-
-# Also allow if the resource is the patient referenced in the consent
-resource_in_consent_scope if {
-    input.consent.patient != null
-    resource_ref := concat("/", [input.resource_type, input.resource_id])
-    input.consent.patient.reference == resource_ref
-}
-
-# Also allow search operations (no specific resource_id)
-resource_in_consent_scope if {
-    input.resource_id == ""
-}
-
-# Allow if consent has no explicit data restrictions (broad consent)
-resource_in_consent_scope if {
-    input.consent.provision.data == null
-}
-
-# When no consent object is present but a consent_id is asserted via the JWT
-# scope claim (optimistic trust mode), skip the resource-level restriction.
-# In production the gateway resolves the consent object first.
-resource_in_consent_scope if {
-    effective_consent_id != ""
-    input.consent == null
-}
-
-# ==========================================================================
-# Decision response structure
+# Decision response (full context, useful for debugging)
 # ==========================================================================
 decision := {
-    "allow": allow,
-    "party_id": input.token.party_id,
-    "resource_type": input.resource_type,
-    "method": input.method,
-    "consent_id": effective_consent_id,
-    "reason": reason,
+	"allow":         allow,
+	"party_id":      input.token.party_id,
+	"resource_type": input.resource_type,
+	"method":        input.method,
+	"consent_id":    effective_consent_id,
+	"reason":        reason,
 }
 
 reason := "Task operations are owner-based, no consent needed" if {
-    input.resource_type == "Task"
-    allow
-}
-
-reason := "Resource access granted via valid consent" if {
-    input.resource_type != "Task"
-    allow
-    valid_consent
+	input.resource_type == "Task"
+	allow
 }
 
 reason := "Directory resource access granted" if {
-    input.resource_type in {"Organization", "Practitioner", "PractitionerRole"}
-    allow
+	input.resource_type in {"Organization", "Practitioner", "PractitionerRole"}
+	allow
 }
 
-reason := "Access denied: insufficient scope or invalid consent" if {
-    not allow
+reason := "Resource access granted via valid consent" if {
+	not input.resource_type in {"Task", "Organization", "Practitioner", "PractitionerRole"}
+	allow
+	valid_consent
+}
+
+reason := "Access denied: insufficient scope, missing consent, or resource not in consent graph" if {
+	not allow
 }
