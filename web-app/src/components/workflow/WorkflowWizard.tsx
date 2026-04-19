@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import { useFhirClient } from '../../hooks/useFhirClient';
-import { useAllTasks } from '../../hooks/useFhirSearch';
-import type { Bundle, FhirResource, ServiceRequest, Task } from '../../types/fhir';
+import { useAllTasks, useFhirSearch } from '../../hooks/useFhirSearch';
+import type { Bundle, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
 import JsonViewer from '../common/JsonViewer';
 import LoadingSpinner from '../common/LoadingSpinner';
 import StatusBadge from '../common/StatusBadge';
@@ -204,10 +204,17 @@ const WizardTaskSelectModal: React.FC<{
 // ---------------------------------------------------------------------------
 
 const WorkflowWizard: React.FC = () => {
-  const { activeRole } = useRole();
+  const { activeRole, partnerExternalBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
+
+  const { data: orgBundle } = useFhirSearch<Organization>('Organization', {});
+  const organizations = (orgBundle?.entry?.map((e) => e.resource).filter(Boolean) as Organization[]) ?? [];
+  const partnerOrigin = new URL(partnerExternalBaseUrl).origin;
+  const partnerOrg = organizations.find((o) =>
+    o.meta?.tag?.some((tag) => tag.system === 'urn:umzh:api:external-host' && tag.code === partnerOrigin)
+  );
 
   const [step, setStep] = useState(0);
   const [running, setRunning] = useState(false);
@@ -359,6 +366,7 @@ const WorkflowWizard: React.FC = () => {
             status: 'active',
             patient: { reference: patientRef, display: patientDisplay },
             ...(srId && { sourceReference: { reference: `ServiceRequest/${srId}` } }),
+            ...(partnerOrg?.id && { performer: [{ reference: `Organization/${partnerOrg.id}` }] }),
             dateTime: new Date().toISOString(),
             provision: {
               type: 'permit',
