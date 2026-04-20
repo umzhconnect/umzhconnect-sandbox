@@ -1,0 +1,229 @@
+routes:
+  # ─── Health check ────────────────────────────────────────────────────
+  - id: health
+    uri: /__health
+    methods: [GET]
+    priority: 100
+    plugins:
+      serverless-pre-function:
+        phase: access
+        functions:
+          - |
+            return function(conf, ctx)
+              ngx.header["Content-Type"] = "application/json"
+              ngx.say('{"status":"ok"}')
+              return ngx.exit(200)
+            end
+
+  # ─── FHIR Metadata — no auth ──────────────────────────────────────────
+  - id: int-metadata
+    uri: /fhir/metadata
+    methods: [GET]
+    priority: 20
+    upstream_id: hapi-fulfiller
+    plugins:
+      proxy-rewrite:
+        uri: /fhir/fulfiller/metadata
+
+  # ─── Own FHIR data — JWT + realm-role + URL rewrite ──────────────────
+  - id: int-fhir
+    uri: /fhir/*
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    priority: 1
+    upstream_id: hapi-fulfiller
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        required_role: "fulfiller"
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/fulfiller/$1"]
+      response-rewrite:
+        filters:
+          - regex: "http://localhost:8081/fhir/"
+            replace: "http://localhost:8082/proxy/placer/"
+
+  # ─── Proxy to partner: token exchange → forward to placer external ────
+  - id: int-proxy-partner
+    uri: /proxy/fhir/*
+    methods: [GET]
+    priority: 1
+    upstream_id: apisix-placer-external
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: false
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        required_role: "fulfiller"
+      serverless-post-function:
+        phase: access
+        functions:
+          - |
+            return function(conf, ctx)
+              local http = require("resty.http")
+
+              local consent_id = ngx.req.get_headers()["X-Consent-Id"] or ""
+              local body = "grant_type=client_credentials"
+                        .. "&client_id=fulfiller-client"
+                        .. "&client_secret=fulfiller-secret-2025"
+              if consent_id ~= "" then
+                body = body .. "&scope=consent:" .. consent_id
+              end
+
+              local httpc = http.new()
+              local tr, err = httpc:request_uri(
+                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
+                { method = "POST", body = body,
+                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
+              if not tr or tr.status ~= 200 then return ngx.exit(502) end
+
+              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
+              if not m2m then return ngx.exit(502) end
+              ngx.req.set_header("Authorization", "Bearer " .. m2m)
+            end
+      proxy-rewrite:
+        regex_uri: ["^/proxy/fhir/(.*)$", "/fhir/$1"]
+      response-rewrite:
+        filters:
+          - regex: "http://localhost:8081/fhir/"
+            replace: "http://localhost:8082/proxy/fhir/"
+
+  # ─── Action: create Task at partner ──────────────────────────────────
+  - id: actions-create-task
+    uri: /api/actions/create-task
+    methods: [POST]
+    upstream_id: apisix-placer-external
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        required_role: "fulfiller"
+      serverless-post-function:
+        phase: access
+        functions:
+          - |
+            return function(conf, ctx)
+              local http = require("resty.http")
+
+              local httpc = http.new()
+              local tr, err = httpc:request_uri(
+                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
+                { method = "POST",
+                  body = "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025",
+                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
+              if not tr or tr.status ~= 200 then return ngx.exit(502) end
+
+              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
+              if not m2m then return ngx.exit(502) end
+              ngx.req.set_header("Authorization", "Bearer " .. m2m)
+            end
+      proxy-rewrite:
+        uri: /fhir/Task
+
+  # ─── Action: fan-out local + remote Task lists ───────────────────────
+  - id: actions-all-tasks
+    uri: /api/actions/all-tasks
+    methods: [GET]
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        required_role: "fulfiller"
+      serverless-post-function:
+        phase: access
+        functions:
+          - |
+            return function(conf, ctx)
+              local http  = require("resty.http")
+              local httpc = http.new()
+
+              local tr, err = httpc:request_uri(
+                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
+                { method = "POST",
+                  body = "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025",
+                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
+              if not tr or tr.status ~= 200 then return ngx.exit(502) end
+              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
+              if not m2m then return ngx.exit(502) end
+
+              local user_auth = ngx.req.get_headers()["Authorization"]
+
+              local lr, _ = httpc:request_uri(
+                "http://nginx-proxy:82/fhir/fulfiller/Task",
+                { headers = { Authorization = user_auth } })
+
+              local rr, _ = httpc:request_uri(
+                "http://apisix-placer-external:9080/fhir/Task",
+                { headers = { Authorization = "Bearer " .. m2m } })
+
+              local local_body = (lr and lr.body) or "{}"
+              local_body = local_body:gsub("http://localhost:8081/fhir/", "http://localhost:8082/proxy/fhir/")
+
+              local remote_body = (rr and rr.body) or "{}"
+              remote_body = remote_body:gsub("http://localhost:8081/fhir/", "http://localhost:8082/proxy/fhir/")
+
+              ngx.header["Content-Type"] = "application/json"
+              ngx.say(string.format('{"local":%s,"remote":%s}', local_body, remote_body))
+              return ngx.exit(200)
+            end
+
+  # ─── OPA policy check passthrough ────────────────────────────────────
+  - id: policy-check
+    uri: /api/policy/check
+    methods: [POST]
+    upstream_id: opa-fulfiller
+    plugins:
+      proxy-rewrite:
+        uri: /v1/data/umzh/authz/allow
+
+upstreams:
+  - id: hapi-fulfiller
+    nodes:
+      "nginx-proxy:82": 1
+    type: roundrobin
+
+  - id: apisix-placer-external
+    nodes:
+      "apisix-placer-external:9080": 1
+    type: roundrobin
+
+  - id: opa-fulfiller
+    nodes:
+      "opa-fulfiller:8181": 1
+    type: roundrobin
+
+global_rules:
+  - id: 1
+    plugins:
+      cors:
+        allow_origins: "**"
+        allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        allow_headers: "Authorization,Content-Type,Accept,X-Tenant,X-Consent-Id"
+        expose_headers: "Content-Length,Content-Type"
+        max_age: 43200
+        allow_credential: true
+
+#END

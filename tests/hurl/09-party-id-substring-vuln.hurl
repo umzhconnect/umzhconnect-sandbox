@@ -19,7 +19,7 @@
 # Current (buggy) behaviour asserted below:
 #   allow: true
 #
-# OPA is called directly so no Keycloak token or KrakenD routing is needed.
+# OPA is called directly so no Keycloak token or APISIX routing is needed.
 # resource_id is left empty so resource_in_consent_scope passes trivially,
 # isolating the valid_consent bug.
 # =============================================================================

@@ -87,9 +87,7 @@ services:
 
   # ===========================================================================
   # nginx-proxy — nginx reverse/rewriting proxy in front of HAPI FHIR.
-  #   Ports 80–83: rewrites partition self-links to the correct KrakenD
-  #                gateway base URL.
-  #   (URL rewriting for cross-party proxy responses is handled by KrakenD Lua.)
+  #   Ports 80–83: rewrites HAPI self-links to the correct APISIX gateway URL.
   # ===========================================================================
   nginx-proxy:
     image: nginx:alpine
@@ -115,8 +113,10 @@ services:
       - --addr=0.0.0.0:8181
       - --log-level=info
       - /policies
+      - /config.json
     volumes:
       - ./services/opa/policies:/policies
+      - ./services/opa/config-placer.json:/config.json
     ports:
       - '${OPA_PLACER_PORT}:8181'
     networks:
@@ -135,8 +135,10 @@ services:
       - --addr=0.0.0.0:8181
       - --log-level=info
       - /policies
+      - /config.json
     volumes:
       - ./services/opa/policies:/policies
+      - ./services/opa/config-fulfiller.json:/config.json
     ports:
       - '${OPA_FULFILLER_PORT}:8181'
     networks:
@@ -144,35 +146,25 @@ services:
 
 
   # ===========================================================================
-  # KrakenD API Gateways
+  # APISIX API Gateways
   #
-  # All four gateways share a single config template (services/krakend/)
-  # parameterized via environment variables and KrakenD Flexible Configuration.
+  # Standalone mode (config_provider: yaml) — no etcd dependency.
+  # Each instance mounts its own config.yaml + apisix.yaml from services/apisix/.
   #
-  #   krakend-placer            (internal) — placer reads own + proxies fulfiller data
-  #   krakend-placer-external   (external) — consumed by fulfiller to read placer data
-  #   krakend-fulfiller         (internal) — fulfiller reads own + proxies placer data
-  #   krakend-fulfiller-external(external) — consumed by placer to read fulfiller data
+  #   apisix-placer-internal    (internal) — placer reads own + proxies fulfiller data
+  #   apisix-placer-external    (external) — consumed by fulfiller to read placer data
+  #   apisix-fulfiller-internal (internal) — fulfiller reads own + proxies placer data
+  #   apisix-fulfiller-external (external) — consumed by placer to read fulfiller data
   # ===========================================================================
-  krakend-placer:
-    image: krakend:2.13.2
-    container_name: umzh-krakend-placer
-    command: ['krakend', 'run', '-c', 'krakend-internal-gateway.tmpl']
+  apisix-placer-internal:
+    image: apache/apisix:3.9.0-debian
+    container_name: umzh-apisix-placer-internal
     volumes:
-      - ./services/krakend:/etc/krakend
-    environment:
-      FC_ENABLE: '1'
-      GATEWAY_NAME: 'HospitalP (Placer)'
-      PARTY: placer
-      NGINX_PORT: '80'
-      KEYCLOAK_URL: 'http://keycloak:8080'
-      PARTNER_EXTERNAL_HOST: 'krakend-fulfiller-external:8080'
-      OPA_HOST: 'opa-placer:8181'
-      REWRITE_URLS: 'http://localhost:8083/|http://localhost:8080/proxy/fulfiller/'
-      CLIENT_ID: placer-client
-      CLIENT_SECRET: placer-secret-2025
+      - ./services/apisix/placer-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/placer-internal/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
-      - '${KRAKEND_PLACER_PORT}:8080'
+      - '${APISIX_PLACER_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -182,31 +174,24 @@ services:
         condition: service_healthy
       opa-placer:
         condition: service_started
-      krakend-fulfiller-external:
+      apisix-fulfiller-external:
         condition: service_started
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
+      test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
       - umzh-net
 
-  krakend-placer-external:
-    image: krakend:2.13.2
-    container_name: umzh-krakend-placer-external
-    command: ['krakend', 'run', '-c', 'krakend-external-gateway.tmpl']
+  apisix-placer-external:
+    image: apache/apisix:3.9.0-debian
+    container_name: umzh-apisix-placer-external
     volumes:
-      - ./services/krakend:/etc/krakend
-    environment:
-      FC_ENABLE: '1'
-      GATEWAY_NAME: 'HospitalP (Placer) External'
-      PARTY: placer
-      NGINX_PORT: '81'
-      KEYCLOAK_URL: 'http://keycloak:8080'
-      OPA_HOST: 'opa-placer:8181'
+      - ./services/apisix/placer-external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/placer-external/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     ports:
-      - '${KRAKEND_PLACER_EXTERNAL_PORT}:8080'
+      - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -217,32 +202,22 @@ services:
       opa-placer:
         condition: service_started
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
+      test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
       - umzh-net
 
-  krakend-fulfiller:
-    image: krakend:2.13.2
-    container_name: umzh-krakend-fulfiller
-    command: ['krakend', 'run', '-c', 'krakend-internal-gateway.tmpl']
+  apisix-fulfiller-internal:
+    image: apache/apisix:3.9.0-debian
+    container_name: umzh-apisix-fulfiller-internal
     volumes:
-      - ./services/krakend:/etc/krakend
-    environment:
-      FC_ENABLE: '1'
-      GATEWAY_NAME: 'HospitalF (Fulfiller)'
-      PARTY: fulfiller
-      NGINX_PORT: '82'
-      KEYCLOAK_URL: 'http://keycloak:8080'
-      PARTNER_EXTERNAL_HOST: 'krakend-placer-external:8080'
-      OPA_HOST: 'opa-fulfiller:8181'
-      REWRITE_URLS: 'http://localhost:8081/|http://localhost:8082/proxy/placer/'
-      CLIENT_ID: fulfiller-client
-      CLIENT_SECRET: fulfiller-secret-2025
+      - ./services/apisix/fulfiller-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/fulfiller-internal/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
-      - '${KRAKEND_FULFILLER_PORT}:8080'
+      - '${APISIX_FULFILLER_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -252,31 +227,24 @@ services:
         condition: service_healthy
       opa-fulfiller:
         condition: service_started
-      krakend-placer-external:
+      apisix-placer-external:
         condition: service_started
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
+      test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
       - umzh-net
 
-  krakend-fulfiller-external:
-    image: krakend:2.13.2
-    container_name: umzh-krakend-fulfiller-external
-    command: ['krakend', 'run', '-c', 'krakend-external-gateway.tmpl']
+  apisix-fulfiller-external:
+    image: apache/apisix:3.9.0-debian
+    container_name: umzh-apisix-fulfiller-external
     volumes:
-      - ./services/krakend:/etc/krakend
-    environment:
-      FC_ENABLE: '1'
-      GATEWAY_NAME: 'HospitalF (Fulfiller) External'
-      PARTY: fulfiller
-      NGINX_PORT: '83'
-      KEYCLOAK_URL: 'http://keycloak:8080'
-      OPA_HOST: 'opa-fulfiller:8181'
+      - ./services/apisix/fulfiller-external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/fulfiller-external/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     ports:
-      - '${KRAKEND_FULFILLER_EXTERNAL_PORT}:8080'
+      - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -287,7 +255,7 @@ services:
       opa-fulfiller:
         condition: service_started
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:8080/__health']
+      test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -338,7 +306,7 @@ services:
 
   # ===========================================================================
   # Web Application - React SPA
-  # nginx routes each party's API paths to the correct KrakenD instance
+  # nginx routes each party's API paths to the correct APISIX instance
   # ===========================================================================
   web-app:
     build:
@@ -348,9 +316,9 @@ services:
     ports:
       - '${WEB_APP_PORT}:80'
     depends_on:
-      krakend-placer:
+      apisix-placer-internal:
         condition: service_healthy
-      krakend-fulfiller:
+      apisix-fulfiller-internal:
         condition: service_healthy
     networks:
       - umzh-net

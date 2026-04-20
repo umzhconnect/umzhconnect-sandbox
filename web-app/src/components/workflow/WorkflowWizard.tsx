@@ -335,7 +335,7 @@ const WorkflowWizard: React.FC = () => {
         }
 
         // Always inject the newly created SR AFTER the network fetch.
-        // This is the critical step: if the server (KrakenD cache or HAPI
+        // This is the critical step: if the server (HAPI FHIR
         // search index) hasn't included the just-created resource yet, we
         // add it ourselves. The setQueryData guard prevents duplicates when
         // the server already returned it. Running this AFTER fetchQuery also

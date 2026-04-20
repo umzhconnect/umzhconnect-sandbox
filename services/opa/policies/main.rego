@@ -31,7 +31,7 @@ default http_status := 200
 http_status := 403 if { not allow }
 
 # ---------------------------------------------------------------------------
-# Input structure expected from KrakenD / API Gateway:
+# Input structure expected from APISIX (`apisix.rego` adapter) / API Gateway:
 # {
 #   "method": "GET",
 #   "path": "/fhir/Patient/123",

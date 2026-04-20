@@ -15,7 +15,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [nginx-proxy — Self-Link Rewriting Layer](#nginx-proxy--self-link-rewriting-layer)
   - [API Gateway Endpoint Categories](#api-gateway-endpoint-categories)
   - [Proxy Walk-Through — Placer Web-App Reads Fulfiller Data](#proxy-walk-through--placer-web-app-reads-fulfiller-data)
-  - [Lua Proxy Scripts — URL Rewriting](#lua-proxy-scripts--url-rewriting)
+  - [APISIX Plugins](#apisix-plugins)
   - [Security Model](#security-model)
   - [Consent Enforcement — OPA Gate](#consent-enforcement--opa-gate)
   - [Clinical Order Workflow](#clinical-order-workflow)
@@ -25,7 +25,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
   - [HAPI FHIR Server](#hapi-fhir-server)
   - [Keycloak — Authorization Server](#keycloak--authorization-server)
   - [Dynamic Consent Scope](#dynamic-consent-scope)
-  - [KrakenD API Gateways](#krakend-api-gateways)
+  - [APISIX API Gateways](#apisix-api-gateways)
   - [OPA Policy Engine](#opa-policy-engine)
   - [Seed Data](#seed-data)
   - [Web Application](#web-application)
@@ -69,13 +69,13 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 ┌────────┴────────────────────────┐     ┌────────────────────────┴───────────────────┐
 │    HospitalP (Placer)           │     │    HospitalF (Fulfiller)                   │
 │                                 │     │                                            │
-│  krakend-placer          :8080  │     │  krakend-fulfiller             :8082       │
+│  apisix-placer-internal  :8080  │     │  apisix-fulfiller-internal     :8082       │
 │  (internal gateway)             │     │  (internal gateway)                        │
 │   /fhir/*        own data       │     │   /fhir/*        own data                  │
 │   /proxy/fhir/*  partner data   │     │   /proxy/fhir/*  partner data              │
 │   /api/actions/* orchestration  │     │   /api/actions/* orchestration             │
 │                                 │     │                                            │
-│  krakend-placer-external :8081  │     │  krakend-fulfiller-external    :8083       │
+│  apisix-placer-external  :8081  │     │  apisix-fulfiller-external     :8083       │
 │  (external gateway)             │◄───►│  (external gateway)                        │
 │   /fhir/*  Fulfiller reads      │     │   /fhir/*  Placer reads                    │
 │            Placer data          │     │            Fulfiller data                  │
@@ -86,7 +86,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
                               ┌─────────▼─────────┐
                               │   nginx-proxy     │
                               │  (no host port)   │
-                              │  ports 80–85      │
+                              │  ports 80–83      │
                               │  self-link        │
                               │  rewriting        │
                               └─────────┬─────────┘
@@ -117,13 +117,13 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 | `postgres` | `postgres:16-alpine` | 5431 | Shared DB (HAPI FHIR + Keycloak) |
 | `keycloak` | `quay.io/keycloak/keycloak:25.0` | 8180 | OAuth2 / OIDC / SMART on FHIR |
 | `hapi-fhir` | `hapiproject/hapi:v7.4.0` | 8090 | FHIR R4 server (URL-partitioned) |
-| `nginx-proxy` | `nginx:alpine` | — (internal) | Self-link rewriting proxy (ports 80–85) |
+| `nginx-proxy` | `nginx:alpine` | — (internal) | Self-link rewriting proxy (ports 80–83) |
 | `opa-placer` | `openpolicyagent/opa:0.70.0` | 8181 | Policy engine for HospitalP |
 | `opa-fulfiller` | `openpolicyagent/opa:0.70.0` | 8182 | Policy engine for HospitalF |
-| `krakend-placer` | `devopsfaith/krakend:2.7` | 8080 | Internal API gateway for HospitalP |
-| `krakend-placer-external` | `devopsfaith/krakend:2.7` | 8081 | External API gateway for HospitalP |
-| `krakend-fulfiller` | `devopsfaith/krakend:2.7` | 8082 | Internal API gateway for HospitalF |
-| `krakend-fulfiller-external` | `devopsfaith/krakend:2.7` | 8083 | External API gateway for HospitalF |
+| `apisix-placer-internal` | `apache/apisix:3.9.0-debian` | 8080 | Internal API gateway for HospitalP |
+| `apisix-placer-external` | `apache/apisix:3.9.0-debian` | 8081 | External API gateway for HospitalP |
+| `apisix-fulfiller-internal` | `apache/apisix:3.9.0-debian` | 8082 | Internal API gateway for HospitalF |
+| `apisix-fulfiller-external` | `apache/apisix:3.9.0-debian` | 8083 | External API gateway for HospitalF |
 | `seed-loader` | custom | — | Init container (loads FHIR data) |
 | `web-app` | Node 20 + Nginx | 3000 | React SPA |
 
@@ -131,17 +131,17 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 
 ### Dual-Gateway Pattern — Internal and External
 
-Each party operates **two dedicated KrakenD gateways**: an *internal* gateway for its own web-app and an *external* gateway that the partner calls. The split enforces a clean security boundary — the external gateway is purpose-built to serve cross-party requests and always returns consistent responses regardless of who calls it.
+Each party operates **two dedicated APISIX gateways** (standalone mode — YAML config, hot-reloaded): an *internal* gateway for its own web-app and an *external* gateway that the partner calls. The split enforces a clean security boundary — the external gateway is purpose-built to serve cross-party requests and always returns consistent responses regardless of who calls it.
 
 ```
                      ── HospitalP (Placer) ────────────────────────────────────────
                     │                                                              │
-  Placer web-app    │  krakend-placer (internal)  :8080                            │
+  Placer web-app    │  apisix-placer-internal  :8080                               │
   ─────────────────►│   /fhir/*            → own FHIR partition (nginx-proxy:80)   │
-                    │   /proxy/fhir/*      → fulfiller data via nginx-proxy:84     │
+                    │   /proxy/fhir/*      → fulfiller data (token exchange + fwd) │
                     │   /api/actions/*     → orchestration (create-task, all-tasks)│
                     │                                                              │
-                    │  krakend-placer-external :8081                               │
+                    │  apisix-placer-external  :8081                               │
   Fulfiller calls  ►│   GET /fhir/{resource}?_id=<id>  → OPA → placer partition   │
                     │   GET /fhir/{resource}/{id}      → OPA → placer partition   │
                     │   POST /fhir/Task                → placer partition          │
@@ -149,12 +149,12 @@ Each party operates **two dedicated KrakenD gateways**: an *internal* gateway fo
 
                      ── HospitalF (Fulfiller) ───────────────────────────────────
                     │                                                              │
-  Fulfiller web-app │  krakend-fulfiller (internal)  :8082                         │
+  Fulfiller web-app │  apisix-fulfiller-internal  :8082                            │
   ─────────────────►│   /fhir/*            → own FHIR partition (nginx-proxy:82)   │
-                    │   /proxy/fhir/*      → placer data via nginx-proxy:85        │
+                    │   /proxy/fhir/*      → placer data (token exchange + fwd)    │
                     │   /api/actions/*     → orchestration                         │
                     │                                                              │
-                    │  krakend-fulfiller-external :8083                            │
+                    │  apisix-fulfiller-external  :8083                            │
   Placer calls     ►│   GET  /fhir/{resource}?_id=<id>  → OPA → fulfiller partition│
                     │   GET  /fhir/{resource}/{id}      → OPA → fulfiller partition│
                     │   POST /fhir/Task                 → fulfiller partition      │
@@ -164,9 +164,9 @@ Each party operates **two dedicated KrakenD gateways**: an *internal* gateway fo
 
 **Design principles:**
 
-- **External gateways are stateless and consistent.** They always return the same self-link URLs (e.g. `http://localhost:8083/fhir/...` for fulfiller-external) regardless of which party calls them. No caller-specific body manipulation takes place at the external gateway.
-- **URL rewriting is owned by the calling party's internal gateway.** When a web-app navigates FHIR self-links through the proxy path, the internal gateway routes the request through a dedicated nginx-proxy port that rewrites the partner's external URLs into the party's own `/proxy/fhir/` path (see [nginx-proxy](#nginx-proxy--self-link-rewriting-layer)).
-- **Double JWT validation.** A request from the placer web-app routed via the proxy path is validated twice: once at `krakend-placer` (the user's gateway) and once at `krakend-fulfiller-external` (the partner's gateway). The Fulfiller retains full control over who can access its data.
+- **External gateways are stateless and consistent.** They always return the same self-link URLs (e.g. `http://localhost:8083/fhir/...` for fulfiller-external) regardless of which party calls them.
+- **URL rewriting is owned by the calling party's internal gateway.** nginx-proxy rewrites HAPI self-links for own-data requests; the internal gateway's `response-rewrite` plugin rewrites partner external URLs in cross-party proxy responses into the party's own `/proxy/fhir/` path.
+- **Double JWT validation.** A request from the placer web-app routed via the proxy path is validated twice: once at `apisix-placer-internal` (the user's gateway) and once at `apisix-fulfiller-external` (the partner's gateway). The Fulfiller retains full control over who can access its data.
 
 Both gateways share the **same Keycloak realm** and the **same HAPI FHIR instance** (via different URL partitions). In a production deployment, each gateway would typically live in its own network perimeter.
 
@@ -200,58 +200,37 @@ The absolute URL base for each partition is injected into the seed data at conta
 
 HAPI FHIR embeds its own base URL in every resource's self-link (`fullUrl`, `Bundle.link`, pagination URLs). Without rewriting, clients would always receive `http://localhost:8090/fhir/{partition}/...` self-links — internal addresses that are inaccessible outside the Docker network.
 
-`nginx-proxy` is a single nginx container that listens on **six internal ports**, each with a dedicated `sub_filter` rewrite rule. The correct port is selected by the KrakenD backend `host` configuration — no conditionals or request-header inspection are needed.
+`nginx-proxy` is a single nginx container that listens on **four internal ports**, each with a dedicated `sub_filter` rewrite rule. The correct port is selected by the APISIX upstream `host` configuration.
 
 ```
 nginx-proxy internal ports
 ─────────────────────────────────────────────────────────────────────────────────
 
 Ports 80–83: proxy to hapi-fhir:8080
-  Each port rewrites HAPI's raw partition URL to the correct KrakenD gateway URL.
+  Each port rewrites HAPI's raw partition URL to the correct APISIX gateway URL.
 
-  Port 80 ─ Placer internal (krakend-placer :8080)
+  Port 80 ─ Placer internal (apisix-placer-internal :8080)
     proxy_pass: hapi-fhir:8080
     sub_filter: "http://localhost:8090/fhir/placer/"  →  "http://localhost:8080/fhir/"
-    Used by: krakend-placer (Category 1 — own data), /api/actions/create-referral
+    Used by: apisix-placer-internal (Category 1 — own data)
 
-  Port 81 ─ Placer external (krakend-placer-external :8081)
+  Port 81 ─ Placer external (apisix-placer-external :8081)
     proxy_pass: hapi-fhir:8080
     sub_filter: "http://localhost:8090/fhir/placer/"  →  "http://localhost:8081/fhir/"
-    Used by: krakend-placer-external (Category 2 — Fulfiller reads Placer data)
+    Used by: apisix-placer-external (Category 2 — Fulfiller reads Placer data)
 
-  Port 82 ─ Fulfiller internal (krakend-fulfiller :8082)
+  Port 82 ─ Fulfiller internal (apisix-fulfiller-internal :8082)
     proxy_pass: hapi-fhir:8080
     sub_filter: "http://localhost:8090/fhir/fulfiller/"  →  "http://localhost:8082/fhir/"
-    Used by: krakend-fulfiller (Category 1 — own data), /api/actions/create-task
+    Used by: apisix-fulfiller-internal (Category 1 — own data)
 
-  Port 83 ─ Fulfiller external (krakend-fulfiller-external :8083)
+  Port 83 ─ Fulfiller external (apisix-fulfiller-external :8083)
     proxy_pass: hapi-fhir:8080
     sub_filter: "http://localhost:8090/fhir/fulfiller/"  →  "http://localhost:8083/fhir/"
-    Used by: krakend-fulfiller-external (Category 2 — Placer reads Fulfiller data)
-
-─────────────────────────────────────────────────────────────────────────────────
-
-Ports 84–85: proxy to external KrakenD gateways (NOT hapi-fhir)
-  These ports are used exclusively by the /proxy/fhir/* endpoints on the internal
-  gateways. They forward through the partner's external gateway (enforcing its JWT
-  validation) and rewrite the partner's external self-links in the response body
-  to the calling party's own /proxy/fhir/ path.
-
-  Port 84 ─ Placer internal proxy reads Fulfiller (krakend-placer :8080 /proxy/fhir/*)
-    proxy_pass: krakend-fulfiller-external:8080     ← enforces Fulfiller's JWT rules
-    sub_filter: "http://localhost:8083/fhir/"  →  "http://localhost:8080/proxy/fhir/"
-    Used by: krakend-placer's /proxy/fhir/* backend
-    Result: Placer web-app receives URLs it can navigate via its own /proxy/fhir/ path
-
-  Port 85 ─ Fulfiller internal proxy reads Placer (krakend-fulfiller :8082 /proxy/fhir/*)
-    proxy_pass: krakend-placer-external:8080        ← enforces Placer's JWT + consent rules
-    sub_filter: "http://localhost:8081/fhir/"  →  "http://localhost:8082/proxy/fhir/"
-    Used by: krakend-fulfiller's /proxy/fhir/* backend
-    Result: Fulfiller web-app receives URLs it can navigate via its own /proxy/fhir/ path
+    Used by: apisix-fulfiller-external (Category 2 — Placer reads Fulfiller data)
 ```
 
-**Why nginx `sub_filter` and not KrakenD body manipulation?**
-KrakenD in `no-op` encoding mode passes the response body through unchanged, which is required for FHIR (preserving all fields and content types). nginx `sub_filter` performs streaming string replacement on the response body without parsing it, making it ideal for URL rewriting at high throughput without schema awareness.
+Cross-party proxy responses (`/proxy/fhir/*`, `/api/actions/all-tasks`) are rewritten by APISIX's `response-rewrite` plugin on the internal gateways — partner external URLs are replaced with the calling party's `/proxy/fhir/` base path. nginx is not involved in cross-party response rewriting.
 
 **Key nginx settings** (applied to all server blocks):
 ```nginx
@@ -280,22 +259,22 @@ Direct FHIR access for the logged-in user to manage their own party's partition.
 
 Endpoints the **partner gateway calls** to read or write data. Each external gateway serves a fixed set of endpoints that always return self-links for its own base URL, regardless of caller.
 
-Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) run through the OPA consent gate before the FHIR backend is called. Task write endpoints are not consent-gated.
+Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) run through the APISIX `opa` plugin before the FHIR backend is called. Task write endpoints are not consent-gated.
 
-**krakend-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
+**apisix-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
 
 | Endpoint | Method | Query params | Backend | OPA gate |
 |----------|--------|-------------|---------|----------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | ✅ `pre_opa_gate_search` |
-| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | ✅ `pre_opa_gate` |
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | ✅ built-in `opa` plugin |
+| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | ✅ built-in `opa` plugin |
 | `/fhir/Task` | POST | — | `nginx-proxy:81` | — |
 
-**krakend-fulfiller-external `:8083`** — consumed by the Placer to read Fulfiller data and write/update Tasks:
+**apisix-fulfiller-external `:8083`** — consumed by the Placer to read Fulfiller data and write/update Tasks:
 
 | Endpoint | Method | Query params | Backend | OPA gate |
 |----------|--------|-------------|---------|----------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ `pre_opa_gate_search` |
-| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ `pre_opa_gate` |
+| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
+| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
 | `/fhir/Task/{id}` | PUT | — | `nginx-proxy:83` | — |
 
@@ -305,11 +284,10 @@ The internal gateway proxies requests from the web-app into the **partner's FHIR
 
 | Endpoint | Method | Backend (placer) | Backend (fulfiller) |
 |----------|--------|-----------------|---------------------|
-| `/proxy/fhir/{resource}` | GET | `nginx-proxy:84/fhir/{resource}` | `nginx-proxy:85/fhir/{resource}` |
-| `/proxy/fhir/{resource}/{id}` | GET | `nginx-proxy:84/fhir/{resource}/{id}` | `nginx-proxy:85/fhir/{resource}/{id}` |
+| `/proxy/fhir/{resource}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
+| `/proxy/fhir/{resource}/{id}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
 
-`nginx-proxy:84` forwards to `krakend-fulfiller-external` (second JWT validation)
-`nginx-proxy:85` forwards to `krakend-placer-external` (second JWT validation + consent check)
+The internal gateway's `serverless-post-function` performs an M2M token exchange before forwarding; the partner's external gateway enforces its own JWT validation and OPA consent check. The `response-rewrite` plugin rewrites partner external URLs in the response body to the calling party's `/proxy/fhir/` path.
 
 Consent is enforced on both read endpoints of each external gateway via the OPA gate (`/fhir/{resource}?_id=` and `/fhir/{resource}/{id}`); the consent ID is extracted from the JWT `scope` claim (`consent:<id>`) rather than a separate header.
 
@@ -324,7 +302,7 @@ Orchestrated endpoints that fan-out to multiple backends or route to the partner
 | `/api/actions/create-referral` | POST | Create ServiceRequest at Placer | Placer FHIR partition (Placer only) |
 | `/api/policy/check` | POST | Direct OPA policy evaluation | Own OPA instance |
 
-The `all-tasks` endpoint uses KrakenD's **multi-backend fan-out** with `group` keys:
+The `all-tasks` endpoint fans out to both own FHIR partition and partner external gateway in a single `serverless-post-function` and returns a merged JSON object:
 
 ```json
 {
@@ -337,6 +315,8 @@ The `all-tasks` endpoint uses KrakenD's **multi-backend fan-out** with `group` k
 
 ### Proxy Walk-Through — Placer Web-App Reads Fulfiller Data
 
+When a response crosses a domain boundary (placer reads fulfiller data or vice versa), the FHIR URLs embedded in that response still point to the originating server. They need to be rewritten to navigable URLs on the receiving party's gateway so that pagination links and resource references resolve correctly for the caller.
+
 This diagram traces a `GET /proxy/fhir/Task` request from the placer web-app, showing every hop and transformation.
 
 ```
@@ -348,223 +328,132 @@ localhost:3000                                         (enforces its own securit
      │
      ▼
 ┌────────────────────────────────────────────────────────────────────────────────┐
-│  krakend-placer  :8080                                                         │
+│  apisix-placer-internal  :8080                                                 │
 │                                                                                │
-│  1. JWT validation                                                             │
+│  1. openid-connect plugin — JWT validation                                     │
 │     · Fetches JWKS from keycloak:8080                                          │
-│     · Verifies RS256 signature, issuer, expiry                                 │
-│     · 401 if invalid                                                           │
+│     · Verifies RS256 signature, issuer, expiry — 401 if invalid                │
 │                                                                                │
-│  2. Routes to backend:                                                         │
-│     · endpoint /proxy/fhir/{resource}                                          │
-│     · backend  nginx-proxy:84  /fhir/{resource}                                │
-│     · Forwards Authorization header                                            │
+│  2. umzh-role-check plugin — checks realm_role == "placer"                     │
+│                                                                                │
+│  3. serverless-post-function — M2M token exchange                              │
+│     · POST /token client_credentials (placer-client + consent scope)           │
+│     · Replaces Authorization header with M2M token                             │
+│                                                                                │
+│  4. proxy-rewrite — strips /proxy/fhir prefix                                  │
+│     · forwards to apisix-fulfiller-external:9080  /fhir/Task                  │
 └────────────────────────────┬───────────────────────────────────────────────────┘
                              │  GET /fhir/Task
-                             │  Authorization: Bearer <JWT-placer>
+                             │  Authorization: Bearer <M2M-token>
                              ▼
 ┌────────────────────────────────────────────────────────────────────────────────┐
-│  nginx-proxy  port 84                                                          │
+│  apisix-fulfiller-external  :8083                                              │
 │                                                                                │
-│  3. Request forwarding                                                         │
-│     · proxy_pass → krakend-fulfiller-external:8080                             │
-│     · All headers forwarded (including Authorization)                          │
-│     · Accept-Encoding: "" (disables compression for sub_filter)                │
-│                                                                                │
-│  [Response comes back later — see step 9]                                      │
-└────────────────────────────┬───────────────────────────────────────────────────┘
-                             │  GET /fhir/Task
-                             │  Authorization: Bearer <JWT-placer>
-                             ▼
-┌────────────────────────────────────────────────────────────────────────────────┐
-│  krakend-fulfiller-external  :8083                                             │
-│                                                                                │
-│  4. JWT validation (second, independent check)                                 │
-│     · Same Keycloak JWKS endpoint, same RS256 verification                     │
+│  5. openid-connect plugin — JWT validation (second, independent check)         │
 │     · Fulfiller controls this gateway — 401 if JWT is invalid or expired       │
+│     · Sets X-Access-Token from validated M2M token                             │
 │                                                                                │
-│  5. Claim propagation (x-party-id, x-smart-scopes, x-scope)                    │
+│  6. opa plugin — consent gate (apisix.rego adapter → main.rego)                │
+│     · Reads party_id, scope, smart_scopes from JWT via X-Access-Token          │
+│     · 403 if OPA denies                                                        │
 │                                                                                │
-│  6. Routes to backend:                                                         │
-│     · endpoint GET /fhir/{resource}                                            │
-│     · backend  nginx-proxy:83  /fhir/fulfiller/{resource}                      │
+│  7. proxy-rewrite — /fhir/Task → /fhir/fulfiller/Task                          │
+│     · upstream: nginx-proxy:83                                                 │
 └────────────────────────────┬───────────────────────────────────────────────────┘
                              │  GET /fhir/fulfiller/Task
-                             │  X-Party-Id: hospitalp
-                             │  X-Smart-Scopes: system/Task.cru ...
                              ▼
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │  nginx-proxy  port 83                                                          │
 │                                                                                │
-│  7. proxy_pass → hapi-fhir:8080                                                │
-│                                                                                │
-│  8. Response body rewriting (sub_filter, streaming)                            │
-│     · Replaces ALL occurrences:                                                │
-│       "http://localhost:8090/fhir/fulfiller/"                                  │
-│       → "http://localhost:8083/fhir/"                                          │
-│     · Self-links now point to krakend-fulfiller-external's base URL            │
+│  8. proxy_pass → hapi-fhir:8080                                                │
+│  9. sub_filter (streaming):                                                    │
+│     "http://localhost:8090/fhir/fulfiller/" → "http://localhost:8083/fhir/"    │
+│     · Self-links now point to apisix-fulfiller-external's base URL             │
 └────────────────────────────┬───────────────────────────────────────────────────┘
                              │  200 OK  (FHIR Bundle)
                              │  self-links: http://localhost:8083/fhir/Task/...
                              ▼
          ┌───────────────────────────────────────────────────────────────────────┐
-         │  nginx-proxy  port 84  (response path)                                │
+         │  apisix-placer-internal  :8080  (response path)                       │
          │                                                                       │
-         │  9. Response body rewriting (sub_filter, streaming)                   │
-         │     · Replaces ALL occurrences:                                       │
-         │       "http://localhost:8083/fhir/"                                   │
-         │       → "http://localhost:8080/proxy/fhir/"                           │
-         │     · Self-links now point to krakend-placer's proxy path             │
+         │  10. response-rewrite plugin:                                         │
+         │      "http://localhost:8083/fhir/"                                    │
+         │      → "http://localhost:8080/proxy/fhir/"                            │
+         │      · Self-links now point to apisix-placer-internal's proxy path    │
          └───────────────────────────────────────────────────────────────────────┘
                              │  200 OK  (FHIR Bundle)
                              │  self-links: http://localhost:8080/proxy/fhir/Task/...
-                             ▼
-         ┌───────────────────────────────────────────────────────────────────────┐
-         │  krakend-placer  :8080  (response pass-through, no-op encoding)       │
-         └───────────────────────────────────────────────────────────────────────┘
-                             │
                              ▼
                      Placer web-app
                      ─────────────
                      Receives Bundle where every self-link is navigable via:
                      http://localhost:8080/proxy/fhir/{resource}/{id}
-                     → routed again through krakend-placer → nginx-proxy:84
-                       → krakend-fulfiller-external → nginx-proxy:83 → HAPI
+                     → routed again through apisix-placer-internal
+                       → apisix-fulfiller-external → nginx-proxy:83 → HAPI
 ```
 
 **Security properties of this flow:**
 
 | Property | Where enforced |
 |----------|---------------|
-| JWT is valid and not expired | krakend-placer (step 1) |
-| Fulfiller controls who can access its data | krakend-fulfiller-external (step 4) |
-| Response self-links are navigable by the placer web-app | nginx-proxy:84 (step 9) |
-| Placer web-app never needs a direct route to the fulfiller's external gateway | The proxy path is entirely managed by krakend-placer |
+| JWT is valid and not expired | apisix-placer-internal (step 1) |
+| Fulfiller controls who can access its data | apisix-fulfiller-external (step 5) |
+| Consent checked against OPA policy | apisix-fulfiller-external (step 6) |
+| Response self-links are navigable by the placer web-app | apisix-placer-internal response-rewrite (step 10) |
+| Placer web-app never needs a direct route to the fulfiller's external gateway | The proxy path is entirely managed by apisix-placer-internal |
 
-The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern using `nginx-proxy:85 → krakend-placer-external`. The placer's external gateway enforces consent on all FHIR read requests (both `?_id=` search and single-resource) via the OPA gate; consent identity is carried in the JWT `scope` claim, not a separate header.
+The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern targeting `apisix-placer-external`. The placer's external gateway enforces consent on all FHIR read requests via the OPA gate; consent identity is carried in the JWT `scope` claim.
 
 ---
 
-### Lua Proxy Scripts — URL Rewriting
+### APISIX Plugins
 
-When a response crosses a domain boundary (placer reads fulfiller data or vice versa), the FHIR URLs embedded in that response still point to the originating server. They need to be rewritten to navigable URLs on the receiving party's gateway so that pagination links and resource references resolve correctly for the caller.
+The gateways use a mix of built-in APISIX plugins and one custom Lua plugin.
 
-Two Lua scripts handle this, each operating at a different KrakenD hook level with fundamentally different mechanics.
+#### Built-in plugins used
 
-#### The core constraint: two buffer levels in KrakenD
+| Plugin | Phase | Used on | Purpose |
+|---|---|---|---|
+| `openid-connect` | access (2599) | all authenticated routes | RS256 JWT validation via Keycloak JWKS; sets `X-Access-Token` |
+| `opa` | access | external gateway FHIR reads | Consent gate — calls OPA via `apisix.rego` adapter |
+| `proxy-rewrite` | — | all routes | URL prefix rewriting (e.g. `/fhir/*` → `/fhir/fulfiller/*`) |
+| `response-rewrite` | — | internal gateway `/fhir/*` + `/proxy/fhir/*` | Regex URL rewriting in response body |
+| `serverless-post-function` | access (1) | internal gateway proxy + action routes | M2M token exchange and `/all-tasks` fan-out |
+| `serverless-pre-function` | access | `/__health` | In-process health response (no upstream) |
 
-KrakenD processes requests at two distinct levels, each with its own Lua hook and its own response representation:
+#### Custom plugin — `umzh-role-check`
 
-| Level | Hook | Config key | `r:body()` | `r:data()` | `string`/`os` libs |
-|---|---|---|---|---|---|
-| **Backend** | per-backend response | `modifier/lua-backend` | ✅ raw HTTP body string | ❌ not available | only with `allow_open_libs: true` (but breaks source files) |
-| **Proxy** | merged endpoint response | `modifier/lua-proxy` | ❌ always empty when `output_encoding: json` | ✅ structured data API | ✅ with `allow_open_libs: true` |
+**File:** `services/apisix/plugins/umzh-role-check.lua`  
+**Priority:** 2500 (after `openid-connect` at 2599, before `serverless-post-function` at 1)
 
-At **backend level**, `r:body()` contains the raw JSON response bytes as a Lua string — `string.gsub` replacement works directly. At **proxy level** with `output_encoding: json`, KrakenD has already decoded all backend responses into an in-memory data buffer and discarded the raw bodies. `r:body()` is always an empty string; the only way to read or write fields is through the structured data API (`r:data():get(key)`, `:set(key, val)`, `:len()`, etc.).
-
-A second constraint applies to `modifier/lua-backend`: adding `allow_open_libs: true` (needed for `string.gsub` and `os.getenv`) breaks source file loading — functions defined in `sources` files become undefined. This rules out combining a source-based `pre` script (token injection) with a string-level rewrite `post` script at the same backend.
-
-#### `proxy_rewrite.lua` — backend-level raw body replacement
-
-```
-modifier/lua-backend  →  post: rewriteUrls()
-Requires: allow_open_libs: true
-Used on: /fhir/{resource}, /fhir/{resource}/{id} (single-backend, no-op output)
-```
-
-Used on the simple internal FHIR endpoints that have **one backend and `output_encoding: no-op`**. Because there is no multi-backend merging, `r:body()` at proxy level is also not empty — but the rewrite is done at backend level, where the raw body is available before KrakenD processes it further.
-
-```lua
-function rewriteUrls()
-    local r = response.load()
-    local body = r:body()           -- raw JSON string, e.g. {"link":[{"url":"http://localhost:8083/fhir/Task"}]}
-    for _, pair in ipairs(REWRITE_PAIRS) do
-        body = string.gsub(body, pair[1], pair[2])
-    end
-    r:body(body)
-    -- no response.save() needed at proxy level; save() is backend-level only
-end
-```
-
-Advantages:
-- Simple: operates on a plain string, no knowledge of FHIR structure required
-- Catches every URL occurrence regardless of which field it appears in
-
-Limitation:
-- Requires `allow_open_libs: true`, which **prevents loading source files** in the same `modifier/lua-backend` block. This means it cannot share a backend config with `proxy_inject_token.lua` (which must be a source file). Therefore it is only usable on single-backend endpoints where no token injection is needed.
-
-#### `proxy_response.lua` — proxy-level structured data traversal
-
-```
-modifier/lua-proxy  →  post: post_proxy(response)
-Requires: allow_open_libs: true
-Used on: /proxy/{party}/fhir/*, /api/actions/create-task, /api/actions/all-tasks
-```
-
-Used on **sequential proxy endpoints** that have multiple backends (token exchange + FHIR backend). Because `output_encoding: json` merges all backend responses into a single data buffer, `r:body()` is always empty and string replacement is not possible. The script instead traverses the structured data buffer using the KrakenD data API.
-
-It performs two tasks in a single pass:
-
-1. **Strip the `token_exchange` group** — the Keycloak token response (Backend 0) must not leak to the caller:
-   ```lua
-   r:data():del("token_exchange")
-   ```
-
-2. **Rewrite URL fields** — recursively walk the FHIR response, rewriting any field named `url`, `fullUrl`, or `reference`:
-   ```lua
-   -- Arrays: iterate via :len() / :get(i)
-   -- Objects: probe known FHIR fields from INSPECT_FIELDS list
-   -- Rewrite only when field name ∈ { url, fullUrl, reference }
-   ```
-
-The data API returns `userdata` objects — not plain Lua tables. Arrays and objects are both `userdata`, distinguished by probing a string key: arrays throw on `node:get("__probe")`, objects return `nil`. Crucially, **object userdata does not support key enumeration** (no `pairs()` equivalent), so the traversal relies on a fixed `INSPECT_FIELDS` list of known FHIR field names to know which fields to recurse into.
-
-```lua
-local function is_array(node)
-    local ok = pcall(function() return node:get("__probe") end)
-    return not ok   -- threw → it IS an array
-end
-```
-
-Advantages:
-- Works with multi-backend sequential proxy responses
-- Can combine URL rewriting and token stripping in one script
-- Compatible with source-file-based `pre` scripts (no `allow_open_libs` conflict — open libs are on the *proxy* modifier, not the backend one)
-
-Limitation:
-- Cannot enumerate all object keys generically — only fields listed in `INSPECT_FIELDS` are visited. The list covers the full FHIR R4 resource model for the fields relevant to this use case (`link`, `entry`, `resource`, `basedOn`, `focus`, `input`, etc.).
-
-#### Decision matrix
-
-| Endpoint type | Gateway | Output encoding | Multiple backends | Token injection | Script used |
-|---|---|---|---|---|---|
-| `/fhir/{resource}` (GET/POST) | internal | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
-| `/fhir/{resource}/{id}` (GET/PUT) | internal | `no-op` | No | No | `proxy_rewrite.lua` (backend level) |
-| `/fhir/{resource}` (GET, `?_id=`) — consent-enforced | external | `json` | Yes (OPA + FHIR) | No | `opa_gate.lua` (`pre_opa_gate_search` + post) |
-| `/fhir/{resource}/{id}` (GET) — consent-enforced | external | `json` | Yes (OPA + FHIR) | No | `opa_gate.lua` (`pre_opa_gate` + post) |
-| `/proxy/{party}/fhir/*` | internal | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
-| `/api/actions/create-task` | internal | `json` | Yes (token + FHIR) | Yes | `proxy_response.lua` (proxy level) |
-| `/api/actions/all-tasks` | internal | `json` | Yes (token + 2× FHIR) | Yes | `proxy_response.lua` (proxy level) |
-
-#### `REWRITE_URLS` environment variable
-
-Both scripts read their replacement pairs from the same environment variable:
-
-```
-REWRITE_URLS=old1|new1;old2|new2;...
-```
-
-Configured in `docker-compose.yml` per gateway:
+Reads the `Authorization: Bearer <token>` header, decodes the JWT payload without re-verifying the signature (already verified by `openid-connect`), and checks that `realm_roles` contains `conf.required_role`. Returns 403 if the role is absent.
 
 ```yaml
-# krakend-placer — rewrites fulfiller external URLs to proxy paths
-REWRITE_URLS: 'http://localhost:8083/|http://localhost:8080/proxy/fulfiller/'
-
-# krakend-fulfiller — rewrites placer external URLs to proxy paths
-REWRITE_URLS: 'http://localhost:8081/|http://localhost:8082/proxy/placer/'
+umzh-role-check:
+  required_role: "placer"   # or "fulfiller"
 ```
 
-This ensures that after a cross-domain fetch, all embedded FHIR URLs are navigable by the caller through the receiving party's own internal gateway proxy path.
+Used on all internal gateway routes. Registered via `plugins:` list in the internal gateways' `config.yaml` and volume-mounted into both internal containers.
+
+#### OPA adapter — `apisix.rego`
+
+**File:** `services/opa/policies/apisix.rego`  
+**Package:** `umzh.authz.apisix`
+
+The built-in `opa` plugin sends its own input shape (`input.request.headers`, `input.request.path`, etc.). The adapter maps this to `main.rego`'s expected shape using `with input as`:
+
+```rego
+package umzh.authz.apisix
+import data.umzh.authz
+
+allow if {
+    authz.allow with input as mapped_input
+}
+```
+
+Per-party values (`fhir_base`, `required_role`) come from OPA data documents mounted as `/config.json` in each OPA container (`services/opa/config-placer.json` / `config-fulfiller.json`).
+
+**Non-obvious detail:** APISIX's `core.request.headers(ctx)` is snapshot-cached before `openid-connect` runs, so `X-Access-Token` is invisible to the opa plugin. The adapter reads from `input.request.headers["authorization"]` (the original Bearer token, always present and already validated).
 
 ---
 
@@ -583,26 +472,26 @@ The sandbox implements **Level 1** (basic client credentials) of the three-level
 ```
 1. Browser → Keycloak  (client_credentials, scope=openid [consent:<id>])
 2. Keycloak → Browser  (JWT with party_id, smart_scopes, scope claims)
-3. Browser → krakend-placer  (Bearer <JWT>)
-4. krakend-placer validates JWT (Keycloak JWKS)
-5. krakend-placer routes to nginx-proxy:84  (proxy backend)
-6. nginx-proxy:84 forwards to krakend-fulfiller-external
-7. krakend-fulfiller-external validates JWT (same Keycloak JWKS — independent check)
-8. krakend-fulfiller-external propagates claims as X-* headers
-9. krakend-fulfiller-external → nginx-proxy:83 → hapi-fhir (fulfiller partition)
-10. nginx-proxy:83 rewrites HAPI self-links → krakend-fulfiller-external base URL
-11. nginx-proxy:84 rewrites those → krakend-placer /proxy/fhir/ base URL
-12. Browser receives navigable self-links for its own gateway
+3. Browser → apisix-placer-internal  (Bearer <JWT>)
+4. apisix-placer-internal: openid-connect validates JWT (Keycloak JWKS)
+5. apisix-placer-internal: umzh-role-check enforces realm_role == "placer"
+6. apisix-placer-internal: serverless-post-function exchanges for M2M token
+7. apisix-placer-internal forwards to apisix-fulfiller-external (Bearer <M2M>)
+8. apisix-fulfiller-external: openid-connect validates M2M JWT (independent check)
+9. apisix-fulfiller-external: opa plugin enforces consent policy
+10. apisix-fulfiller-external → nginx-proxy:83 → hapi-fhir (fulfiller partition)
+11. nginx-proxy:83 rewrites HAPI self-links → apisix-fulfiller-external base URL
+12. apisix-placer-internal response-rewrite rewrites those → /proxy/fhir/ base URL
+13. Browser receives navigable self-links for its own gateway
 ```
 
-**JWT claims propagated as HTTP headers:**
+**JWT claims used by OPA (read via `X-Access-Token` header set by `openid-connect`):**
 
-| JWT Claim | HTTP Header | Example Value |
-|-----------|-------------|---------------|
-| `party_id` | `X-Party-Id` | `hospitalf` |
-| `smart_scopes` | `X-Smart-Scopes` | `system/Task.cru system/Patient.r ...` |
-| `tenant` | `X-Tenant` | `fulfiller` |
-| `scope` | `X-Scope` | `openid consent:ConsentOrthopedicReferral` |
+| JWT Claim | Purpose |
+|-----------|---------|
+| `party_id` | Organisation identifier for policy enforcement (e.g. `hospitalf`) |
+| `smart_scopes` | SMART resource-level permissions |
+| `scope` | Full scope string — OPA extracts `consent:<id>` from here |
 
 **SMART on FHIR system scopes** embedded in M2M tokens:
 
@@ -625,12 +514,12 @@ The sandbox implements **Level 1** (basic client credentials) of the three-level
 
 ### Consent Enforcement — OPA Gate
 
-Both external gateway read endpoints enforce consent **at the gateway** using a KrakenD sequential proxy that calls OPA before forwarding the request to HAPI FHIR. The policy decision is taken entirely inside the gateway — no sidecar or separate proxy component is involved.
+Both external gateway read endpoints enforce consent **at the gateway** using APISIX's built-in `opa` plugin. The policy decision is taken before the FHIR backend is called — OPA denies return HTTP **403** directly.
 
-| Endpoint | Query constraint | OPA pre hook |
+| Endpoint | Query constraint | OPA enforcement |
 |---|---|---|
-| `GET /fhir/{resource}` | `_id` required, `_include` optional | `pre_opa_gate_search` — parses resource ID from `_id` query param |
-| `GET /fhir/{resource}/{id}` | — | `pre_opa_gate` — parses resource ID from URL path |
+| `GET /fhir/{resource}` | `_id` required, `_include` optional | `opa` plugin — resource ID from `_id` query param |
+| `GET /fhir/{resource}/{id}` | — | `opa` plugin — resource ID from URL path |
 
 #### Architecture
 
@@ -639,89 +528,27 @@ Client
   │  GET /fhir/Condition/SuspectedACLRupture
   │  Authorization: Bearer <JWT with scope=consent:ConsentOrthopedicReferral>
   ▼
-krakend-*-external  (proxy.sequential: true)
+apisix-*-external
   │
-  ├─── Backend 1: OPA ──────────────────────────────────────────────────────┐
-  │    POST /v1/data/umzh/authz?_r=Condition&_i=SuspectedACLRupture         │
-  │    Body built by pre_opa_gate() from JWT claims + URL params             │
-  │    Group: "opa"                                                          │
-  │    Returns: { "result": { "allow": true, "http_status": 200, ... } }    │
+  ├─── openid-connect ── validates JWT, sets X-Access-Token
+  │
+  ├─── opa plugin ─────────────────────────────────────────────────────────┐
+  │    POST /v1/data/umzh/authz/allow                                       │
+  │    Input built by apisix.rego adapter from request headers + path       │
+  │    Returns: { "result": true } or { "result": false }                   │
+  │    • allow == false → HTTP 403 returned to client immediately           │
+  │    • allow == true  → continue to proxy-rewrite + upstream              │
   │                                                                          │
-  └─── Backend 2: HAPI FHIR ──────────────────────────────────────────────▶│
+  └─── proxy-rewrite + upstream (nginx-proxy:8x → HAPI FHIR) ────────────▶│
        GET /fhir/{party}/Condition/SuspectedACLRupture                      │
-                                                                             │
-  post_opa_gate() reads http_status from merged "opa" group ────────────────┘
-    • http_status == 200 → strip "opa" key, return FHIR resource to client
-    • http_status != 200 → error() → KrakenD CE returns HTTP 500
+       Returns FHIR resource to client ────────────────────────────────────-┘
 ```
 
-Both backends run on every request (KrakenD CE sequential proxy does not short-circuit on backend failure). The proxy post hook makes the access control decision after both backends have responded and their results have been merged.
+#### JWT claims → OPA
 
-#### JWT Claims → Lua via `propagate_claims`
+The `openid-connect` plugin sets `X-Access-Token` from the validated JWT. The `apisix.rego` adapter reads JWT claims from `input.request.headers["authorization"]` (the original Bearer token — `X-Access-Token` is snapshot-cached before openid-connect runs and is not available to the opa plugin's input builder).
 
-`propagate_claims` is KrakenD CE's standard mechanism for passing validated JWT claims into backend-level Lua hooks. The `auth/validator` block maps named JWT claims to HTTP request headers, which are then readable in `modifier/lua-backend` pre hooks via `r:headers()`:
-
-```json
-"propagate_claims": [
-    ["party_id",     "x-party-id"],
-    ["smart_scopes", "x-smart-scopes"],
-    ["scope",        "x-scope"]
-]
-```
-
-In `opa_gate.lua`:
-```lua
-local party_id     = r:headers('x-party-id')     or ''
-local scope        = r:headers('x-scope')        or ''
-local smart_scopes = r:headers('x-smart-scopes') or ''
-```
-
-**Why not direct JWT parsing in the Lua script?** KrakenD CE backend Lua hooks do not expose a `ctx.JWT` object or any structured JWT API. The `propagate_claims` → `r:headers()` pipeline is the only supported CE mechanism for accessing JWT claims in backend-level Lua. `output_encoding: json` (required for sequential proxy response merging) must be set on the endpoint for header propagation to work; `no-op` encoding suppresses this header forwarding. `opa_gate.lua` includes a Base64url JWT decode fallback for defensive completeness, but it is dead code in the current configuration — propagated headers are always present with `json` encoding.
-
-**Claims are flat strings.** `propagate_claims` copies claim values verbatim as header strings. There is no structured access to array or object claims. The `scope` claim (`openid consent:ConsentOrthopedicReferral`) and `smart_scopes` (`system/Patient.r system/Condition.r`) are space-delimited strings that OPA splits internally.
-
-#### `opa_gate.lua` — How It Works
-
-**`pre_opa_gate(request, fhir_base)`** — runs before the OPA backend request is dispatched:
-
-1. **Reads `resource_type` and `resource_id` from `r:url()`** — not `r:params()`.  
-   `r:params()` does **not** read query-string substitutions. Even with URL pattern `/v1/data/umzh/authz?_r={resource}&_i={id}`, the `{resource}` and `{id}` wildcard values are substituted into the URL string by KrakenD but are not exposed via the params API. They must be parsed from the resolved URL directly:
-   ```lua
-   local url           = r:url() or ''
-   local resource_type = url:match('[?&]_r=([^&]+)') or ''
-   local resource_id   = url:match('[?&]_i=([^&]+)') or ''
-   ```
-
-2. **Reads JWT claims** from propagated headers (`x-party-id`, `x-scope`, `x-smart-scopes`) with JWT-decode fallback.
-
-3. **Builds and injects the OPA input document** as the POST body:
-   ```json
-   {
-     "input": {
-       "method": "GET",
-       "path": "/fhir/Condition/SuspectedACLRupture",
-       "resource_type": "Condition",
-       "resource_id": "SuspectedACLRupture",
-       "token": { "party_id": "...", "smart_scopes": "...", "scope": "..." },
-       "consent_id": "",
-       "consent": null,
-       "fhir_base": "http://nginx-proxy:<port>/fhir/<party>"
-     }
-   }
-   ```
-
-**`post_opa_gate(response, request)`** — runs after both backends have responded:
-
-1. Reads the OPA decision from the merged data buffer under the `"opa"` group key (set via `group: "opa"` in the backend config).
-2. Reads the numeric `http_status` field — **not** the boolean `allow` field. KrakenD's Lua data binding does not propagate JSON booleans (`true`/`false` map to `nil`). The OPA policy exports a numeric `http_status` (200 = allow, 403 = deny) alongside the boolean `allow` for this reason.
-3. `http_status == 200` → strips the `"opa"` key from the response and passes the FHIR body through.
-4. Otherwise → calls `error()` → KrakenD CE returns HTTP 500.
-
-All three field checks (`opa` group, `result`, `http_status`) are fail-closed: a `nil` value at any step is treated as a deny with a descriptive error message.
-
-#### Known Limitation — HTTP 500 vs HTTP 403
-
-`error()` in `modifier/lua-proxy` always causes KrakenD **CE** to return HTTP 500, not HTTP 403. Returning a semantically correct denial status requires the `security/policies` feature, which is only available in KrakenD **Enterprise**. The sandbox accepts HTTP 500 as a deliberate trade-off — access is denied either way — at the cost of a non-standard response code. A future upgrade to KrakenD Enterprise would resolve this without any Lua or policy changes.
+OPA receives the full OPA input shape (method, path, resource_type, resource_id, token claims, fhir_base) assembled by the adapter from APISIX request context.
 
 #### OPA Package-Level Query
 
@@ -737,7 +564,7 @@ The gateway queries the package-level endpoint (`POST /v1/data/umzh/authz`) rath
 }
 ```
 
-The gateway reads `result.http_status` (numeric) because the boolean `result.allow` is inaccessible through the KrakenD Lua data binding. Note that OPA's own REST API always returns HTTP 200 for a successful evaluation regardless of the `http_status` rule value — the numeric field is purely a convention for callers.
+Note that OPA's own REST API always returns HTTP 200 for a successful evaluation regardless of the `http_status` rule value — the numeric field is purely a convention for callers that need a numeric status (e.g. the older `policy/check` passthrough). The APISIX `opa` plugin uses the boolean `allow` field directly.
 
 #### Bruno Policy Requests
 
@@ -807,10 +634,10 @@ docker compose up -d --build
 | Web App | http://localhost:3000 | React SPA login |
 | HAPI FHIR | http://localhost:8090/fhir/placer/metadata | CapabilityStatement JSON |
 | Keycloak | http://localhost:8180 | Admin console |
-| KrakenD Placer (internal) | http://localhost:8080/__health | `{"status":"ok"}` |
-| KrakenD Placer (external) | http://localhost:8081/__health | `{"status":"ok"}` |
-| KrakenD Fulfiller (internal) | http://localhost:8082/__health | `{"status":"ok"}` |
-| KrakenD Fulfiller (external) | http://localhost:8083/__health | `{"status":"ok"}` |
+| APISIX Placer (internal) | http://localhost:8080/__health | `{"status":"ok"}` |
+| APISIX Placer (external) | http://localhost:8081/__health | `{"status":"ok"}` |
+| APISIX Fulfiller (internal) | http://localhost:8082/__health | `{"status":"ok"}` |
+| APISIX Fulfiller (external) | http://localhost:8083/__health | `{"status":"ok"}` |
 | OPA Placer | http://localhost:8181/v1/health | `{"status":"ok"}` |
 | OPA Fulfiller | http://localhost:8182/v1/health | `{"status":"ok"}` |
 
@@ -872,11 +699,11 @@ PLACER_CLIENT_SECRET=placer-secret-2025
 FULFILLER_CLIENT_ID=fulfiller-client
 FULFILLER_CLIENT_SECRET=fulfiller-secret-2025
 
-# KrakenD — two gateways per party (internal + external)
-KRAKEND_PLACER_PORT=8080
-KRAKEND_PLACER_EXTERNAL_PORT=8081
-KRAKEND_FULFILLER_PORT=8082
-KRAKEND_FULFILLER_EXTERNAL_PORT=8083
+# APISIX — two gateways per party (internal + external)
+APISIX_PLACER_PORT=8080
+APISIX_PLACER_EXTERNAL_PORT=8081
+APISIX_FULFILLER_PORT=8082
+APISIX_FULFILLER_EXTERNAL_PORT=8083
 
 # OPA — one instance per party
 OPA_PLACER_PORT=8181
@@ -982,8 +809,8 @@ The `consent` client scope enables **per-request consent context** to be embedde
 }
 ```
 
-4. KrakenD propagates the `scope` claim as `X-Scope` header to all backends
-5. OPA extracts the consent ID from `X-Scope` for fine-grained policy enforcement
+4. APISIX's `openid-connect` plugin sets `X-Access-Token` from the validated JWT
+5. The `apisix.rego` adapter reads `scope` from the JWT and OPA extracts the consent ID for policy enforcement
 
 #### Token Request
 
@@ -1027,72 +854,68 @@ In the **Credentials tab**, enter an optional Consent ID before requesting a tok
 
 ---
 
-### KrakenD API Gateways
+### APISIX API Gateways
 
-**Configs:** All four gateways share a single directory using [KrakenD Flexible Configuration](https://www.krakend.io/docs/configuration/flexible-config/) — Go templates rendered at container startup from environment variables:
-- `services/krakend/krakend-internal-gateway.tmpl` — used by `krakend-placer` and `krakend-fulfiller`
-- `services/krakend/krakend-external-gateway.tmpl` — used by `krakend-placer-external` and `krakend-fulfiller-external`
-- `services/krakend/lua/` — shared Lua scripts for token exchange and URL rewriting
+**Configs:** Each gateway instance has its own directory under `services/apisix/`:
+- `{party}-{internal,external}/apisix.yaml` — route + plugin config (hot-reloaded, standalone mode)
+- `{party}-{internal,external}/config.yaml` — global APISIX config (plugin list, nginx snippets)
+- `plugins/umzh-role-check.lua` — custom role-check plugin (mounted only in internal gateways)
 
-> **Sandbox note — network addressing:** All inter-service communication (gateway → Keycloak, gateway → partner external gateway) uses Docker Compose service names (e.g. `keycloak:8080`, `krakend-fulfiller-external:8080`) rather than `localhost` ports. This is intentional: inside a Docker container `localhost` refers to the container itself, not the host machine, so Docker DNS is the correct addressing mechanism within the shared `umzh-net` network. In a real deployment each party would run on a separate host and these hostnames would be replaced with public DNS names.
+> **Network addressing:** All inter-service communication uses Docker Compose service names (e.g. `keycloak:8080`, `apisix-fulfiller-external:9080`) rather than `localhost` ports. Inside a Docker container `localhost` refers to the container itself, not the host machine.
 
-All four gateways use the same JWT validation configuration:
+> **Keycloak JWKS workaround:** Keycloak's `KC_HOSTNAME` is `http://localhost:8180` (browser-facing), so the JWKS URI in the discovery document is `http://localhost:8180/realms/...`. APISIX's nginx resolves `localhost` to `127.0.0.1` (loopback), not the Docker host. Each `config.yaml` includes a thin nginx `server` block that intercepts `127.0.0.1:8180` and forwards to `keycloak:8080`, making JWKS fetches work without changing `KC_HOSTNAME`.
 
-```json
-"auth/validator": {
-  "alg": "RS256",
-  "jwk_url": "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/certs",
-  "issuer": "http://localhost:8180/realms/umzh-connect",
-  "disable_jwk_security": true,
-  "cache": true
-}
+All four gateways use the same `openid-connect` plugin config pattern:
+
+```yaml
+openid-connect:
+  discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+  bearer_only: true
+  use_jwks: true
+  set_access_token_header: true   # false on proxy-out routes (int-proxy-partner)
+  set_userinfo_header: false
+  client_id: "unused"
+  client_secret: "unused"
 ```
-
-Note that `jwk_url` uses the Docker service name `keycloak:8080` (reachable from within the container network), while `issuer` uses `localhost:8180` — the URL that appears in the `iss` claim of JWTs issued by Keycloak in response to browser-initiated flows.
 
 #### Full Endpoint Reference — Placer Internal Gateway (`:8080`)
 
-| Category | Endpoint | Method | Backend host | Backend path | Auth | Propagates |
-|----------|----------|--------|-------------|--------------|------|------------|
-| Metadata | `/fhir/metadata` | GET | `nginx-proxy:80` | `/fhir/placer/metadata` | None | — |
-| 1 – Internal | `/fhir/{resource}` | GET, POST | `nginx-proxy:80` | `/fhir/placer/{resource}` | JWT | — |
-| 1 – Internal | `/fhir/{resource}/{id}` | GET, PUT | `nginx-proxy:80` | `/fhir/placer/{resource}/{id}` | JWT | — |
-| 3 – Proxy | `/proxy/fhir/{resource}` | GET | `nginx-proxy:84` | `/fhir/{resource}` | JWT | — |
-| 3 – Proxy | `/proxy/fhir/{resource}/{id}` | GET | `nginx-proxy:84` | `/fhir/{resource}/{id}` | JWT | — |
-| 4 – Actions | `/api/actions/create-referral` | POST | `nginx-proxy:80` | `/fhir/placer` | JWT | — |
-| 4 – Actions | `/api/actions/create-task` | POST | `krakend-fulfiller-external:8080` | `/fhir/Task` | JWT | party_id, smart_scopes, scope |
-| 4 – Actions | `/api/actions/all-tasks` | GET | `nginx-proxy:80` + `krakend-fulfiller-external:8080` | `/fhir/placer/Task` + `/fhir/Task` | JWT | party_id, smart_scopes, scope |
-| 4 – Policy | `/api/policy/check` | POST | `opa-placer:8181` | `/v1/data/umzh/authz/allow` | None | — |
+| Category | Endpoint | Method | Upstream | Rewritten path | Auth |
+|----------|----------|--------|----------|---------------|------|
+| Metadata | `/fhir/metadata` | GET | `nginx-proxy:80` | `/fhir/placer/metadata` | None |
+| 1 – Internal | `/fhir/*` | GET, POST, PUT, PATCH, DELETE | `nginx-proxy:80` | `/fhir/placer/*` | JWT + role |
+| 3 – Proxy | `/proxy/fhir/*` | GET | `apisix-fulfiller-external:9080` | `/fhir/*` | JWT + role + M2M exchange |
+| 4 – Actions | `/api/actions/create-task` | POST | `apisix-fulfiller-external:9080` | `/fhir/Task` | JWT + role + M2M exchange |
+| 4 – Actions | `/api/actions/all-tasks` | GET | — (fan-out) | — | JWT + role + M2M exchange |
+| 4 – Policy | `/api/policy/check` | POST | `opa-placer:8181` | `/v1/data/umzh/authz/allow` | None |
 
 #### Full Endpoint Reference — Placer External Gateway (`:8081`)
 
-| Endpoint | Method | Query params | Backend host(s) | Backend path | Auth | Notes |
-|----------|--------|-------------|----------------|--------------|------|-------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | `/v1/data/umzh/authz` → `/fhir/placer/{resource}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate_search` |
-| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | `/v1/data/umzh/authz` → `/fhir/placer/{resource}/{id}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate` |
-| `/fhir/Task` | POST | — | `nginx-proxy:81` | `/fhir/placer/Task` | JWT | |
+| Endpoint | Method | Query params | Upstream | Rewritten path | Auth |
+|----------|--------|-------------|----------|---------------|------|
+| `/fhir/*` (read by id) | GET | — | `nginx-proxy:81` | `/fhir/placer/*` | JWT + OPA |
+| `/fhir/*` (search) | GET | `_id` required | `nginx-proxy:81` | `/fhir/placer/*` | JWT + OPA |
+| `/fhir/Task` | POST | — | `nginx-proxy:81` | `/fhir/placer/Task` | JWT |
 
 #### Full Endpoint Reference — Fulfiller Internal Gateway (`:8082`)
 
-| Category | Endpoint | Method | Backend host | Backend path | Auth | Propagates |
-|----------|----------|--------|-------------|--------------|------|------------|
-| Metadata | `/fhir/metadata` | GET | `nginx-proxy:82` | `/fhir/fulfiller/metadata` | None | — |
-| 1 – Internal | `/fhir/{resource}` | GET, POST | `nginx-proxy:82` | `/fhir/fulfiller/{resource}` | JWT | — |
-| 1 – Internal | `/fhir/{resource}/{id}` | GET, PUT | `nginx-proxy:82` | `/fhir/fulfiller/{resource}/{id}` | JWT | — |
-| 3 – Proxy | `/proxy/fhir/{resource}` | GET | `nginx-proxy:85` | `/fhir/{resource}` | JWT | party_id, smart_scopes, tenant, scope |
-| 3 – Proxy | `/proxy/fhir/{resource}/{id}` | GET | `nginx-proxy:85` | `/fhir/{resource}/{id}` | JWT | party_id, smart_scopes, tenant, scope |
-| 4 – Actions | `/api/actions/create-task` | POST | `krakend-placer-external:8080` | `/fhir/Task` | JWT | party_id, smart_scopes, scope |
-| 4 – Actions | `/api/actions/all-tasks` | GET | `nginx-proxy:82` + `krakend-placer-external:8080` | `/fhir/fulfiller/Task` + `/fhir/Task` | JWT | party_id, smart_scopes, scope |
-| 4 – Policy | `/api/policy/check` | POST | `opa-fulfiller:8181` | `/v1/data/umzh/authz/allow` | None | — |
+| Category | Endpoint | Method | Upstream | Rewritten path | Auth |
+|----------|----------|--------|----------|---------------|------|
+| Metadata | `/fhir/metadata` | GET | `nginx-proxy:82` | `/fhir/fulfiller/metadata` | None |
+| 1 – Internal | `/fhir/*` | GET, POST, PUT, PATCH, DELETE | `nginx-proxy:82` | `/fhir/fulfiller/*` | JWT + role |
+| 3 – Proxy | `/proxy/fhir/*` | GET | `apisix-placer-external:9080` | `/fhir/*` | JWT + role + M2M exchange |
+| 4 – Actions | `/api/actions/create-task` | POST | `apisix-placer-external:9080` | `/fhir/Task` | JWT + role + M2M exchange |
+| 4 – Actions | `/api/actions/all-tasks` | GET | — (fan-out) | — | JWT + role + M2M exchange |
+| 4 – Policy | `/api/policy/check` | POST | `opa-fulfiller:8181` | `/v1/data/umzh/authz/allow` | None |
 
 #### Full Endpoint Reference — Fulfiller External Gateway (`:8083`)
 
-| Endpoint | Method | Query params | Backend host(s) | Backend path | Auth | Notes |
-|----------|--------|-------------|----------------|--------------|------|-------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | `/v1/data/umzh/authz` → `/fhir/fulfiller/{resource}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate_search` |
-| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `/v1/data/umzh/authz` → `/fhir/fulfiller/{resource}/{id}` | JWT | Sequential proxy; OPA consent gate via `pre_opa_gate` |
-| `/fhir/Task` | POST | — | `nginx-proxy:83` | `/fhir/fulfiller/Task` | JWT | |
-| `/fhir/Task/{id}` | PUT | — | `nginx-proxy:83` | `/fhir/fulfiller/Task/{id}` | JWT | |
+| Endpoint | Method | Query params | Upstream | Rewritten path | Auth |
+|----------|--------|-------------|----------|---------------|------|
+| `/fhir/*` (read by id) | GET | — | `nginx-proxy:83` | `/fhir/fulfiller/*` | JWT + OPA |
+| `/fhir/*` (search) | GET | `_id` required | `nginx-proxy:83` | `/fhir/fulfiller/*` | JWT + OPA |
+| `/fhir/Task` | POST | — | `nginx-proxy:83` | `/fhir/fulfiller/Task` | JWT |
+| `/fhir/Task/*` | PUT | — | `nginx-proxy:83` | `/fhir/fulfiller/Task/*` | JWT |
 
 ---
 
@@ -1171,8 +994,8 @@ Both OPA instances expose the same HTTP API on their respective ports (8181/8182
 
 | Endpoint | Returns | Use case |
 |----------|---------|----------|
-| `POST /v1/data/umzh/authz` | All rule values incl. `http_status` | **Used by external gateway** (sequential proxy OPA gate) |
-| `POST /v1/data/umzh/authz/allow` | `{ "result": true \| false }` | Simple boolean — used by internal gateway `/api/policy/check` |
+| `POST /v1/data/umzh/authz/allow` | `{ "result": true \| false }` | **Used by APISIX `opa` plugin** (external gateway) and internal `/api/policy/check` |
+| `POST /v1/data/umzh/authz` | All rule values incl. `http_status` | Package-level query — debug/audit use |
 | `POST /v1/data/umzh/authz/decision` | Full decision object with `reason` | Debug, audit, explicit policy check |
 | `GET /v1/health` | `{ "status": "ok" }` | Health check |
 
@@ -1241,7 +1064,7 @@ The seed loader waits for HAPI FHIR readiness, creates the two partitions, then 
 
 Each Organization carries two FHIR meta tags used by the web-app for cross-party routing:
 - `urn:umzh:keycloak:client-id` — the Keycloak client ID for M2M token requests
-- `urn:umzh:api:external-host` — the base URL of the party's external KrakenD gateway
+- `urn:umzh:api:external-host` — the base URL of the party's external APISIX gateway
 
 #### Use Cases
 
@@ -1313,7 +1136,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/fhir/Patient/PetraMeier
 
 # ── Read Fulfiller resources via proxy path ────────────────────────────────
-# (krakend-placer → nginx-proxy:84 → krakend-fulfiller-external → HAPI)
+# (apisix-placer-internal → M2M exchange → apisix-fulfiller-external → HAPI)
 # Self-links in the response will be navigable via localhost:8080/proxy/fhir/
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/proxy/fhir/Task
@@ -1399,8 +1222,8 @@ The sandbox uses two distinct token models, reflecting how real-world deployment
 
 | Gateway | Port | Keycloak grant | Client | Required role |
 |---|---|---|---|---|
-| krakend-placer | 8080 | `password` | `web-app` | `placer` |
-| krakend-fulfiller | 8082 | `password` | `web-app` | `fulfiller` |
+| apisix-placer-internal | 8080 | `password` | `web-app` | `placer` |
+| apisix-fulfiller-internal | 8082 | `password` | `web-app` | `fulfiller` |
 
 Internal gateways represent access from within the hospital (e.g. a clinical web application or admin tool). They validate JWT signatures and check that the token carries the correct **realm role** — `placer` for the Placer gateway, `fulfiller` for the Fulfiller gateway. No SMART scopes or consent claims are required.
 
@@ -1415,8 +1238,8 @@ Web app / admin tool
         │
         │  Authorization: Bearer <adminToken>
         ▼
-krakend-placer :8080  (validates role == "placer")
-krakend-fulfiller :8082  (validates role == "fulfiller")
+apisix-placer-internal :8080  (validates role == "placer")
+apisix-fulfiller-internal :8082  (validates role == "fulfiller")
 ```
 
 `get-admin-token.bru` fetches this token and stores it as `{{adminToken}}`.
@@ -1425,8 +1248,8 @@ krakend-fulfiller :8082  (validates role == "fulfiller")
 
 | Gateway | Port | Keycloak grant | Client | Validated by |
 |---|---|---|---|---|
-| krakend-placer-external | 8081 | `client_credentials` | `fulfiller-client` | OPA (party + scope + consent) |
-| krakend-fulfiller-external | 8083 | `client_credentials` | `placer-client` | OPA (party + scope + consent) |
+| apisix-placer-external | 8081 | `client_credentials` | `fulfiller-client` | OPA (party + scope + consent) |
+| apisix-fulfiller-external | 8083 | `client_credentials` | `placer-client` | OPA (party + scope + consent) |
 
 External gateways represent access from a **partner hospital**. They validate the JWT and then forward token claims (`party_id`, `smart_scopes`, `scope`) to OPA for policy evaluation. OPA enforces:
 
@@ -1443,8 +1266,8 @@ Partner hospital system
         │
         │  Authorization: Bearer <placerToken>
         ▼
-krakend-fulfiller-external :8083
-        │  forwards token claims as X-* headers
+apisix-fulfiller-external :8083
+        │  openid-connect validates JWT; opa plugin checks consent
         ▼
       OPA  ──────► allow / deny based on party + scopes + consent
         │
@@ -1459,15 +1282,15 @@ krakend-fulfiller-external :8083
 For internal endpoints that call the partner's external gateway (`/proxy/fhir/*`, `/api/actions/create-task`, `/api/actions/all-tasks`), the internal gateway performs a silent **M2M token exchange** on behalf of the caller:
 
 ```
-Web app  ──►  krakend-placer :8080  (validates adminToken, role=placer)
+Web app  ──►  apisix-placer-internal :8080  (validates adminToken, role=placer)
                      │
                      │  POST /token  grant_type=client_credentials
                      ▼
                  Keycloak  ──► M2M JWT (placer-client + consent scope)
                      │
-                     │  Authorization: Bearer <m2mToken>  (injected via Lua)
+                     │  Authorization: Bearer <m2mToken>  (injected by serverless-post-function)
                      ▼
-          krakend-fulfiller-external :8083  (OPA: party + scopes + consent)
+          apisix-fulfiller-external :8083  (OPA: party + scopes + consent)
 ```
 
 The caller only ever sends `adminToken`. The gateway handles obtaining and injecting the correct M2M credential automatically.
@@ -1483,7 +1306,7 @@ requests/
 │   ├── get-fulfiller-token.bru    Fetches M2M token for fulfiller-client (→ {{fulfillerToken}})
 │   └── get-admin-token.bru        Fetches user token for admin-user (→ {{adminToken}})
 │
-├── placer/                         All calls to krakend-placer :8080 — requires {{adminToken}}
+├── placer/                         All calls to apisix-placer-internal :8080 — requires {{adminToken}}
 │   ├── 01-metadata.bru            FHIR /metadata (no auth)
 │   ├── 02-read-patient.bru        Read own Patient resource
 │   ├── 03-read-service-requests.bru  Read own ServiceRequests
@@ -1493,7 +1316,7 @@ requests/
 │   ├── 07-proxy-read-fulfiller-tasks.bru  Read Fulfiller Tasks via /proxy/fhir/* (consent-gated)
 │   └── 08-policy-check.bru        Direct OPA policy evaluation via /api/policy/check
 │
-├── fulfiller/                      All calls to krakend-fulfiller :8082 — requires {{adminToken}}
+├── fulfiller/                      All calls to apisix-fulfiller-internal :8082 — requires {{adminToken}}
 │   ├── 01-read-tasks.bru          Read own Tasks
 │   ├── 02-proxy-read-placer-patient.bru  Read Placer Patient via /proxy/fhir/* (consent-gated)
 │   └── 03-all-tasks.bru           Fetch merged Task list (local + remote)
@@ -1648,10 +1471,10 @@ Each file is executed with `hurl --test`, injecting all URL variables and tokens
 | Variable | Default | Description |
 |---|---|---|
 | `KEYCLOAK_URL` | `http://localhost:8180` | Keycloak base URL |
-| `KRAKEND_PLACER_URL` | `http://localhost:8080` | Placer internal gateway |
-| `KRAKEND_PLACER_EXT_URL` | `http://localhost:8081` | Placer external gateway |
-| `KRAKEND_FULFILLER_URL` | `http://localhost:8082` | Fulfiller internal gateway |
-| `KRAKEND_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
+| `APISIX_PLACER_URL` | `http://localhost:8080` | Placer internal gateway |
+| `APISIX_PLACER_EXT_URL` | `http://localhost:8081` | Placer external gateway |
+| `APISIX_FULFILLER_URL` | `http://localhost:8082` | Fulfiller internal gateway |
+| `APISIX_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
 | `HAPI_FHIR_URL` | `http://localhost:8090` | HAPI FHIR direct access |
 | `OPA_PLACER_URL` | `http://localhost:8181` | OPA Placer |
 | `OPA_FULFILLER_URL` | `http://localhost:8182` | OPA Fulfiller |
@@ -1684,7 +1507,7 @@ npx tsc --noEmit     # Type check without building
 npm run build        # Production build
 ```
 
-The Vite dev proxy forwards `/fhir*`, `/proxy*`, `/api*` to KrakenD at port 8080.
+The Vite dev proxy forwards `/fhir*`, `/proxy*`, `/api*` to APISIX at port 8080.
 
 ### Rebuild a Single Service
 
@@ -1695,8 +1518,8 @@ docker compose up -d --build web-app
 # Re-seed FHIR data (requires fresh HAPI FHIR)
 docker compose up -d --build seed-loader
 
-# Reload KrakenD config without rebuilding (config is volume-mounted)
-docker compose restart krakend-placer krakend-fulfiller krakend-placer-external krakend-fulfiller-external
+# Reload APISIX config without rebuilding (apisix.yaml is volume-mounted, hot-reloaded)
+docker compose restart apisix-placer-internal apisix-fulfiller-internal apisix-placer-external apisix-fulfiller-external
 
 # Reload nginx-proxy config
 docker compose restart nginx-proxy
@@ -1709,10 +1532,10 @@ docker compose restart opa-placer opa-fulfiller
 
 ```bash
 docker compose logs -f                             # All services
-docker compose logs -f krakend-placer             # Placer internal gateway
-docker compose logs -f krakend-placer-external    # Placer external gateway
-docker compose logs -f krakend-fulfiller          # Fulfiller internal gateway
-docker compose logs -f krakend-fulfiller-external # Fulfiller external gateway
+docker compose logs -f apisix-placer-internal     # Placer internal gateway
+docker compose logs -f apisix-placer-external     # Placer external gateway
+docker compose logs -f apisix-fulfiller-internal  # Fulfiller internal gateway
+docker compose logs -f apisix-fulfiller-external  # Fulfiller external gateway
 docker compose logs -f nginx-proxy                # nginx self-link rewriting
 docker compose logs -f keycloak                   # Keycloak events
 docker compose logs -f opa-placer                 # Placer policy engine
@@ -1752,39 +1575,31 @@ Sandbox/
 │   │   └── realm-export.json       # Realm, clients, scopes (incl. dynamic consent scope)
 │   │
 │   ├── nginx-proxy/
-│   │   └── nginx.conf              # 6 server blocks (ports 80–85), one sub_filter each
-│   │                               # Ports 80–83: HAPI self-link rewriting per gateway
-│   │                               # Ports 84–85: rewriting proxy to external gateways
+│   │   └── nginx.conf              # 4 server blocks (ports 80–83), one sub_filter each
+│   │                               # Rewrites HAPI self-links to APISIX gateway base URLs
 │   │
-│   ├── krakend-placer/
-│   │   └── krakend.json            # Placer internal gateway (port 8080)
-│   │                               # Categories 1, 3, 4 — own + proxy + actions
-│   │
-│   ├── krakend-placer-external/
-│   │   └── krakend.json            # Placer external gateway (port 8081)
-│   │                               # Category 2 — Fulfiller reads/writes Placer data
-│   │
-│   ├── krakend-fulfiller/
-│   │   └── krakend.json            # Fulfiller internal gateway (port 8082)
-│   │                               # Categories 1, 3, 4 — own + proxy + actions
-│   │
-│   ├── krakend-fulfiller-external/
-│   │   └── krakend.json            # Fulfiller external gateway (port 8083)
-│   │                               # Category 2 — Placer reads/writes Fulfiller data
-│   │
-│   ├── krakend/
-│   │   └── lua/
-│   │       ├── opa_gate.lua        # Sequential proxy OPA consent gate
-│   │       │                       # pre_opa_gate        — single-resource /{resource}/{id}
-│   │       │                       # pre_opa_gate_search — search /{resource}?_id= (mandatory)
-│   │       │                       # post_opa_gate       — shared; enforces http_status decision
-│   │       ├── proxy_inject_token.lua   # Backend pre — injects M2M Bearer token
-│   │       ├── proxy_response.lua  # Proxy post — strips token_exchange, rewrites FHIR URLs
-│   │       └── proxy_rewrite.lua   # Backend post — raw body URL replacement
+│   ├── apisix/
+│   │   ├── placer-internal/
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8080, hot-reloaded)
+│   │   │   └── config.yaml         # Global APISIX config (plugin list, nginx snippets)
+│   │   ├── placer-external/
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8081)
+│   │   │   └── config.yaml
+│   │   ├── fulfiller-internal/
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8082)
+│   │   │   └── config.yaml
+│   │   ├── fulfiller-external/
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8083)
+│   │   │   └── config.yaml
+│   │   └── plugins/
+│   │       └── umzh-role-check.lua # Custom plugin — JWT realm-role enforcement
 │   │
 │   ├── opa/
-│   │   └── policies/
-│   │       └── main.rego           # Consent-centric authz (6 rules, effective_consent_id)
+│   │   ├── policies/
+│   │   │   ├── main.rego           # Consent-centric authz (6 rules, effective_consent_id)
+│   │   │   └── apisix.rego         # APISIX input adapter (maps plugin shape → main.rego)
+│   │   ├── config-placer.json      # Per-party OPA data (fhir_base, required_role)
+│   │   └── config-fulfiller.json
 │   │
 │   └── seed/
 │       ├── Dockerfile
