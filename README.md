@@ -857,13 +857,15 @@ In the **Credentials tab**, enter an optional Consent ID before requesting a tok
 ### APISIX API Gateways
 
 **Configs:** Each gateway instance has its own directory under `services/apisix/`:
-- `{party}-{internal,external}/apisix.yaml` — route + plugin config (hot-reloaded, standalone mode)
-- `{party}-{internal,external}/config.yaml` — global APISIX config (plugin list, nginx snippets)
+- `{party}-internal/apisix.yaml` — route + plugin config template; rendered at container start via `entrypoint.sh`
+- `{party}-external/apisix.yaml` — route + plugin config (hot-reloaded, standalone mode)
+- `{party}-{internal,external}/config.yaml` — global APISIX config (plugin list; internal gateways also whitelist `CLIENT_ID`/`CLIENT_SECRET` env vars via `main_configuration_snippet`)
+- `{party}-internal/entrypoint.sh` — renders `apisix.yaml` template (substitutes `PARTNER_EXTERNAL_URL`/`OWN_URL`) then starts APISIX
 - `plugins/umzh-role-check.lua` — custom role-check plugin (mounted only in internal gateways)
 
 > **Network addressing:** All inter-service communication uses Docker Compose service names (e.g. `keycloak:8080`, `apisix-fulfiller-external:9080`) rather than `localhost` ports. Inside a Docker container `localhost` refers to the container itself, not the host machine.
 
-> **Keycloak JWKS workaround:** Keycloak's `KC_HOSTNAME` is `http://localhost:8180` (browser-facing), so the JWKS URI in the discovery document is `http://localhost:8180/realms/...`. APISIX's nginx resolves `localhost` to `127.0.0.1` (loopback), not the Docker host. Each `config.yaml` includes a thin nginx `server` block that intercepts `127.0.0.1:8180` and forwards to `keycloak:8080`, making JWKS fetches work without changing `KC_HOSTNAME`.
+> **Keycloak back-channel:** Keycloak's `KC_HOSTNAME` is `http://localhost:8180` (browser-facing). `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` is set on the Keycloak service so that server-side back-channel requests (e.g. JWKS fetches from APISIX) receive discovery documents with URLs resolved from the incoming `Host` header (`keycloak:8080`) rather than the browser-facing hostname. This makes JWKS validation work inside Docker without any nginx workaround.
 
 All four gateways use the same `openid-connect` plugin config pattern:
 
@@ -1518,8 +1520,12 @@ docker compose up -d --build web-app
 # Re-seed FHIR data (requires fresh HAPI FHIR)
 docker compose up -d --build seed-loader
 
-# Reload APISIX config without rebuilding (apisix.yaml is volume-mounted, hot-reloaded)
-docker compose restart apisix-placer-internal apisix-fulfiller-internal apisix-placer-external apisix-fulfiller-external
+# Reload external gateway config (apisix.yaml is volume-mounted directly — hot-reloaded by APISIX)
+docker compose restart apisix-placer-external apisix-fulfiller-external
+
+# Reload internal gateway config (apisix.yaml is a template rendered by entrypoint.sh at start —
+# restart re-runs entrypoint.sh, re-renders the template, then starts APISIX)
+docker compose restart apisix-placer-internal apisix-fulfiller-internal
 
 # Reload nginx-proxy config
 docker compose restart nginx-proxy
@@ -1580,17 +1586,19 @@ Sandbox/
 │   │
 │   ├── apisix/
 │   │   ├── placer-internal/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8080, hot-reloaded)
-│   │   │   └── config.yaml         # Global APISIX config (plugin list, nginx snippets)
+│   │   │   ├── apisix.yaml         # Route + plugin config template (envsubst rendered at start)
+│   │   │   ├── config.yaml         # Global APISIX config (plugin list, env whitelist for secrets)
+│   │   │   └── entrypoint.sh       # Renders apisix.yaml template then starts APISIX
 │   │   ├── placer-external/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8081)
-│   │   │   └── config.yaml
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8081, hot-reloaded)
+│   │   │   └── config.yaml         # Global APISIX config (plugin list)
 │   │   ├── fulfiller-internal/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8082)
-│   │   │   └── config.yaml
+│   │   │   ├── apisix.yaml         # Route + plugin config template (envsubst rendered at start)
+│   │   │   ├── config.yaml         # Global APISIX config (plugin list, env whitelist for secrets)
+│   │   │   └── entrypoint.sh       # Renders apisix.yaml template then starts APISIX
 │   │   ├── fulfiller-external/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8083)
-│   │   │   └── config.yaml
+│   │   │   ├── apisix.yaml         # Route + plugin config (port 8083, hot-reloaded)
+│   │   │   └── config.yaml         # Global APISIX config (plugin list)
 │   │   └── plugins/
 │   │       └── umzh-role-check.lua # Custom plugin — JWT realm-role enforcement
 │   │
