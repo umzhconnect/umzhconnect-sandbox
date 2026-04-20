@@ -40,6 +40,7 @@ services:
       KC_HTTP_PORT: 8080
       KC_HOSTNAME: 'http://localhost:8180'
       KC_HOSTNAME_STRICT: 'false'
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
@@ -159,9 +160,16 @@ services:
   apisix-placer-internal:
     image: apache/apisix:3.9.0-debian
     container_name: umzh-apisix-placer-internal
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_FULFILLER_EXTERNAL_PORT}"
+      OWN_URL: "http://localhost:${APISIX_PLACER_PORT}"
+      CLIENT_ID: "${PLACER_CLIENT_ID}"
+      CLIENT_SECRET: "${PLACER_CLIENT_SECRET}"
     volumes:
       - ./services/apisix/placer-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/placer-internal/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/placer-internal/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/placer-internal/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
       - '${APISIX_PLACER_PORT}:9080'
@@ -212,9 +220,16 @@ services:
   apisix-fulfiller-internal:
     image: apache/apisix:3.9.0-debian
     container_name: umzh-apisix-fulfiller-internal
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_PLACER_EXTERNAL_PORT}"
+      OWN_URL: "http://localhost:${APISIX_FULFILLER_PORT}"
+      CLIENT_ID: "${FULFILLER_CLIENT_ID}"
+      CLIENT_SECRET: "${FULFILLER_CLIENT_SECRET}"
     volumes:
       - ./services/apisix/fulfiller-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/fulfiller-internal/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/fulfiller-internal/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/fulfiller-internal/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
       - '${APISIX_FULFILLER_PORT}:9080'

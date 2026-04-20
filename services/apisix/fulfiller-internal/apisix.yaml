@@ -46,8 +46,8 @@ routes:
         regex_uri: ["^/fhir/(.*)$", "/fhir/fulfiller/$1"]
       response-rewrite:
         filters:
-          - regex: "http://localhost:8081/fhir/"
-            replace: "http://localhost:8082/proxy/placer/"
+          - regex: "${PARTNER_EXTERNAL_URL}/fhir/"
+            replace: "${OWN_URL}/proxy/placer/"
 
   # ─── Proxy to partner: token exchange → forward to placer external ────
   - id: int-proxy-partner
@@ -73,10 +73,12 @@ routes:
             return function(conf, ctx)
               local http = require("resty.http")
 
+              local cid     = os.getenv("CLIENT_ID")     or ""
+              local csecret = os.getenv("CLIENT_SECRET") or ""
               local consent_id = ngx.req.get_headers()["X-Consent-Id"] or ""
               local body = "grant_type=client_credentials"
-                        .. "&client_id=fulfiller-client"
-                        .. "&client_secret=fulfiller-secret-2025"
+                        .. "&client_id=" .. cid
+                        .. "&client_secret=" .. csecret
               if consent_id ~= "" then
                 body = body .. "&scope=consent:" .. consent_id
               end
@@ -96,8 +98,8 @@ routes:
         regex_uri: ["^/proxy/fhir/(.*)$", "/fhir/$1"]
       response-rewrite:
         filters:
-          - regex: "http://localhost:8081/fhir/"
-            replace: "http://localhost:8082/proxy/fhir/"
+          - regex: "${PARTNER_EXTERNAL_URL}/fhir/"
+            replace: "${OWN_URL}/proxy/fhir/"
 
   # ─── Action: create Task at partner ──────────────────────────────────
   - id: actions-create-task
@@ -126,7 +128,9 @@ routes:
               local tr, err = httpc:request_uri(
                 "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
                 { method = "POST",
-                  body = "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025",
+                  body = "grant_type=client_credentials"
+                     .. "&client_id="     .. (os.getenv("CLIENT_ID")     or "")
+                     .. "&client_secret=" .. (os.getenv("CLIENT_SECRET") or ""),
                   headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
               if not tr or tr.status ~= 200 then return ngx.exit(502) end
 
@@ -163,7 +167,9 @@ routes:
               local tr, err = httpc:request_uri(
                 "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
                 { method = "POST",
-                  body = "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025",
+                  body = "grant_type=client_credentials"
+                     .. "&client_id="     .. (os.getenv("CLIENT_ID")     or "")
+                     .. "&client_secret=" .. (os.getenv("CLIENT_SECRET") or ""),
                   headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
               if not tr or tr.status ~= 200 then return ngx.exit(502) end
               local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
@@ -180,10 +186,10 @@ routes:
                 { headers = { Authorization = "Bearer " .. m2m } })
 
               local local_body = (lr and lr.body) or "{}"
-              local_body = local_body:gsub("http://localhost:8081/fhir/", "http://localhost:8082/proxy/fhir/")
+              local_body = local_body:gsub("${PARTNER_EXTERNAL_URL}/fhir/", "${OWN_URL}/proxy/fhir/")
 
               local remote_body = (rr and rr.body) or "{}"
-              remote_body = remote_body:gsub("http://localhost:8081/fhir/", "http://localhost:8082/proxy/fhir/")
+              remote_body = remote_body:gsub("${PARTNER_EXTERNAL_URL}/fhir/", "${OWN_URL}/proxy/fhir/")
 
               ngx.header["Content-Type"] = "application/json"
               ngx.say(string.format('{"local":%s,"remote":%s}', local_body, remote_body))
