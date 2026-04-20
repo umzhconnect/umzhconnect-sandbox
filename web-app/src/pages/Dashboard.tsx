@@ -22,7 +22,7 @@ interface ServiceDef {
 const SERVICES: ServiceDef[] = [
   // HospitalP (Placer) party
   {
-    name: 'KrakenD Placer',
+    name: 'APISIX Placer',
     desc: 'Internal API gateway',
     url: 'http://localhost:8080',
     port: '8080',
@@ -30,7 +30,7 @@ const SERVICES: ServiceDef[] = [
     group: 'placer',
   },
   {
-    name: 'KrakenD Placer Ext',
+    name: 'APISIX Placer Ext',
     desc: 'External API gateway',
     url: 'http://localhost:8081',
     port: '8081',
@@ -47,7 +47,7 @@ const SERVICES: ServiceDef[] = [
   },
   // HospitalF (Fulfiller) party
   {
-    name: 'KrakenD Fulfiller',
+    name: 'APISIX Fulfiller',
     desc: 'Internal API gateway',
     url: 'http://localhost:8082',
     port: '8082',
@@ -55,7 +55,7 @@ const SERVICES: ServiceDef[] = [
     group: 'fulfiller',
   },
   {
-    name: 'KrakenD Fulfiller Ext',
+    name: 'APISIX Fulfiller Ext',
     desc: 'External API gateway',
     url: 'http://localhost:8083',
     port: '8083',
@@ -150,8 +150,8 @@ const CAPABILITIES = [
   },
   {
     icon: '🔐',
-    title: 'JWT-secured API gateways (KrakenD v2.7)',
-    body: 'Four KrakenD instances enforce RS256 JWT validation. Internal gateways serve the web-app via OAuth2 user tokens; external gateways are M2M entry points.',
+    title: 'JWT-secured API gateways (APISIX v3.9)',
+    body: 'Four APISIX instances enforce RS256 JWT validation. Internal gateways serve the web-app via OAuth2 user tokens; external gateways are M2M entry points.',
   },
   {
     icon: '🛡️',

@@ -1,0 +1,121 @@
+routes:
+  # ─── Health check ────────────────────────────────────────────────────
+  - id: health
+    uri: /__health
+    methods: [GET]
+    priority: 100
+    plugins:
+      serverless-pre-function:
+        phase: access
+        functions:
+          - |
+            return function(conf, ctx)
+              ngx.header["Content-Type"] = "application/json"
+              ngx.say('{"status":"ok"}')
+              return ngx.exit(200)
+            end
+
+  # ─── Task list — JWT only, no OPA (workflow resource) ────────────────
+  - id: ext-task-list
+    uri: /fhir/Task
+    methods: [GET]
+    priority: 10
+    upstream_id: hapi-placer
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      proxy-rewrite:
+        uri: /fhir/placer/Task
+
+  # ─── Task create — JWT only, no OPA ──────────────────────────────────
+  - id: ext-task-create
+    uri: /fhir/Task
+    methods: [POST]
+    priority: 10
+    upstream_id: hapi-placer
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      proxy-rewrite:
+        uri: /fhir/placer/Task
+
+  # ─── FHIR read by ID — OPA consent gate ──────────────────────────────
+  - id: ext-fhir-read
+    uri: /fhir/*
+    methods: [GET]
+    vars:
+      - - "uri"
+        - "~~"
+        - "^/fhir/[^/]+/[^/]+$"
+    priority: 5
+    upstream_id: hapi-placer
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      opa:
+        host: "http://opa-placer:8181"
+        policy: "umzh/authz/apisix"
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/placer/$1"]
+
+  # ─── FHIR search — OPA consent gate, mandatory _id ───────────────────
+  - id: ext-fhir-search
+    uri: /fhir/*
+    methods: [GET]
+    vars:
+      - - "uri"
+        - "~~"
+        - "^/fhir/[^/]+/?$"
+    priority: 1
+    upstream_id: hapi-placer
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      opa:
+        host: "http://opa-placer:8181"
+        policy: "umzh/authz/apisix"
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/placer/$1"]
+
+upstreams:
+  - id: hapi-placer
+    nodes:
+      "nginx-proxy:81": 1
+    type: roundrobin
+
+global_rules:
+  - id: 1
+    plugins:
+      cors:
+        allow_origins: "**"
+        allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        allow_headers: "Authorization,Content-Type,Accept,X-Tenant,X-Consent-Id"
+        expose_headers: "Content-Length,Content-Type"
+        max_age: 43200
+        allow_credential: true
+
+#END

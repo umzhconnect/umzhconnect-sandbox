@@ -20,22 +20,22 @@ services:
     environment:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_ISSUER: http://localhost:8180/realms/umzh-connect
-      KRAKEND_PLACER_URL: http://krakend-placer:8080
-      KRAKEND_PLACER_EXT_URL: http://krakend-placer-external:8080
-      KRAKEND_FULFILLER_URL: http://krakend-fulfiller:8080
-      KRAKEND_FULFILLER_EXT_URL: http://krakend-fulfiller-external:8080
+      APISIX_PLACER_URL: http://apisix-placer-internal:9080
+      APISIX_PLACER_EXT_URL: http://apisix-placer-external:9080
+      APISIX_FULFILLER_URL: http://apisix-fulfiller-internal:9080
+      APISIX_FULFILLER_EXT_URL: http://apisix-fulfiller-external:9080
       HAPI_FHIR_URL: http://hapi-fhir:8080
       OPA_PLACER_URL: http://opa-placer:8181
       OPA_FULFILLER_URL: http://opa-fulfiller:8181
       RESEED_API_URL: http://reseed-api:9001
     depends_on:
-      krakend-placer:
+      apisix-placer-internal:
         condition: service_healthy
-      krakend-fulfiller:
+      apisix-fulfiller-internal:
         condition: service_healthy
-      krakend-placer-external:
+      apisix-placer-external:
         condition: service_healthy
-      krakend-fulfiller-external:
+      apisix-fulfiller-external:
         condition: service_healthy
       seed-loader:
         condition: service_completed_successfully

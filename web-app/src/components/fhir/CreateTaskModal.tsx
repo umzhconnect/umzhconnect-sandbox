@@ -191,7 +191,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       // The task was created on the PARTNER's FHIR partition ('local' from
       // their perspective). Inject it into the partner's all-tasks cache after
       // the invalidation refetch, so switching to their view shows the task
-      // immediately even if the FHIR server or KrakenD hasn't indexed it yet.
+      // immediately even if the FHIR server hasn't indexed it yet.
       // setQueryData also resets isInvalidated=false, preventing a background
       // refetch from silently removing the injected task.
       const partnerRole = activeRole === 'placer' ? 'fulfiller' : 'placer';

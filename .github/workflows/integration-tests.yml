@@ -60,13 +60,13 @@ jobs:
             -f tests/docker-compose.test.yml \
             logs --no-color --tail=300 test-runner 2>&1 | tail -200 || true
 
-      - name: Print OPA and KrakenD logs on failure
+      - name: Print OPA and APISIX logs on failure
         if: failure()
         run: |
           echo "=== opa-placer logs (last 50) ==="
           docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=50 opa-placer 2>&1 || true
-          echo "=== krakend-placer-external logs (last 30) ==="
-          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=30 krakend-placer-external 2>&1 || true
+          echo "=== apisix-placer-external logs (last 30) ==="
+          docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=30 apisix-placer-external 2>&1 || true
           echo "=== seed-loader logs (last 20) ==="
           docker compose -f docker-compose.yml -f tests/docker-compose.test.yml logs --no-color --tail=20 seed-loader 2>&1 || true
 

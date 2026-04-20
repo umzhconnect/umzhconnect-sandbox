@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { PartyRole } from '../types/fhir';
 
-// KrakenD gateway base URLs (browser calls these directly via CORS).
+// APISIX gateway base URLs (browser calls these directly via CORS).
 // Override at build time via VITE_* env vars, or at runtime via window.__ENV__
 // (injected by env.sh in the Docker image).
 const PLACER_URL             = import.meta.env.VITE_PLACER_URL             || 'http://localhost:8080';

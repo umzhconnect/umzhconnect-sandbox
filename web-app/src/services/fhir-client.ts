@@ -2,7 +2,7 @@
 // FHIR Client Service
 // =============================================================================
 // Handles all FHIR API interactions with logging support.
-// Routes requests through the KrakenD API gateway.
+// Routes requests through the APISIX API gateway.
 // =============================================================================
 
 import type { Bundle, FhirResource, LogEntry } from '../types/fhir';
@@ -336,7 +336,7 @@ export class FhirClient {
   // Fetch resource by absolute URL (for cross-organization references)
   // ---------------------------------------------------------------------------
   async fetchAbsolute<T extends FhirResource>(absoluteUrl: string, extra?: Record<string, string>): Promise<T> {
-    // If the reference points to a different KrakenD origin, route it through
+    // If the reference points to a different APISIX origin, route it through
     // this client's own /proxy/fhir endpoint.
     const ownOrigin = new URL(this.basePath).origin;
     const targetOrigin = new URL(absoluteUrl).origin;

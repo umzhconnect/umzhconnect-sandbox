@@ -5,7 +5,7 @@
 # =============================================================================
 
 
-# --- KrakenD Gateways ---
+# --- APISIX Gateways ---
 
 GET {{placer_url}}/__health
 HTTP 200

@@ -2,14 +2,14 @@
 # 08-consent-enforcement.hurl — Scenario 1: Consent-centric access control
 #
 # Validates that the placer-external gateway enforces consent-graph membership.
-# The gateway (KrakenD) builds the OPA input document directly from the JWT
-# claims and URL parameters, then calls OPA in a sequential proxy:
-#   1. Backend 1 — OPA evaluates the consent policy
-#   2. Backend 2 — HAPI FHIR serves the resource (only reached when allowed)
+# The built-in APISIX `opa` plugin calls OPA on every request; the adapter
+# package `umzh.authz.apisix` (apisix.rego) maps the plugin's input shape to
+# the existing main.rego input using `with input as`:
+#   1. openid-connect — validates JWT, enforces bearer token presence
+#   2. opa plugin     — calls OPA; 403 on deny, passes through on allow
+#   3. upstream (HAPI FHIR) — serves the resource (only reached when allowed)
 #
-# On deny, KrakenD CE raises a Lua error which surfaces as HTTP 500.
-# (HTTP 403 requires KrakenD Enterprise security/policies — tracked as a
-# known limitation, acceptable for the current sandbox stage.)
+# On deny, APISIX returns HTTP 403.
 #
 # Consent scope — derived dynamically from Consent.sourceReference → ServiceRequest
 # ---------------------------------------------------------------------------------
@@ -69,14 +69,12 @@ jsonpath "$.id"           == "SuspectedACLRupture"
 # Condition/SarcomaKnee exists in the placer FHIR partition but is only
 # referenced by ReferralTumorboard.  With consent:ConsentOrthopedicReferral,
 # OPA fetches ReferralOrthopedicSurgery and finds no reference to SarcomaKnee
-# → allow: false.
-#
-# KrakenD CE returns HTTP 500 (Lua error() limitation — see file header).
+# → allow: false → HTTP 403.
 # ---------------------------------------------------------------------------
 
 GET {{placer_ext_url}}/fhir/Condition/SarcomaKnee
 Authorization: Bearer {{ortho_token}}
-HTTP 500
+HTTP 403
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +108,9 @@ jsonpath "$.id"           == "ImagingCT"
 # NEGATIVE TEST — Cross-consent: tumorboard token denied for orthopedic data
 #
 # MedicationStatement/MedicationEntresto is in ReferralOrthopedicSurgery.supportingInfo
-# but NOT in ReferralTumorboard → OPA denies → HTTP 500 (see file header).
+# but NOT in ReferralTumorboard → OPA denies → HTTP 403.
 # ---------------------------------------------------------------------------
 
 GET {{placer_ext_url}}/fhir/MedicationStatement/MedicationEntresto
 Authorization: Bearer {{tumor_token}}
-HTTP 500
+HTTP 403
