@@ -1,0 +1,564 @@
+openapi: '3.1.0'
+
+info:
+  title: UMZH Connect — External Gateway API
+  version: '1.0.0'
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  description: |
+    Cross-party FHIR API exposed by each party's **external gateway** (KrakenD).
+    Both gateways are generated from the same template
+    (`services/krakend/krakend-external-gateway.tmpl`) with `PARTY` as the
+    differentiating environment variable.
+
+    | Instance | Party | Base URL (sandbox) |
+    |---|---|---|
+    | `krakend-placer-external` | Placer (HospitalP) | http://localhost:8081 |
+    | `krakend-fulfiller-external` | Fulfiller (HospitalF) | http://localhost:8083 |
+
+    ## Authentication
+
+    All endpoints require a Bearer JWT (`RS256`) issued by Keycloak at
+    `http://localhost:8180/realms/umzh-connect`.
+
+    Tokens must carry:
+    - `party_id` — identifies the calling party (e.g. `fulfiller-HospitalF`)
+    - `smart_scopes` — space-separated SMART/on/FHIR scopes (e.g. `system/Patient.r`)
+
+    ## Consent enforcement
+
+    Clinical resource endpoints enforce consent via OPA. The JWT `scope` claim
+    must contain `consent:{ConsentResourceId}` (a Keycloak dynamic scope,
+    regexp `consent:(.*)`). OPA verifies that:
+
+    1. The referenced Consent is valid and its `performer` matches the calling `party_id`.
+    2. The requested resource appears in the Consent's ServiceRequest graph
+       (subject, requester, reasonReference, supportingInfo, or insurance).
+
+    Directory resources (`Practitioner`, `Organization`, `PractitionerRole`) are
+    exempt from consent — only the matching `system/{ResourceType}.r` smart scope
+    is required.
+
+    ## Input validation
+
+    The gateway enforces three hardening layers before a request reaches OPA
+    or HAPI FHIR:
+
+    **Layer 1 — Query-string whitelist** (`input_query_strings` in KrakenD config)
+    Only the parameters listed in each endpoint's spec are forwarded to the
+    backend. All others are silently stripped at the router. Endpoints that
+    accept no query parameters have an explicit empty whitelist (`[]`).
+
+    **Layer 2 — Resource-type whitelist** (Lua pre-script, consent-gated endpoints only)
+    The `{resource}` path segment is validated against the ten allowed FHIR
+    resource types before the OPA call. Any other value is rejected immediately
+    with HTTP 500. The allowed set is the same as the `enum` on the
+    `FhirResourceType` path parameter.
+
+    **Layer 3 — FHIR ID pattern** (Lua pre-script, consent-gated endpoints only)
+    Path and query ID values (`{id}`, `_id`) are validated against the HL7 FHIR
+    R4 logical ID character set: `[A-Za-z0-9\-\.]{1,64}` (§2.7). Values
+    exceeding 64 characters or containing any other character are rejected before
+    touching OPA or HAPI FHIR.
+
+    Layers 2 and 3 apply only to the consent-enforced endpoints
+    (`GET /fhir/{resource}` and `GET /fhir/{resource}/{id}`). The Task endpoints
+    are not path-validated in Lua — their surface is restricted entirely by the
+    query-string whitelist (layer 1) and JWT authentication.
+
+    ## Access-denied behavior
+
+    KrakenD Community Edition returns **HTTP 500** when OPA denies a request
+    (sequential-proxy limitation — CE cannot map policy denials to HTTP 403).
+
+servers:
+  - url: https://partyA.org
+    description: Placer external gateway (HospitalP) — local sandbox
+  - url: https://partyB.org
+    description: Fulfiller external gateway (HospitalF) — local sandbox
+
+tags:
+  - name: Tasks
+    description: |
+      Workflow Task resources. Not consent-gated — requires only a valid
+      Bearer JWT. Both parties interact with Tasks to manage referral workflows.
+  - name: Clinical Resources
+    description: |
+      Consent-enforced reads of clinical FHIR resources from the partner's
+      partition. JWT must carry a `consent:{ConsentId}` dynamic scope.
+
+paths:
+  /fhir/Task:
+    get:
+      tags: [ Tasks ]
+      operationId: listTasks
+      summary: List Tasks
+      description: |
+        Returns a FHIR Bundle of Task resources from the gateway's own FHIR
+        partition.
+
+        Primarily called by the partner's internal gateway when executing the
+        `all-tasks` action to merge local and remote task lists. Any FHIR
+        search parameters are forwarded to HAPI FHIR unchanged.
+
+        Not consent-gated. Placed before the `/fhir/{resource}` wildcard in
+        the router so it is always matched first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: _status
+          in: query
+          required: false
+          description: Filter by Task status (FHIR search parameter)
+          schema:
+            type: string
+            enum:
+              [
+                requested,
+                accepted,
+                in-progress,
+                completed,
+                cancelled,
+                on-hold,
+                failed,
+                ready,
+                received,
+                rejected,
+              ]
+        - name: _count
+          in: query
+          required: false
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: FHIR Bundle of Task resources
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirBundle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [ Tasks ]
+      operationId: createTask
+      summary: Create Task
+      description: |
+        Creates a Task resource in the gateway's own FHIR partition.
+
+        Called by the partner's internal gateway when creating a cross-party
+        referral task (`create-task` action). Cross-partition references
+        (Patient, ServiceRequest, requester Organization) **must** use absolute
+        URLs pointing to the requester's FHIR partition to avoid HAPI creating
+        conflicting placeholder resources (HAPI-0825).
+
+        Not consent-gated.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/fhir+json:
+            schema:
+              $ref: '#/components/schemas/FhirTask'
+            example:
+              resourceType: Task
+              status: requested
+              intent: order
+              description: Please evaluate patient for ACL reconstruction surgery
+              focus:
+                reference: 'http://localhost:8080/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery'
+              for:
+                reference: 'http://localhost:8080/fhir/placer/Patient/PetraMeier'
+              requester:
+                reference: 'http://localhost:8080/fhir/placer/Organization/placer-HospitalP'
+              owner:
+                reference: 'Organization/fulfiller-HospitalF'
+      responses:
+        '200':
+          description: |
+            Task created. KrakenD normalizes the multi-backend sequential proxy
+            response to HTTP 200 (rather than the native HAPI 201).
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /fhir/Task/{id}:
+    put:
+      tags: [ Tasks ]
+      operationId: updateTask
+      summary: Update Task
+      description: |
+        Updates an existing Task resource (e.g. status transition to `accepted`,
+        `in-progress`, or `completed`).
+
+        **Only exposed on the fulfiller external gateway.** The placer creates
+        Tasks at the fulfiller; the fulfiller acknowledges and progresses them.
+
+        Not consent-gated.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: FHIR logical ID of the Task to update
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9\-\.]+$'
+            maxLength: 64
+          example: task-1234
+      requestBody:
+        required: true
+        content:
+          application/fhir+json:
+            schema:
+              $ref: '#/components/schemas/FhirTask'
+      responses:
+        '200':
+          description: Updated Task
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /fhir/{resource}:
+    get:
+      tags: [ Clinical Resources ]
+      operationId: searchResourceById
+      summary: Search resource by ID (consent-enforced)
+      description: |
+        Searches for a single FHIR resource using the `_id` search parameter.
+        The request goes through an OPA consent gate **before** reaching HAPI FHIR.
+
+        `_id` is **mandatory** — the gateway returns HTTP 500 if it is absent
+        (the Lua pre-script errors before the OPA call).
+
+        **OPA enforcement (Rule summary):**
+
+        | Resource type | Required token claims |
+        |---|---|
+        | `Practitioner`, `Organization`, `PractitionerRole` | `system/{Type}.r` in `smart_scopes` |
+        | All other clinical resources | `system/{Type}.r` **+** `consent:{ConsentId}` in `scope`, resource in SR graph |
+
+        The response is a FHIR Bundle (`searchset`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FhirResourceType'
+        - name: _id
+          in: query
+          required: true
+          description: |
+            FHIR logical ID of the resource to fetch.
+            Validated by the gateway against the FHIR R4 ID character set
+            (`[A-Za-z0-9\-\.]{1,64}`) before the request reaches OPA.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9\-\.]+$'
+            maxLength: 64
+          example: PetraMeier
+        - name: _include
+          in: query
+          required: false
+          description: |
+            Include related resources in the Bundle response
+            (standard FHIR `_include` parameter).
+          schema:
+            type: string
+          example: 'ServiceRequest:subject'
+      responses:
+        '200':
+          description: FHIR Bundle containing the matching resource
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirBundle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/AccessDeniedOrError'
+
+  /fhir/{resource}/{id}:
+    get:
+      tags: [ Clinical Resources ]
+      operationId: readResource
+      summary: Read single resource (consent-enforced)
+      description: |
+        Reads a single FHIR resource by type and logical ID.
+        The request goes through an OPA consent gate **before** reaching HAPI FHIR.
+
+        Same OPA enforcement rules as `GET /fhir/{resource}` apply
+        (see that endpoint for the rule table).
+
+        The response is the raw FHIR resource (not a Bundle).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FhirResourceType'
+        - name: id
+          in: path
+          required: true
+          description: |
+            FHIR logical ID of the resource.
+            Validated by the gateway against the FHIR R4 ID character set
+            (`[A-Za-z0-9\-\.]{1,64}`) before the request reaches OPA.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9\-\.]+$'
+            maxLength: 64
+          example: PetraMeier
+      responses:
+        '200':
+          description: The requested FHIR resource
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirResource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/AccessDeniedOrError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        RS256-signed JWT issued by Keycloak.
+
+        **Token endpoint:** `http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token`
+
+        **Grant type:** `client_credentials`
+
+        **Required claims:**
+        - `party_id` — identifies the calling party (custom mapper claim)
+        - `smart_scopes` — space-separated SMART scopes, e.g. `system/Patient.r system/Practitioner.r`
+
+        **For consent-gated endpoints** the `scope` claim must include
+        `consent:{ConsentResourceId}`. Request this scope by passing
+        `scope=consent:{ConsentResourceId}` in the token request body.
+        Keycloak evaluates it against the dynamic scope regexp `consent:(.*)`.
+
+  parameters:
+    FhirResourceType:
+      name: resource
+      in: path
+      required: true
+      description: |
+        FHIR R4 resource type. Values outside the enum are rejected by the
+        gateway's Lua pre-script (input validation layer 2) before the request
+        reaches OPA — the gateway does not forward unknown resource types.
+
+        The OPA policy further distinguishes:
+        - **Directory** (no consent required): `Practitioner`, `Organization`, `PractitionerRole`
+        - **Clinical** (consent required): all other types listed below
+      schema:
+        type: string
+        enum:
+          - Patient
+          - Condition
+          - ServiceRequest
+          - Coverage
+          - MedicationStatement
+          - ImagingStudy
+          - AllergyIntolerance
+          - Practitioner
+          - Organization
+          - PractitionerRole
+
+  responses:
+    Unauthorized:
+      description: Missing, expired, or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Unauthorized
+
+    AccessDeniedOrError:
+      description: |
+        OPA denied the request **or** an internal gateway error occurred.
+        KrakenD CE cannot map OPA denials to HTTP 403, so both consent
+        failures and internal errors surface as 500.
+
+        Common denial reasons:
+        - JWT `scope` missing `consent:{ConsentId}`
+        - Consent `performer` does not match `party_id`
+        - Requested resource is not in the Consent's ServiceRequest graph
+        - `{resource}` is not in the allowed resource-type enum (layer 2 validation)
+        - `{id}` or `_id` fails the FHIR ID pattern check or exceeds 64 chars (layer 3 validation)
+        - `_id` query parameter absent (`GET /fhir/{resource}` only)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: internal server error
+
+  schemas:
+    FhirResource:
+      type: object
+      description: |
+        A FHIR R4 resource. The concrete structure depends on `resourceType`.
+        See https://hl7.org/fhir/R4/resourcelist.html for full schemas.
+      required:
+        - resourceType
+        - id
+      properties:
+        resourceType:
+          type: string
+          description: FHIR resource type name
+          example: Patient
+        id:
+          type: string
+          description: FHIR logical ID
+          example: PetraMeier
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+      additionalProperties: true
+
+    FhirBundle:
+      type: object
+      description: FHIR R4 Bundle
+      required:
+        - resourceType
+        - type
+      properties:
+        resourceType:
+          type: string
+          enum: [ Bundle ]
+        id:
+          type: string
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+        type:
+          type: string
+          enum: [ searchset, collection, transaction-response, history ]
+        total:
+          type: integer
+          description: Total number of matching resources (searchset only)
+        entry:
+          type: array
+          items:
+            type: object
+            properties:
+              fullUrl:
+                type: string
+                format: uri
+              resource:
+                $ref: '#/components/schemas/FhirResource'
+              search:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum: [ match, include, outcome ]
+      additionalProperties: true
+
+    FhirTask:
+      type: object
+      description: FHIR R4 Task resource (referral workflow)
+      required:
+        - resourceType
+        - status
+        - intent
+      properties:
+        resourceType:
+          type: string
+          enum: [ Task ]
+        id:
+          type: string
+          example: task-1234
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+        status:
+          type: string
+          enum:
+            - requested
+            - accepted
+            - in-progress
+            - completed
+            - cancelled
+            - on-hold
+            - failed
+            - ready
+            - received
+            - rejected
+        intent:
+          type: string
+          enum:
+            [
+              order,
+              plan,
+              proposal,
+              filler-order,
+              instance-order,
+              option,
+              original-order,
+              reflex-order,
+            ]
+        description:
+          type: string
+          example: Please evaluate patient for ACL reconstruction surgery
+        focus:
+          $ref: '#/components/schemas/FhirReference'
+          description: ServiceRequest this Task is fulfilling
+        for:
+          $ref: '#/components/schemas/FhirReference'
+          description: Patient the Task is for
+        requester:
+          $ref: '#/components/schemas/FhirReference'
+          description: Organization that requested the Task
+        owner:
+          $ref: '#/components/schemas/FhirReference'
+          description: Organization responsible for fulfilling the Task
+      additionalProperties: true
+
+    FhirReference:
+      type: object
+      description: FHIR Reference — relative or absolute URL
+      properties:
+        reference:
+          type: string
+          description: |
+            Relative (`ResourceType/id`) or absolute URL. Cross-partition
+            references must be absolute (e.g.
+            `http://localhost:8090/fhir/placer/Patient/PetraMeier`).
+          example: 'Patient/PetraMeier'
+        display:
+          type: string
+          description: Human-readable label
+      additionalProperties: true
+
+    FhirMeta:
+      type: object
+      description: FHIR resource metadata
+      properties:
+        versionId:
+          type: string
+        lastUpdated:
+          type: string
+          format: date-time
+        profile:
+          type: array
+          items:
+            type: string
+            format: uri
+      additionalProperties: true
