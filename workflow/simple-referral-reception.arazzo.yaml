@@ -1,0 +1,155 @@
+arazzo: 1.0.1
+info:
+  title: Simple Referral Reception
+  summary: >-
+    Fulfiller-side workflow triggered when a placer creates a Task in the
+    fulfiller FHIR store. The workflow resolves the referenced ServiceRequest
+    (and included resources) at the placer using a consent-scoped access token,
+    then imports the result into the fulfiller's local target system via the
+    eToC FHIR profile import API.
+  version: 0.1.0
+  description: |
+    Draft Arazzo specification for the "Simple referral reception" use case.
+
+    Trigger: The workflow is initiated by a FHIR Subscription notification on
+    Task creation in the fulfiller FHIR store. The notification payload (or a
+    follow-up read) yields the Task id used as input to this workflow.
+
+    Security: The fulfiller obtains an OAuth2 access token via the
+    `client_credentials` grant hardened with `private_key_jwt` client
+    authentication. The `consentId` extracted from the Task `meta` is passed as
+    a custom scope (`consent:<consentId>`) so the placer's external gateway can
+    enforce consent-based authorization.
+
+sourceDescriptions:
+  - name: fulfillerFhir
+    url: ../services/hapi-fhir/openapi.yaml
+    type: openapi
+  - name: placerFhirProxy
+    url: ../services/krakend-fulfiller/openapi.yaml
+    type: openapi
+  - name: keycloak
+    url: ../services/keycloak/openapi.yaml
+    type: openapi
+  - name: fulfillerImport
+    url: ../services/hapi-fhir/etoc-import-openapi.yaml
+    type: openapi
+
+workflows:
+  - workflowId: simpleReferralReception
+    summary: Receive a referral Task, resolve placer data, and import locally.
+    description: >-
+      Reads the triggering Task, exchanges credentials for a consent-scoped
+      access token, fetches the referenced ServiceRequest with included
+      resources from the placer (via the fulfiller proxy), converts to the
+      local eToC FHIR profile, and posts to the local import API.
+    inputs:
+      type: object
+      required: [taskId]
+      properties:
+        taskId:
+          type: string
+          description: Logical id of the Task that triggered the workflow.
+
+    steps:
+
+      - stepId: readTask
+        description: >-
+          Read the triggering Task from the local fulfiller FHIR store and
+          extract the consent identifier and the placer ServiceRequest URL.
+        operationPath: '{$sourceDescriptions.fulfillerFhir.url}#/paths/~1Task~1{id}/get'
+        parameters:
+          - name: id
+            in: path
+            value: $inputs.taskId
+        successCriteria:
+          - condition: $statusCode == 200
+          - condition: $response.body#/meta/security != null
+          - condition: $response.body#/basedOn != null
+        outputs:
+          consentId: $response.body#/meta/security/0/code
+          serviceRequestUrl: $response.body#/basedOn/0/reference
+
+      - stepId: getAccessToken
+        description: >-
+          Obtain an access token from Keycloak using the client_credentials
+          grant with private_key_jwt client authentication. The consentId is
+          passed as a custom scope so it ends up in the token's `scope` claim.
+        operationPath: '{$sourceDescriptions.keycloak.url}#/paths/~1realms~1umzh-connect~1protocol~1openid-connect~1token/post'
+        requestBody:
+          contentType: application/x-www-form-urlencoded
+          payload:
+            grant_type: client_credentials
+            client_id: fulfiller-client
+            client_assertion_type: urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+            client_assertion: $inputs.clientAssertionJwt
+            scope:
+              $expression: "'openid consent:' + $steps.readTask.outputs.consentId"
+        successCriteria:
+          - condition: $statusCode == 200
+          - condition: $response.body#/access_token != null
+        outputs:
+          accessToken: $response.body#/access_token
+          tokenType: $response.body#/token_type
+          expiresIn: $response.body#/expires_in
+
+      - stepId: getServiceRequestWithIncludes
+        description: >-
+          Fetch the referenced ServiceRequest from the placer via the fulfiller
+          proxy, including the referenced Patient and Practitioner resources
+          via the FHIR `_include` mechanism. Authorization carries the consent
+          scope so the placer's external gateway/OPA policy admits the call.
+        operationPath: '{$sourceDescriptions.placerFhirProxy.url}#/paths/~1proxy~1placer~1fhir~1ServiceRequest/get'
+        parameters:
+          - name: Authorization
+            in: header
+            value:
+              $expression: "'Bearer ' + $steps.getAccessToken.outputs.accessToken"
+          - name: Accept
+            in: header
+            value: application/fhir+json
+          - name: _id
+            in: query
+            value:
+              $expression: "$steps.readTask.outputs.serviceRequestUrl"
+            description: >-
+              The logical id is derived from the FHIR reference resolved from
+              `Task.basedOn`. A pre-step or expression strips the resource
+              type prefix (e.g. `ServiceRequest/abc` -> `abc`).
+          - name: _include
+            in: query
+            value: ServiceRequest:subject:Patient
+          - name: _include
+            in: query
+            value: ServiceRequest:requester:Practitioner
+        successCriteria:
+          - condition: $statusCode == 200
+          - condition: $response.body#/resourceType == 'Bundle'
+        outputs:
+          serviceRequestBundle: $response.body
+
+      - stepId: importToLocalSystem
+        description: >-
+          Convert the placer Bundle to the local target system's eToC FHIR
+          profile and POST it to the fulfiller's import API. Conversion is
+          assumed to happen inside the workflow engine (transformation step)
+          and is represented here as the request payload.
+        operationPath: '{$sourceDescriptions.fulfillerImport.url}#/paths/~1etoc~1import/post'
+        parameters:
+          - name: Content-Type
+            in: header
+            value: application/fhir+json
+        requestBody:
+          contentType: application/fhir+json
+          payload:
+            $expression: "$steps.getServiceRequestWithIncludes.outputs.serviceRequestBundle"
+        successCriteria:
+          - condition: $statusCode >= 200
+          - condition: $statusCode < 300
+        outputs:
+          importedResourceLocation: $response.header.Location
+
+    outputs:
+      consentId: $steps.readTask.outputs.consentId
+      serviceRequestUrl: $steps.readTask.outputs.serviceRequestUrl
+      importedResourceLocation: $steps.importToLocalSystem.outputs.importedResourceLocation
