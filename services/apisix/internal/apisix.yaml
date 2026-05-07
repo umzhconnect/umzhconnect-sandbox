@@ -20,17 +20,17 @@ routes:
     uri: /fhir/metadata
     methods: [GET]
     priority: 20
-    upstream_id: hapi-placer
+    upstream_id: hapi-${PARTY}
     plugins:
       proxy-rewrite:
-        uri: /fhir/placer/metadata
+        uri: /fhir/${PARTY}/metadata
 
   # ─── Own FHIR data — JWT + realm-role + URL rewrite ──────────────────
   - id: int-fhir
     uri: /fhir/*
     methods: [GET, POST, PUT, PATCH, DELETE]
     priority: 1
-    upstream_id: hapi-placer
+    upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
         discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
@@ -41,20 +41,20 @@ routes:
         client_id: "unused"
         client_secret: "unused"
       umzh-role-check:
-        required_role: "placer"
+        required_role: "${PARTY}"
       proxy-rewrite:
-        regex_uri: ["^/fhir/(.*)$", "/fhir/placer/$1"]
+        regex_uri: ["^/fhir/(.*)$", "/fhir/${PARTY}/$1"]
       response-rewrite:
         filters:
           - regex: "${PARTNER_EXTERNAL_URL}/fhir/"
-            replace: "${OWN_URL}/proxy/fulfiller/"
+            replace: "${OWN_URL}/proxy/${PARTNER}/"
 
-  # ─── Proxy to partner: token exchange → forward to fulfiller external ─
+  # ─── Proxy to partner: token exchange → forward to partner external ───
   - id: int-proxy-partner
     uri: /proxy/fhir/*
     methods: [GET]
     priority: 1
-    upstream_id: apisix-fulfiller-external
+    upstream_id: apisix-${PARTNER}-external
     plugins:
       openid-connect:
         discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
@@ -65,7 +65,7 @@ routes:
         client_id: "unused"
         client_secret: "unused"
       umzh-role-check:
-        required_role: "placer"
+        required_role: "${PARTY}"
       serverless-post-function:
         phase: access
         functions:
@@ -106,7 +106,7 @@ routes:
   - id: actions-create-task
     uri: /api/actions/create-task
     methods: [POST]
-    upstream_id: apisix-fulfiller-external
+    upstream_id: apisix-${PARTNER}-external
     plugins:
       openid-connect:
         discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
@@ -117,7 +117,7 @@ routes:
         client_id: "unused"
         client_secret: "unused"
       umzh-role-check:
-        required_role: "placer"
+        required_role: "${PARTY}"
       serverless-post-function:
         phase: access
         functions:
@@ -156,7 +156,7 @@ routes:
         client_id: "unused"
         client_secret: "unused"
       umzh-role-check:
-        required_role: "placer"
+        required_role: "${PARTY}"
       serverless-post-function:
         phase: access
         functions:
@@ -180,11 +180,11 @@ routes:
               local user_auth = ngx.req.get_headers()["Authorization"]
 
               local lr, _ = httpc:request_uri(
-                "http://nginx-proxy:80/fhir/placer/Task",
+                "http://nginx-proxy:${NGINX_OWN_PORT}/fhir/${PARTY}/Task",
                 { headers = { Authorization = user_auth } })
 
               local rr, _ = httpc:request_uri(
-                "http://apisix-fulfiller-external:9080/fhir/Task",
+                "http://apisix-${PARTNER}-external:9080/fhir/Task",
                 { headers = { Authorization = "Bearer " .. m2m } })
 
               local local_body = (lr and lr.body) or "{}"
@@ -202,25 +202,25 @@ routes:
   - id: policy-check
     uri: /api/policy/check
     methods: [POST]
-    upstream_id: opa-placer
+    upstream_id: opa-${PARTY}
     plugins:
       proxy-rewrite:
         uri: /v1/data/umzh/authz/allow
 
 upstreams:
-  - id: hapi-placer
+  - id: hapi-${PARTY}
     nodes:
-      "nginx-proxy:80": 1
+      "nginx-proxy:${NGINX_OWN_PORT}": 1
     type: roundrobin
 
-  - id: apisix-fulfiller-external
+  - id: apisix-${PARTNER}-external
     nodes:
-      "apisix-fulfiller-external:9080": 1
+      "apisix-${PARTNER}-external:9080": 1
     type: roundrobin
 
-  - id: opa-placer
+  - id: opa-${PARTY}
     nodes:
-      "opa-placer:8181": 1
+      "opa-${PARTY}:8181": 1
     type: roundrobin
 
 global_rules:

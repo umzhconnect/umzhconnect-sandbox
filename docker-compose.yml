@@ -150,7 +150,9 @@ services:
   # APISIX API Gateways
   #
   # Standalone mode (config_provider: yaml) — no etcd dependency.
-  # Each instance mounts its own config.yaml + apisix.yaml from services/apisix/.
+  # All four instances share two apisix.yaml templates (internal/external) from
+  # services/apisix/. PARTY, PARTNER, and NGINX_OWN_PORT are injected via env
+  # and substituted at container start by the shared entrypoint.sh.
   #
   #   apisix-placer-internal    (internal) — placer reads own + proxies fulfiller data
   #   apisix-placer-external    (external) — consumed by fulfiller to read placer data
@@ -162,14 +164,17 @@ services:
     container_name: umzh-apisix-placer-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
+      PARTY: "placer"
+      PARTNER: "fulfiller"
+      NGINX_OWN_PORT: "80"
       PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_FULFILLER_EXTERNAL_PORT}"
       OWN_URL: "http://localhost:${APISIX_PLACER_PORT}"
       CLIENT_ID: "${PLACER_CLIENT_ID}"
       CLIENT_SECRET: "${PLACER_CLIENT_SECRET}"
     volumes:
-      - ./services/apisix/placer-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/placer-internal/apisix.yaml:/templates/apisix.yaml:ro
-      - ./services/apisix/placer-internal/entrypoint.sh:/entrypoint.sh:ro
+      - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
       - '${APISIX_PLACER_PORT}:9080'
@@ -195,9 +200,14 @@ services:
   apisix-placer-external:
     image: apache/apisix:3.9.0-debian
     container_name: umzh-apisix-placer-external
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTY: "placer"
+      NGINX_OWN_PORT: "81"
     volumes:
-      - ./services/apisix/placer-external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/placer-external/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
     ports:
       - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
     depends_on:
@@ -222,14 +232,17 @@ services:
     container_name: umzh-apisix-fulfiller-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
+      PARTY: "fulfiller"
+      PARTNER: "placer"
+      NGINX_OWN_PORT: "82"
       PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_PLACER_EXTERNAL_PORT}"
       OWN_URL: "http://localhost:${APISIX_FULFILLER_PORT}"
       CLIENT_ID: "${FULFILLER_CLIENT_ID}"
       CLIENT_SECRET: "${FULFILLER_CLIENT_SECRET}"
     volumes:
-      - ./services/apisix/fulfiller-internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/fulfiller-internal/apisix.yaml:/templates/apisix.yaml:ro
-      - ./services/apisix/fulfiller-internal/entrypoint.sh:/entrypoint.sh:ro
+      - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
     ports:
       - '${APISIX_FULFILLER_PORT}:9080'
@@ -255,9 +268,14 @@ services:
   apisix-fulfiller-external:
     image: apache/apisix:3.9.0-debian
     container_name: umzh-apisix-fulfiller-external
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTY: "fulfiller"
+      NGINX_OWN_PORT: "83"
     volumes:
-      - ./services/apisix/fulfiller-external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./services/apisix/fulfiller-external/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
+      - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
     ports:
       - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
     depends_on:
