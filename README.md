@@ -131,7 +131,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 
 ### Dual-Gateway Pattern — Internal and External
 
-Each party operates **two dedicated APISIX gateways** (standalone mode — YAML config, hot-reloaded): an *internal* gateway for its own web-app and an *external* gateway that the partner calls. The split enforces a clean security boundary — the external gateway is purpose-built to serve cross-party requests and always returns consistent responses regardless of who calls it.
+Each party operates **two dedicated API gateways**: an *internal* gateway for its own web-app and an *external* gateway that the partner calls. The split enforces a clean security boundary — the external gateway is purpose-built to serve cross-party requests and always returns consistent responses regardless of who calls it.
 
 ```
                      ── HospitalP (Placer) ────────────────────────────────────────
@@ -200,14 +200,14 @@ The absolute URL base for each partition is injected into the seed data at conta
 
 HAPI FHIR embeds its own base URL in every resource's self-link (`fullUrl`, `Bundle.link`, pagination URLs). Without rewriting, clients would always receive `http://localhost:8090/fhir/{partition}/...` self-links — internal addresses that are inaccessible outside the Docker network.
 
-`nginx-proxy` is a single nginx container that listens on **four internal ports**, each with a dedicated `sub_filter` rewrite rule. The correct port is selected by the APISIX upstream `host` configuration.
+`nginx-proxy` is a single nginx container that listens on **four internal ports**, each with a dedicated `sub_filter` rewrite rule. The correct port is selected by the gateway's upstream configuration.
 
 ```
 nginx-proxy internal ports
 ─────────────────────────────────────────────────────────────────────────────────
 
 Ports 80–83: proxy to hapi-fhir:8080
-  Each port rewrites HAPI's raw partition URL to the correct APISIX gateway URL.
+  Each port rewrites HAPI's raw partition URL to the correct gateway URL.
 
   Port 80 ─ Placer internal (apisix-placer-internal :8080)
     proxy_pass: hapi-fhir:8080
@@ -259,7 +259,7 @@ Direct FHIR access for the logged-in user to manage their own party's partition.
 
 Endpoints the **partner gateway calls** to read or write data. Each external gateway serves a fixed set of endpoints that always return self-links for its own base URL, regardless of caller.
 
-Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) run through the APISIX `opa` plugin before the FHIR backend is called. Task write endpoints are not consent-gated.
+Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent-gated via OPA before the FHIR backend is called. Task write endpoints are not consent-gated.
 
 **apisix-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
 
@@ -287,7 +287,7 @@ The internal gateway proxies requests from the web-app into the **partner's FHIR
 | `/proxy/fhir/{resource}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
 | `/proxy/fhir/{resource}/{id}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
 
-The internal gateway's `serverless-post-function` performs an M2M token exchange before forwarding; the partner's external gateway enforces its own JWT validation and OPA consent check. The `response-rewrite` plugin rewrites partner external URLs in the response body to the calling party's `/proxy/fhir/` path.
+The internal gateway performs an M2M token exchange before forwarding; the partner's external gateway enforces its own JWT validation and OPA consent check. The `response-rewrite` plugin rewrites partner external URLs in the response body to the calling party's `/proxy/fhir/` path.
 
 Consent is enforced on both read endpoints of each external gateway via the OPA gate (`/fhir/{resource}?_id=` and `/fhir/{resource}/{id}`); the consent ID is extracted from the JWT `scope` claim (`consent:<id>`) rather than a separate header.
 
@@ -856,11 +856,12 @@ In the **Credentials tab**, enter an optional Consent ID before requesting a tok
 
 ### APISIX API Gateways
 
-**Configs:** Each gateway instance has its own directory under `services/apisix/`:
-- `{party}-internal/apisix.yaml` — route + plugin config template; rendered at container start via `entrypoint.sh`
-- `{party}-external/apisix.yaml` — route + plugin config (hot-reloaded, standalone mode)
-- `{party}-{internal,external}/config.yaml` — global APISIX config (plugin list; internal gateways also whitelist `CLIENT_ID`/`CLIENT_SECRET` env vars via `main_configuration_snippet`)
-- `{party}-internal/entrypoint.sh` — renders `apisix.yaml` template (substitutes `PARTNER_EXTERNAL_URL`/`OWN_URL`) then starts APISIX
+**Configs:** All four instances share two template files under `services/apisix/`:
+- `internal/apisix.yaml` — shared route + plugin config template for internal gateways; `PARTY`, `PARTNER`, `NGINX_OWN_PORT`, `PARTNER_EXTERNAL_URL`, `OWN_URL` substituted at container start
+- `external/apisix.yaml` — shared route + plugin config template for external gateways; `PARTY`, `NGINX_OWN_PORT` substituted at container start
+- `internal/config.yaml` — global APISIX config for internal gateways (plugin list; whitelists `CLIENT_ID`/`CLIENT_SECRET` env vars via `main_configuration_snippet`)
+- `external/config.yaml` — global APISIX config for external gateways (plugin list)
+- `entrypoint.sh` — shared across all four gateways; substitutes template variables then starts APISIX
 - `plugins/umzh-role-check.lua` — custom role-check plugin (mounted only in internal gateways)
 
 > **Network addressing:** All inter-service communication uses Docker Compose service names (e.g. `keycloak:8080`, `apisix-fulfiller-external:9080`) rather than `localhost` ports. Inside a Docker container `localhost` refers to the container itself, not the host machine.
@@ -1066,7 +1067,7 @@ The seed loader waits for HAPI FHIR readiness, creates the two partitions, then 
 
 Each Organization carries two FHIR meta tags used by the web-app for cross-party routing:
 - `urn:umzh:keycloak:client-id` — the Keycloak client ID for M2M token requests
-- `urn:umzh:api:external-host` — the base URL of the party's external APISIX gateway
+- `urn:umzh:api:external-host` — the base URL of the party's external API gateway
 
 #### Use Cases
 
@@ -1509,7 +1510,7 @@ npx tsc --noEmit     # Type check without building
 npm run build        # Production build
 ```
 
-The Vite dev proxy forwards `/fhir*`, `/proxy*`, `/api*` to APISIX at port 8080.
+The Vite dev proxy forwards `/fhir*`, `/proxy*`, `/api*` to the internal gateway at port 8080.
 
 ### Rebuild a Single Service
 
@@ -1520,11 +1521,9 @@ docker compose up -d --build web-app
 # Re-seed FHIR data (requires fresh HAPI FHIR)
 docker compose up -d --build seed-loader
 
-# Reload external gateway config (apisix.yaml is volume-mounted directly — hot-reloaded by APISIX)
+# Reload gateway config (apisix.yaml is a template rendered by entrypoint.sh at start —
+# restart re-runs entrypoint.sh, re-renders the template from env vars, then starts APISIX)
 docker compose restart apisix-placer-external apisix-fulfiller-external
-
-# Reload internal gateway config (apisix.yaml is a template rendered by entrypoint.sh at start —
-# restart re-runs entrypoint.sh, re-renders the template, then starts APISIX)
 docker compose restart apisix-placer-internal apisix-fulfiller-internal
 
 # Reload nginx-proxy config
@@ -1582,23 +1581,16 @@ Sandbox/
 │   │
 │   ├── nginx-proxy/
 │   │   └── nginx.conf              # 4 server blocks (ports 80–83), one sub_filter each
-│   │                               # Rewrites HAPI self-links to APISIX gateway base URLs
+│   │                               # Rewrites HAPI self-links to gateway base URLs
 │   │
 │   ├── apisix/
-│   │   ├── placer-internal/
-│   │   │   ├── apisix.yaml         # Route + plugin config template (envsubst rendered at start)
-│   │   │   ├── config.yaml         # Global APISIX config (plugin list, env whitelist for secrets)
-│   │   │   └── entrypoint.sh       # Renders apisix.yaml template then starts APISIX
-│   │   ├── placer-external/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8081, hot-reloaded)
+│   │   ├── internal/
+│   │   │   ├── apisix.yaml         # Shared route + plugin config template for internal gateways
+│   │   │   └── config.yaml         # Global APISIX config (plugin list, env whitelist for secrets)
+│   │   ├── external/
+│   │   │   ├── apisix.yaml         # Shared route + plugin config template for external gateways
 │   │   │   └── config.yaml         # Global APISIX config (plugin list)
-│   │   ├── fulfiller-internal/
-│   │   │   ├── apisix.yaml         # Route + plugin config template (envsubst rendered at start)
-│   │   │   ├── config.yaml         # Global APISIX config (plugin list, env whitelist for secrets)
-│   │   │   └── entrypoint.sh       # Renders apisix.yaml template then starts APISIX
-│   │   ├── fulfiller-external/
-│   │   │   ├── apisix.yaml         # Route + plugin config (port 8083, hot-reloaded)
-│   │   │   └── config.yaml         # Global APISIX config (plugin list)
+│   │   ├── entrypoint.sh           # Shared; substitutes PARTY/PARTNER/NGINX_OWN_PORT then starts APISIX
 │   │   └── plugins/
 │   │       └── umzh-role-check.lua # Custom plugin — JWT realm-role enforcement
 │   │
