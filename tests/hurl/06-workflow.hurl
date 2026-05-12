@@ -12,14 +12,14 @@
 
 
 # --- Step 1: Placer creates Task at Fulfiller via create-task action ---
-# Routes through krakend-placer -> krakend-fulfiller-external -> HAPI /fhir/fulfiller/Task
+# Routes through apisix-placer-internal -> apisix-fulfiller-external -> HAPI /fhir/fulfiller/Task
 
 POST {{placer_url}}/api/actions/create-task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
 {"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{hapi_url}}/fhir/placer/Organization/placer-HospitalP"},"owner":{"reference":"Organization/fulfiller-HospitalF"}}
-# KrakenD normalizes multi-backend sequential proxy responses to HTTP 200
-HTTP 200
+# FHIR returns 201 Created for new resources
+HTTP 201
 [Captures]
 created_task_id: jsonpath "$.id"
 [Asserts]

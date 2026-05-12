@@ -277,10 +277,10 @@ As the user switches the view to fulfiller perspective he should be bale to hand
 - All components are 'cloud-native' - stand-alone, containerized, orchestratable through docker-compose and k8s deployments
 - Components based on available open-source frameworks:
   - FHIR store → HAPI
-  - API gateway → KrakenD
+  - API gateway → APISIX (migrated from KrakenD)
     - Optional stand-alone Security negotiation Service: Dex?
     - Secrets vault
-    - Custom Lua scripts
+    - Custom Lua plugins
   - Optional standalone component for security negotiation and payload interception -> FastAPI/Python
   - Policy Server → OPA
   - Auth Server → Keycloak

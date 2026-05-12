@@ -1,0 +1,23 @@
+apisix:
+  node_listen: 9080
+  enable_ipv6: false
+
+nginx_config:
+  main_configuration_snippet: |
+    env CLIENT_ID;
+    env CLIENT_SECRET;
+
+plugins:
+  - cors
+  - openid-connect
+  - opa
+  - proxy-rewrite
+  - response-rewrite
+  - serverless-pre-function
+  - serverless-post-function
+  - umzh-role-check
+
+deployment:
+  role: data_plane
+  role_data_plane:
+    config_provider: yaml

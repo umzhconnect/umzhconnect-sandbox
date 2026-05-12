@@ -32,9 +32,8 @@ const CredentialsPage: React.FC = () => {
 
       // Build scope: always include "openid"; if a consentId is provided,
       // append the dynamic scope token "consent:<id>" so the resulting JWT
-      // carries `scope: "openid consent:<id>"`. KrakenD propagates the `scope`
-      // claim as the X-Scope header and OPA extracts the consent_id from it
-      // for fine-grained policy enforcement.
+      // carries `scope: "openid consent:<id>"`. OPA extracts the consent_id
+      // from the JWT scope claim for fine-grained policy enforcement.
       const scopeValue = consentId.trim()
         ? `openid consent:${consentId.trim()}`
         : 'openid';

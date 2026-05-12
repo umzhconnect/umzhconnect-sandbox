@@ -881,9 +881,11 @@ const CreateConsentForm: React.FC<{
   setDraft: (c: Consent) => void;
   patients: Patient[];
   serviceRequests: ServiceRequest[];
-}> = ({ draft, setDraft, patients, serviceRequests }) => {
+  organizations: Organization[];
+}> = ({ draft, setDraft, patients, serviceRequests, organizations }) => {
   const patientId = extractIdFromRef(draft.patient?.reference);
   const sourceRefId = extractIdFromRef(draft.sourceReference?.reference);
+  const performerId = extractIdFromRef(draft.performer?.[0]?.reference);
   const scopeCode = draft.scope?.coding?.[0]?.code ?? '';
   const SCOPE_SYSTEM = 'http://terminology.hl7.org/CodeSystem/consentscope';
 
@@ -967,6 +969,22 @@ const CreateConsentForm: React.FC<{
           }
           options={serviceRequests.map((sr) => ({ id: sr.id!, label: getSRLabel(sr) }))}
           placeholder="Select ServiceRequest…"
+          optional
+        />
+      </div>
+
+      <div>
+        <Label text="Performer (who may access)" hint="organisation that receives access" />
+        <RefSelect
+          value={performerId}
+          onChange={(id) =>
+            setDraft({
+              ...draft,
+              performer: id ? [{ reference: `Organization/${id}` }] : undefined,
+            })
+          }
+          options={organizations.map((o) => ({ id: o.id!, label: getOrgLabel(o) }))}
+          placeholder="Select organisation…"
           optional
         />
       </div>
@@ -1101,7 +1119,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
   const needsPatients = ['ServiceRequest', 'Task', 'Condition', 'Consent'].includes(resourceType);
   const needsPRoles = ['ServiceRequest', 'Task'].includes(resourceType);
   const needsSRs = ['Task', 'Consent'].includes(resourceType);
-  const needsOrgs = resourceType === 'Task';
+  const needsOrgs = ['Task', 'Consent'].includes(resourceType);
 
   const { data: patientBundle, isLoading: pLoading } = useFhirSearch<Patient>(
     'Patient',
@@ -1242,6 +1260,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
                   setDraft={(c) => setDraft(c as FhirResource)}
                   patients={patients}
                   serviceRequests={serviceRequests}
+                  organizations={organizations}
                 />
               )}
 
