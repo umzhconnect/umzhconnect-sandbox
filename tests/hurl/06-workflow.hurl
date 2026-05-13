@@ -41,10 +41,10 @@ jsonpath "$.description" == "Please evaluate patient for ACL reconstruction surg
 
 # --- Step 3: Fulfiller updates Task status to accepted ---
 
-PUT {{fulfiller_url}}/fhir/Task/{{created_task_id}}
+PATCH {{fulfiller_url}}/fhir/Task/{{created_task_id}}
 Authorization: Bearer {{fulfiller_token}}
-Content-Type: application/fhir+json
-{"resourceType":"Task","id":"{{created_task_id}}","status":"accepted","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{hapi_url}}/fhir/placer/Organization/placer-HospitalP"},"owner":{"reference":"Organization/fulfiller-HospitalF"}}
+Content-Type: application/json-patch+json
+[{"op":"replace","path":"/status","value":"accepted"}]
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "accepted"
@@ -59,7 +59,28 @@ HTTP 200
 jsonpath "$.status" == "accepted"
 
 
-# --- Step 5: Placer reads all-tasks (merges local + remote) ---
+# --- Step 5: Placer PATCHes Task via fulfiller external gateway (cross-party) ---
+# Validates that PATCH is accepted on the external gateway with a placer M2M token
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/{{created_task_id}}
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[{"op":"replace","path":"/status","value":"in-progress"}]
+HTTP 200
+[Asserts]
+jsonpath "$.status" == "in-progress"
+
+
+# --- Step 5b: PUT on external gateway must be rejected — APISIX returns 404 (no matching route) ---
+
+PUT {{fulfiller_ext_url}}/fhir/Task/{{created_task_id}}
+Authorization: Bearer {{placer_token}}
+Content-Type: application/fhir+json
+{"resourceType":"Task","id":"{{created_task_id}}","status":"in-progress","intent":"order"}
+HTTP 404
+
+
+# --- Step 6: Placer reads all-tasks (merges local + remote) ---
 # Response is JSON with { local: { Bundle }, remote: { Bundle } }
 
 GET {{placer_url}}/api/actions/all-tasks

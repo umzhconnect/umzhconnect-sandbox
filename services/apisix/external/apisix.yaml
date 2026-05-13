@@ -54,7 +54,7 @@ routes:
   # ─── Task update — JWT only, no OPA ──────────────────────────────────
   - id: ext-task-update
     uri: /fhir/Task/*
-    methods: [PUT]
+    methods: [PATCH]
     priority: 10
     upstream_id: hapi-${PARTY}
     plugins:

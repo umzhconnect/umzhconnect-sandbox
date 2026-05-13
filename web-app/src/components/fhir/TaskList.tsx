@@ -53,19 +53,19 @@ const TaskList: React.FC = () => {
     if (!selectedTask) return;
     setSaving(true);
     try {
-      const updated: Task = {
-        ...selectedTask,
-        status: editStatus,
-        owner: editOwner ? { reference: editOwner } : selectedTask.owner,
-        lastModified: new Date().toISOString(),
-      };
-
       addLog({
         type: 'info',
-        message: `Updating Task/${selectedTask.id}: status=${editStatus}, owner=${editOwner}`,
+        message: `Patching Task/${selectedTask.id}: status=${editStatus}${editOwner ? `, owner=${editOwner}` : ''}`,
       });
 
-      const result = await client.update(updated);
+      const ops: Array<{ op: string; path: string; value: unknown }> = [
+        { op: 'replace', path: '/status', value: editStatus },
+      ];
+      if (editOwner) {
+        ops.push({ op: 'replace', path: '/owner', value: { reference: editOwner } });
+      }
+
+      const result = await client.patch<Task>('Task', selectedTask.id!, ops);
       setSelectedTask({ ...result, _source: selectedTask._source });
       queryClient.invalidateQueries({ queryKey: ['all-tasks', activeRole] });
     } catch (err) {
