@@ -72,6 +72,16 @@ export interface Organization extends FhirResource {
   endpoint?: Reference[];
 }
 
+// --- HealthcareService ---
+export interface HealthcareService extends FhirResource {
+  resourceType: 'HealthcareService';
+  active?: boolean;
+  providedBy?: Reference;
+  name?: string;
+  type?: CodeableConcept[];
+  comment?: string;
+}
+
 // --- Endpoint ---
 export interface Endpoint extends FhirResource {
   resourceType: 'Endpoint';
@@ -226,7 +236,7 @@ export interface LogEntry {
 }
 
 // --- Role ---
-export type PartyRole = 'placer' | 'fulfiller';
+export type PartyRole = 'placer' | 'fulfiller' | 'registry';
 
 // --- Task Status ---
 export const TASK_STATUSES = [
@@ -250,6 +260,8 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const RESOURCE_TYPES = [
   'Patient',
   'Organization',
+  'Endpoint',
+  'HealthcareService',
   'Practitioner',
   'PractitionerRole',
   'ServiceRequest',

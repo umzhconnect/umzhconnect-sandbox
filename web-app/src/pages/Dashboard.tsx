@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useRole } from '../contexts/RoleContext';
-import { useFhirSearch } from '../hooks/useFhirSearch';
+import { useFhirSearch, useRegistrySearch } from '../hooks/useFhirSearch';
 import WorkflowWizard from '../components/workflow/WorkflowWizard';
 
 // ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ const CAPABILITIES = [
   {
     icon: '📋',
     title: 'Pre-seeded reference data',
-    body: 'Patients, Practitioners, Conditions, Consents and ServiceRequests are loaded at startup. Active use cases: Orthopedic Referral and Sarcoma Tumor Board.',
+    body: 'Patients, Practitioners, Conditions, Consents and ServiceRequests are loaded at startup. Active use cases: Orthopedic Referral and Sarcoma Tumor Board. The shared registry is seeded with Organizations, Endpoints and HealthcareServices for both hospitals.',
   },
 ];
 
@@ -201,39 +201,66 @@ const HealthDot: React.FC<{ status: HealthStatus }> = ({ status }) => {
 
 const Dashboard: React.FC = () => {
   const { partyLabel, activeRole } = useRole();
+  const isRegistry = activeRole === 'registry';
 
-  // FHIR resource counts
-  const { data: patients } = useFhirSearch('Patient');
-  const { data: serviceRequests } = useFhirSearch('ServiceRequest');
-  const { data: tasks } = useFhirSearch('Task');
-  const { data: conditions } = useFhirSearch('Condition');
+  // Party partition resource counts (disabled in registry view)
+  const { data: patients }        = useFhirSearch('Patient',        {}, !isRegistry);
+  const { data: serviceRequests } = useFhirSearch('ServiceRequest', {}, !isRegistry);
+  const { data: tasks }           = useFhirSearch('Task',           {}, !isRegistry);
+  const { data: conditions }      = useFhirSearch('Condition',      {}, !isRegistry);
 
-  const stats = [
-    {
-      label: 'Patients',
-      count: patients?.total ?? patients?.entry?.length ?? 0,
-      path: '/resources',
-      color: 'bg-blue-50 text-blue-700',
-    },
-    {
-      label: 'Service Requests',
-      count: serviceRequests?.total ?? serviceRequests?.entry?.length ?? 0,
-      path: '/resources',
-      color: 'bg-purple-50 text-purple-700',
-    },
-    {
-      label: 'Tasks',
-      count: tasks?.total ?? tasks?.entry?.length ?? 0,
-      path: '/tasks',
-      color: 'bg-yellow-50 text-yellow-700',
-    },
-    {
-      label: 'Conditions',
-      count: conditions?.total ?? conditions?.entry?.length ?? 0,
-      path: '/resources',
-      color: 'bg-green-50 text-green-700',
-    },
-  ];
+  // Registry resource counts (enabled only in registry view)
+  const { data: organizations }      = useRegistrySearch('Organization',      {}, isRegistry);
+  const { data: fhirEndpoints }      = useRegistrySearch('Endpoint',          {}, isRegistry);
+  const { data: healthcareServices } = useRegistrySearch('HealthcareService', {}, isRegistry);
+
+  const stats = isRegistry
+    ? [
+        {
+          label: 'Organizations',
+          count: organizations?.total ?? organizations?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-purple-50 text-purple-700',
+        },
+        {
+          label: 'Endpoints',
+          count: fhirEndpoints?.total ?? fhirEndpoints?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-indigo-50 text-indigo-700',
+        },
+        {
+          label: 'Healthcare Services',
+          count: healthcareServices?.total ?? healthcareServices?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-teal-50 text-teal-700',
+        },
+      ]
+    : [
+        {
+          label: 'Patients',
+          count: patients?.total ?? patients?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-blue-50 text-blue-700',
+        },
+        {
+          label: 'Service Requests',
+          count: serviceRequests?.total ?? serviceRequests?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-purple-50 text-purple-700',
+        },
+        {
+          label: 'Tasks',
+          count: tasks?.total ?? tasks?.entry?.length ?? 0,
+          path: '/tasks',
+          color: 'bg-yellow-50 text-yellow-700',
+        },
+        {
+          label: 'Conditions',
+          count: conditions?.total ?? conditions?.entry?.length ?? 0,
+          path: '/resources',
+          color: 'bg-green-50 text-green-700',
+        },
+      ];
 
   // Health-check state — initialise all checkable services as 'checking'
   const [health, setHealth] = useState<Record<string, HealthStatus>>(
@@ -289,7 +316,10 @@ const Dashboard: React.FC = () => {
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
         <p className="text-gray-500 mt-1">
-          Active role: <strong>{partyLabel}</strong> · Clinical order workflow sandbox
+          Active role: <strong>{partyLabel}</strong>
+          {isRegistry
+            ? ' · Shared mCSD directory of Organizations, Endpoints and Healthcare Services'
+            : ' · Clinical order workflow sandbox'}
         </p>
       </div>
 
@@ -376,11 +406,13 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* ================================================================== */}
-      {/* SECTION 2 — Workflow Wizard                                         */}
+      {/* SECTION 2 — Workflow Wizard (party views only)                      */}
       {/* ================================================================== */}
-      <div className="border-b border-gray-200 pb-8">
-        <WorkflowWizard key={activeRole} />
-      </div>
+      {!isRegistry && (
+        <div className="border-b border-gray-200 pb-8">
+          <WorkflowWizard key={activeRole} />
+        </div>
+      )}
 
       {/* ================================================================== */}
       {/* SECTION 3 — Two-column: Capabilities | Resource summaries           */}

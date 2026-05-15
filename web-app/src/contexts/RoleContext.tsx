@@ -56,7 +56,9 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const toggleRole = useCallback(() => {
-    setActiveRole((prev) => (prev === 'placer' ? 'fulfiller' : 'placer'));
+    setActiveRole((prev) =>
+      prev === 'placer' ? 'fulfiller' : prev === 'fulfiller' ? 'registry' : 'placer'
+    );
   }, []);
 
   const registryBaseUrl = `${REGISTRY_URL}/fhir`;
@@ -71,13 +73,23 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ownExternalBaseUrl:      `${PLACER_EXTERNAL_URL}/fhir`,
         registryBaseUrl,
       }
-    : {
+    : activeRole === 'fulfiller'
+    ? {
         partyLabel: 'HospitalF (Fulfiller)',
         partyColor: 'green',
         apiBasePath:             `${FULFILLER_URL}/fhir`,
         proxyBasePath:           `${FULFILLER_URL}/proxy/fhir`,
         partnerExternalBaseUrl:  `${PLACER_EXTERNAL_URL}/fhir`,
         ownExternalBaseUrl:      `${FULFILLER_EXTERNAL_URL}/fhir`,
+        registryBaseUrl,
+      }
+    : {
+        partyLabel: 'Registry',
+        partyColor: 'purple',
+        apiBasePath:             registryBaseUrl,
+        proxyBasePath:           registryBaseUrl,
+        partnerExternalBaseUrl:  '',
+        ownExternalBaseUrl:      registryBaseUrl,
         registryBaseUrl,
       };
 

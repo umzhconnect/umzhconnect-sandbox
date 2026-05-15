@@ -6,6 +6,7 @@ import { useRole } from '../../contexts/RoleContext';
 import { TASK_STATUSES } from '../../types/fhir';
 import type {
   FhirResource,
+  HealthcareService,
   Patient,
   Organization,
   ServiceRequest,
@@ -114,6 +115,14 @@ const buildInitialDraft = (resourceType: string): FhirResource | null => {
         address: [{ line: [], city: '', postalCode: '', country: '' }],
         telecom: [],
       } as Organization;
+
+    case 'HealthcareService':
+      return {
+        resourceType: 'HealthcareService',
+        active: true,
+        name: '',
+        type: [{ coding: [{ system: 'http://snomed.info/sct', code: '', display: '' }] }],
+      } as unknown as FhirResource;
 
     case 'ServiceRequest':
       return {
@@ -470,9 +479,38 @@ const CreateServiceRequestForm: React.FC<{
   setDraft: (sr: ServiceRequest) => void;
   patients: Patient[];
   practitionerRoles: FhirResource[];
-}> = ({ draft, setDraft, patients, practitionerRoles }) => {
+  healthcareServices: HealthcareService[];
+  organizations: Organization[];
+}> = ({ draft, setDraft, patients, practitionerRoles, healthcareServices, organizations }) => {
   const patientId = extractIdFromRef(draft.subject?.reference);
   const requesterId = extractIdFromRef(draft.requester?.reference);
+
+  const resolveOrgName = (svc: HealthcareService): string => {
+    const ref = svc.providedBy?.reference ?? '';
+    const orgId = ref.substring(ref.lastIndexOf('/') + 1);
+    const org = organizations.find((o) => o.id === orgId);
+    return org?.name ?? svc.providedBy?.display ?? orgId;
+  };
+
+  const selectedServiceId = healthcareServices.find((s) =>
+    draft.category?.some((cat) =>
+      cat.coding?.some((c) => c.code === s.type?.[0]?.coding?.[0]?.code)
+    )
+  )?.id ?? '';
+
+  const handleServiceChange = (id: string) => {
+    if (!id) {
+      setDraft({ ...draft, category: undefined });
+      return;
+    }
+    const svc = healthcareServices.find((s) => s.id === id);
+    if (!svc) return;
+    const coding = svc.type?.[0]?.coding?.[0];
+    setDraft({
+      ...draft,
+      category: coding ? [{ coding: [coding], text: svc.name }] : [{ text: svc.name }],
+    });
+  };
 
   return (
     <div className="space-y-3">
@@ -521,28 +559,20 @@ const CreateServiceRequestForm: React.FC<{
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label text="Category" hint="display text" />
-          <input
-            className={textInputCls}
-            value={draft.category?.[0]?.coding?.[0]?.display ?? draft.category?.[0]?.text ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                category: [{ coding: [{ display: e.target.value }] }],
-              })
-            }
-          />
-        </div>
-        <div>
-          <Label text="Code" hint="display or text" />
-          <input
-            className={textInputCls}
-            value={draft.code?.text ?? draft.code?.coding?.[0]?.display ?? ''}
-            onChange={(e) => setDraft({ ...draft, code: { text: e.target.value } })}
-          />
-        </div>
+      <div>
+        <Label text="Category" hint="sets category from registry HealthcareService" />
+        <select
+          className={selectCls}
+          value={selectedServiceId}
+          onChange={(e) => handleServiceChange(e.target.value)}
+        >
+          <option value="">— none selected —</option>
+          {healthcareServices.map((s) => (
+            <option key={s.id} value={s.id ?? ''}>
+              {s.name ?? s.id} — {resolveOrgName(s)}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div>
@@ -758,6 +788,95 @@ const CreateTaskForm: React.FC<{
           placeholder="Select owner organization…"
           optional
         />
+      </div>
+    </div>
+  );
+};
+
+// ---- HealthcareService ------------------------------------------------------
+
+const CreateHealthcareServiceForm: React.FC<{
+  draft: HealthcareService;
+  setDraft: (s: HealthcareService) => void;
+  organizations: Organization[];
+  registryBaseUrl: string;
+}> = ({ draft, setDraft, organizations, registryBaseUrl }) => {
+  const providedById = extractIdFromRef(draft.providedBy?.reference);
+  const typeCoding = draft.type?.[0]?.coding?.[0] ?? {};
+
+  const patchTypeCoding = (patch: object) =>
+    setDraft({ ...draft, type: [{ coding: [{ ...typeCoding, ...patch }] }] });
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={draft.active ?? true}
+          onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
+          className="rounded border-gray-300 text-blue-600"
+        />
+        <span className="text-sm font-medium text-gray-700">Active</span>
+      </label>
+
+      <div>
+        <Label text="Name" required />
+        <input
+          className={textInputCls}
+          value={draft.name ?? ''}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <Label text="Provided by (Organization)" />
+        <RefSelect
+          value={providedById}
+          onChange={(id) =>
+            setDraft({
+              ...draft,
+              providedBy: id
+                ? {
+                    reference: `${registryBaseUrl}/Organization/${id}`,
+                    display: organizations.find((o) => o.id === id)
+                      ? getOrgLabel(organizations.find((o) => o.id === id)!)
+                      : undefined,
+                  }
+                : undefined,
+            })
+          }
+          options={organizations.map((o) => ({ id: o.id!, label: getOrgLabel(o) }))}
+          placeholder="Select organization…"
+          optional
+        />
+      </div>
+
+      <SectionHeader title="Service Type" />
+      <div>
+        <Label text="Display" />
+        <input
+          className={textInputCls}
+          value={typeCoding.display ?? ''}
+          onChange={(e) => patchTypeCoding({ display: e.target.value })}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label text="System" hint="URI" />
+          <input
+            className={textInputCls}
+            value={typeCoding.system ?? 'http://snomed.info/sct'}
+            onChange={(e) => patchTypeCoding({ system: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label text="Code" />
+          <input
+            className={textInputCls}
+            value={typeCoding.code ?? ''}
+            onChange={(e) => patchTypeCoding({ code: e.target.value })}
+          />
+        </div>
       </div>
     </div>
   );
@@ -1064,6 +1183,11 @@ const validate = (draft: FhirResource): string | null => {
       if (!o.name) return 'Organization name is required.';
       break;
     }
+    case 'HealthcareService': {
+      const s = draft as unknown as HealthcareService;
+      if (!s.name) return 'Service name is required.';
+      break;
+    }
     case 'ServiceRequest': {
       const sr = draft as ServiceRequest;
       if (!sr.subject?.reference) return 'Subject (patient) is required.';
@@ -1121,7 +1245,8 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
   const needsPatients = ['ServiceRequest', 'Task', 'Condition', 'Consent'].includes(resourceType);
   const needsPRoles = ['ServiceRequest', 'Task'].includes(resourceType);
   const needsSRs = ['Task', 'Consent'].includes(resourceType);
-  const needsOrgs = ['Task', 'Consent'].includes(resourceType);
+  const needsOrgs = ['Task', 'Consent', 'ServiceRequest', 'HealthcareService'].includes(resourceType);
+  const needsServices = resourceType === 'ServiceRequest';
 
   const { data: patientBundle, isLoading: pLoading } = useFhirSearch<Patient>(
     'Patient',
@@ -1143,6 +1268,11 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
     {},
     open && needsOrgs
   );
+  const { data: servicesBundle, isLoading: svcLoading } = useRegistrySearch<HealthcareService>(
+    'HealthcareService',
+    {},
+    open && needsServices
+  );
 
   const patients =
     (patientBundle?.entry?.map((e) => e.resource).filter(Boolean) as Patient[]) ?? [];
@@ -1152,8 +1282,12 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
     (srBundle?.entry?.map((e) => e.resource).filter(Boolean) as ServiceRequest[]) ?? [];
   const organizations =
     (orgBundle?.entry?.map((e) => e.resource).filter(Boolean) as Organization[]) ?? [];
+  const healthcareServices =
+    (servicesBundle?.entry
+      ?.map((e) => e.resource)
+      .filter((r): r is HealthcareService => r?.resourceType === 'HealthcareService')) ?? [];
 
-  const isLoading = pLoading || prLoading || srLoading || orgLoading;
+  const isLoading = pLoading || prLoading || srLoading || orgLoading || svcLoading;
   const isSupported = SUPPORTED_EDIT_TYPES.includes(resourceType);
 
   const handleSubmit = async () => {
@@ -1231,12 +1365,22 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
                   setDraft={(o) => setDraft(o as FhirResource)}
                 />
               )}
+              {draft.resourceType === 'HealthcareService' && (
+                <CreateHealthcareServiceForm
+                  draft={draft as unknown as HealthcareService}
+                  setDraft={(s) => setDraft(s as unknown as FhirResource)}
+                  organizations={organizations}
+                  registryBaseUrl={registryBaseUrl}
+                />
+              )}
               {draft.resourceType === 'ServiceRequest' && (
                 <CreateServiceRequestForm
                   draft={draft as ServiceRequest}
                   setDraft={(sr) => setDraft(sr as FhirResource)}
                   patients={patients}
                   practitionerRoles={practitionerRoles}
+                  healthcareServices={healthcareServices}
+                  organizations={organizations}
                 />
               )}
               {draft.resourceType === 'Task' && (

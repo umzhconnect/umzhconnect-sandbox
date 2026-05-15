@@ -11,7 +11,7 @@ const navItems = [
 
 const Sidebar: React.FC = () => {
   const { activeRole } = useRole();
-  const activeColor = activeRole === 'placer' ? 'blue' : 'green';
+  const activeColor = activeRole === 'placer' ? 'blue' : activeRole === 'fulfiller' ? 'green' : 'purple';
 
   return (
     <aside className="w-56 bg-white border-r border-gray-200 min-h-[calc(100vh-4rem)]">
@@ -26,7 +26,9 @@ const Sidebar: React.FC = () => {
                 isActive
                   ? activeColor === 'blue'
                     ? 'bg-blue-50 text-blue-700'
-                    : 'bg-green-50 text-green-700'
+                    : activeColor === 'green'
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-purple-50 text-purple-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               }`
             }

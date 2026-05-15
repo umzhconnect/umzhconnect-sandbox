@@ -12,13 +12,14 @@ import CreateResourceModal from './CreateResourceModal';
 
 interface ResourceListProps {
   onSelectResource?: (resource: FhirResource) => void;
+  defaultType?: string;
 }
 
-const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource }) => {
+const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultType = 'Patient' }) => {
   const { activeRole } = useRole();
   const queryClient = useQueryClient();
 
-  const [selectedType, setSelectedType] = useState<string>('Patient');
+  const [selectedType, setSelectedType] = useState<string>(defaultType);
   const [patientFilter, setPatientFilter] = useState('');
   const [selectedResource, setSelectedResource] = useState<FhirResource | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -93,9 +94,9 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource }) => {
 
   return (
     <>
-      <div className="flex gap-4 h-full">
+      <div className="grid grid-cols-2 gap-4 h-full">
         {/* Left: List */}
-        <div className="w-1/2 flex flex-col">
+        <div className="flex flex-col min-w-0">
           {/* Filters + Create button */}
           <div className="flex gap-2 mb-4">
             <select
@@ -177,7 +178,7 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource }) => {
         </div>
 
         {/* Right: Detail */}
-        <div className="w-1/2 flex flex-col overflow-y-auto">
+        <div className="flex flex-col min-w-0 overflow-y-auto">
           {selectedResource ? (
             <div className="space-y-4">
               <div className="card">
