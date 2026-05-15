@@ -25,6 +25,7 @@ services:
       APISIX_FULFILLER_URL: http://apisix-fulfiller-internal:9080
       APISIX_FULFILLER_EXT_URL: http://apisix-fulfiller-external:9080
       HAPI_FHIR_URL: http://hapi-fhir:8080
+      REGISTRY_URL: http://nginx-proxy:84
       OPA_PLACER_URL: http://opa-placer:8181
       OPA_FULFILLER_URL: http://opa-fulfiller:8181
       RESEED_API_URL: http://reseed-api:9001
@@ -39,5 +40,7 @@ services:
         condition: service_healthy
       seed-loader:
         condition: service_completed_successfully
+      nginx-proxy:
+        condition: service_started
     networks:
       - umzh-net
