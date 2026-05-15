@@ -89,12 +89,15 @@ services:
   # ===========================================================================
   # nginx-proxy — nginx reverse/rewriting proxy in front of HAPI FHIR.
   #   Ports 80–83: rewrites HAPI self-links to the correct APISIX gateway URL.
+  #   Port 84:     registry gateway — public, no auth, routes to /fhir/registry/
   # ===========================================================================
   nginx-proxy:
     image: nginx:alpine
     container_name: umzh-nginx-proxy
     volumes:
       - ./services/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - '${REGISTRY_PORT:-8084}:84'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -327,6 +330,7 @@ services:
       FHIR_BASE_URL: http://hapi-fhir:8080/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
+      REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro
     ports:

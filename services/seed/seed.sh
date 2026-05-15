@@ -6,8 +6,9 @@
 #
 # Partition layout:
 #   /fhir/DEFAULT   -> Shared conformance resources (Questionnaire, etc.)
-#   /fhir/placer    -> HospitalP data (Patient, ServiceRequest, Consent, Organization/placer-*)
-#   /fhir/fulfiller -> HospitalF data (Task, Organization/fulfiller-*)
+#   /fhir/placer    -> HospitalP data (Patient, ServiceRequest, Consent)
+#   /fhir/fulfiller -> HospitalF data (Task)
+#   /fhir/registry  -> Organization directory (HospitalP, HospitalF)
 #
 # Note: HAPI FHIR treats certain resource types (Questionnaire, StructureDefinition,
 # CodeSystem, etc.) as non-partitionable — they can only live in DEFAULT.
@@ -18,6 +19,7 @@ set -e
 FHIR_BASE_URL="${FHIR_BASE_URL:-http://hapi-fhir:8080/fhir}"
 PLACER_EXTERNAL_URL="${PLACER_EXTERNAL_URL:-http://localhost:8081}"
 FULFILLER_EXTERNAL_URL="${FULFILLER_EXTERNAL_URL:-http://localhost:8083}"
+REGISTRY_EXTERNAL_URL="${REGISTRY_EXTERNAL_URL:-http://localhost:8084}"
 MAX_RETRIES=60
 RETRY_INTERVAL=5
 
@@ -89,6 +91,7 @@ create_partition() {
 
 create_partition 1 "placer"    "HospitalP (Placer) partition"
 create_partition 2 "fulfiller" "HospitalF (Fulfiller) partition"
+create_partition 3 "registry"  "Organization registry partition"
 
 # ---------------------------------------------------------------------------
 # [3/6] Load shared conformance resources -> /fhir/DEFAULT
@@ -119,6 +122,7 @@ echo "[4/6] Loading Placer (HospitalP) seed data into /fhir/placer..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
+    -e "s|__REGISTRY_URL__|${REGISTRY_EXTERNAL_URL}|g" \
     /seed/bundles/placer-bundle.json > /tmp/placer-bundle-resolved.json
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "${FHIR_BASE_URL}/placer" \
@@ -143,6 +147,7 @@ echo "[5/6] Loading Fulfiller (HospitalF) seed data into /fhir/fulfiller..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
+    -e "s|__REGISTRY_URL__|${REGISTRY_EXTERNAL_URL}|g" \
     /seed/bundles/fulfiller-bundle.json > /tmp/fulfiller-bundle-resolved.json
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "${FHIR_BASE_URL}/fulfiller" \
@@ -160,10 +165,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [6/6] Verify seed data in each partition
+# [6/7] Load Registry data -> /fhir/registry
 # ---------------------------------------------------------------------------
 echo ""
-echo "[6/6] Verifying seed data..."
+echo "[6/7] Loading Registry (Organization directory) seed data into /fhir/registry..."
+sed \
+    -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
+    -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
+    -e "s|__REGISTRY_URL__|${REGISTRY_EXTERNAL_URL}|g" \
+    /seed/bundles/registry-bundle.json > /tmp/registry-bundle-resolved.json
+RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+    "${FHIR_BASE_URL}/registry" \
+    -H "Content-Type: application/fhir+json" \
+    -d @/tmp/registry-bundle-resolved.json)
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+    echo "  Registry data loaded successfully (HTTP ${HTTP_CODE})"
+else
+    echo "  WARNING: Registry data returned HTTP ${HTTP_CODE}"
+    echo "  $(echo "$BODY" | head -c 500)"
+fi
+
+# ---------------------------------------------------------------------------
+# [7/7] Verify seed data in each partition
+# ---------------------------------------------------------------------------
+echo ""
+echo "[7/7] Verifying seed data..."
 
 check_resource() {
     PARTITION=$1
@@ -187,13 +217,13 @@ check_resource "placer"    "ServiceRequest" "ReferralTumorboard"
 check_resource "placer"    "Consent"        "ConsentOrthopedicReferral"
 
 # Fulfiller partition
-check_resource "fulfiller" "Organization"   "fulfiller-HospitalP"
-check_resource "fulfiller" "Organization"   "fulfiller-HospitalF"
 check_resource "fulfiller" "Task"           "TaskOrthopedicReferral"
 
-# Organizations — both partitions carry both orgs (partition-prefixed IDs)
-check_resource "placer"    "Organization"   "placer-HospitalP"
-check_resource "placer"    "Organization"   "placer-HospitalF"
+# Registry partition (Organization directory)
+check_resource "registry"  "Organization"   "HospitalP"
+check_resource "registry"  "Organization"   "HospitalF"
+check_resource "registry"  "Endpoint"       "EndpointHospitalP"
+check_resource "registry"  "Endpoint"       "EndpointHospitalF"
 
 echo ""
 echo "============================================="
@@ -202,8 +232,9 @@ echo "============================================="
 echo ""
 echo "Partition layout:"
 echo "  /fhir/DEFAULT   -> Shared conformance (Questionnaire, ...)"
-echo "  /fhir/placer    -> HospitalP data (Patient, ServiceRequest, Consent, Organization/placer-*)"
-echo "  /fhir/fulfiller -> HospitalF data (Task, Organization/fulfiller-*)"
+echo "  /fhir/placer    -> HospitalP data (Patient, ServiceRequest, Consent)"
+echo "  /fhir/fulfiller -> HospitalF data (Task)"
+echo "  /fhir/registry  -> Organization directory (HospitalP, HospitalF)"
 echo ""
 echo "Sandbox endpoints:"
 echo "  HAPI FHIR:                    http://localhost:8090/fhir"

@@ -54,6 +54,7 @@ KRAKEND_PLACER_EXT_URL="${APISIX_PLACER_EXT_URL:-${KRAKEND_PLACER_EXT_URL:-http:
 KRAKEND_FULFILLER_URL="${APISIX_FULFILLER_URL:-${KRAKEND_FULFILLER_URL:-http://localhost:8082}}"
 KRAKEND_FULFILLER_EXT_URL="${APISIX_FULFILLER_EXT_URL:-${KRAKEND_FULFILLER_EXT_URL:-http://localhost:8083}}"
 HAPI_FHIR_URL="${HAPI_FHIR_URL:-http://localhost:8090}"
+REGISTRY_URL="${REGISTRY_URL:-http://localhost:8084}"
 OPA_PLACER_URL="${OPA_PLACER_URL:-http://localhost:8181}"
 OPA_FULFILLER_URL="${OPA_FULFILLER_URL:-http://localhost:8182}"
 RESEED_API_URL="${RESEED_API_URL:-http://localhost:9001}"
@@ -80,6 +81,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "fulfiller_url=$KRAKEND_FULFILLER_URL" \
         --variable "fulfiller_ext_url=$KRAKEND_FULFILLER_EXT_URL" \
         --variable "hapi_url=$HAPI_FHIR_URL" \
+        --variable "registry_url=$REGISTRY_URL" \
         --variable "opa_placer_url=$OPA_PLACER_URL" \
         --variable "opa_fulfiller_url=$OPA_FULFILLER_URL" \
         --variable "reseed_url=$RESEED_API_URL" \

@@ -73,23 +73,37 @@ jsonpath "$.status" == "active"
 jsonpath "$.patient.reference" == "Patient/PetraMeier"
 
 
-# --- READ: Organizations from Fulfiller internal ---
+# --- READ: Organizations and Endpoints from registry (public, no auth required) ---
 
-GET {{fulfiller_url}}/fhir/Organization/fulfiller-HospitalF
-Authorization: Bearer {{fulfiller_token}}
+GET {{registry_url}}/fhir/Organization/HospitalF
 HTTP 200
 [Asserts]
-jsonpath "$.resourceType" == "Organization"
-jsonpath "$.id" == "fulfiller-HospitalF"
-jsonpath "$.name" == "University Hospital F"
+jsonpath "$.id" == "HospitalF"
+jsonpath "$.endpoint[0].reference" contains "Endpoint/EndpointHospitalF"
 
-GET {{fulfiller_url}}/fhir/Organization/fulfiller-HospitalP
-Authorization: Bearer {{fulfiller_token}}
+GET {{registry_url}}/fhir/Organization/HospitalP
 HTTP 200
 [Asserts]
-jsonpath "$.resourceType" == "Organization"
-jsonpath "$.id" == "fulfiller-HospitalP"
-jsonpath "$.name" == "University Hospital P"
+jsonpath "$.id" == "HospitalP"
+jsonpath "$.endpoint[0].reference" contains "Endpoint/EndpointHospitalP"
+
+GET {{registry_url}}/fhir/Endpoint/EndpointHospitalF
+HTTP 200
+[Asserts]
+jsonpath "$.id" == "EndpointHospitalF"
+
+GET {{registry_url}}/fhir/Endpoint/EndpointHospitalP
+HTTP 200
+[Asserts]
+jsonpath "$.id" == "EndpointHospitalP"
+
+# --- SEARCH: Organization with _include returns Endpoint entries too ---
+
+GET {{registry_url}}/fhir/Organization?_include=Organization:endpoint
+HTTP 200
+[Asserts]
+jsonpath "$.entry[*].resource.resourceType" includes "Organization"
+jsonpath "$.entry[*].resource.resourceType" includes "Endpoint"
 
 
 # --- SEARCH: Patient search with _count ---

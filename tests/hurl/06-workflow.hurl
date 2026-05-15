@@ -17,7 +17,7 @@
 POST {{placer_url}}/api/actions/create-task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{hapi_url}}/fhir/placer/Organization/placer-HospitalP"},"owner":{"reference":"Organization/fulfiller-HospitalF"}}
+{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalF"}}
 # FHIR returns 201 Created for new resources
 HTTP 201
 [Captures]

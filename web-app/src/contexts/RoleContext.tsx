@@ -8,6 +8,7 @@ const PLACER_URL             = import.meta.env.VITE_PLACER_URL             || 'h
 const PLACER_EXTERNAL_URL    = import.meta.env.VITE_PLACER_EXTERNAL_URL    || 'http://localhost:8081';
 const FULFILLER_URL          = import.meta.env.VITE_FULFILLER_URL          || 'http://localhost:8082';
 const FULFILLER_EXTERNAL_URL = import.meta.env.VITE_FULFILLER_EXTERNAL_URL || 'http://localhost:8083';
+const REGISTRY_URL           = import.meta.env.VITE_REGISTRY_URL           || 'http://localhost:8084';
 
 interface RoleContextType {
   activeRole: PartyRole;
@@ -28,6 +29,8 @@ interface RoleContextType {
    * to the creator's publicly reachable external gateway, not the internal one.
    */
   ownExternalBaseUrl: string;
+  /** Base URL for the Organization registry (public, no auth), e.g. http://localhost:8084/fhir */
+  registryBaseUrl: string;
 }
 
 const RoleContext = createContext<RoleContextType>({
@@ -40,6 +43,7 @@ const RoleContext = createContext<RoleContextType>({
   proxyBasePath: `${PLACER_URL}/proxy/fhir`,
   partnerExternalBaseUrl: `${FULFILLER_EXTERNAL_URL}/fhir`,
   ownExternalBaseUrl: `${PLACER_EXTERNAL_URL}/fhir`,
+  registryBaseUrl: `${REGISTRY_URL}/fhir`,
 });
 
 export const useRole = () => useContext(RoleContext);
@@ -55,6 +59,8 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveRole((prev) => (prev === 'placer' ? 'fulfiller' : 'placer'));
   }, []);
 
+  const registryBaseUrl = `${REGISTRY_URL}/fhir`;
+
   const config = activeRole === 'placer'
     ? {
         partyLabel: 'HospitalP (Placer)',
@@ -63,6 +69,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         proxyBasePath:           `${PLACER_URL}/proxy/fhir`,
         partnerExternalBaseUrl:  `${FULFILLER_EXTERNAL_URL}/fhir`,
         ownExternalBaseUrl:      `${PLACER_EXTERNAL_URL}/fhir`,
+        registryBaseUrl,
       }
     : {
         partyLabel: 'HospitalF (Fulfiller)',
@@ -71,6 +78,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         proxyBasePath:           `${FULFILLER_URL}/proxy/fhir`,
         partnerExternalBaseUrl:  `${PLACER_EXTERNAL_URL}/fhir`,
         ownExternalBaseUrl:      `${FULFILLER_EXTERNAL_URL}/fhir`,
+        registryBaseUrl,
       };
 
   return (

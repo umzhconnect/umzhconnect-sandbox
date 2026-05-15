@@ -85,10 +85,10 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
                                         │
                               ┌─────────▼─────────┐
                               │   nginx-proxy     │
-                              │  (no host port)   │
-                              │  ports 80–83      │
+                              │  ports 80–84      │
                               │  self-link        │
-                              │  rewriting        │
+                              │  rewriting +      │
+                              │  registry (84)    │
                               └─────────┬─────────┘
                                         │
                               ┌─────────▼──────────┐
@@ -96,6 +96,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
                               │  localhost:8090    │
                               │  /fhir/placer/     │← HospitalP partition
                               │  /fhir/fulfiller/  │← HospitalF partition
+                              │  /fhir/registry/   │← mCSD registry (public)
                               └─────────┬──────────┘
                                         │
                               ┌─────────▼──────────┐
@@ -117,7 +118,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 | `postgres` | `postgres:16-alpine` | 5431 | Shared DB (HAPI FHIR + Keycloak) |
 | `keycloak` | `quay.io/keycloak/keycloak:25.0` | 8180 | OAuth2 / OIDC / SMART on FHIR |
 | `hapi-fhir` | `hapiproject/hapi:v7.4.0` | 8090 | FHIR R4 server (URL-partitioned) |
-| `nginx-proxy` | `nginx:alpine` | — (internal) | Self-link rewriting proxy (ports 80–83) |
+| `nginx-proxy` | `nginx:alpine` | 8084 | Self-link rewriting proxy (ports 80–83); port 84 = public registry gateway |
 | `opa-placer` | `openpolicyagent/opa:0.70.0` | 8181 | Policy engine for HospitalP |
 | `opa-fulfiller` | `openpolicyagent/opa:0.70.0` | 8182 | Policy engine for HospitalF |
 | `apisix-placer-internal` | `apache/apisix:3.9.0-debian` | 8080 | Internal API gateway for HospitalP |
@@ -125,6 +126,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 | `apisix-fulfiller-internal` | `apache/apisix:3.9.0-debian` | 8082 | Internal API gateway for HospitalF |
 | `apisix-fulfiller-external` | `apache/apisix:3.9.0-debian` | 8083 | External API gateway for HospitalF |
 | `seed-loader` | custom | — | Init container (loads FHIR data) |
+| `reseed-api` | Node.js | 9001 | Admin HTTP API to expunge + reload FHIR seed data |
 | `web-app` | Node 20 + Nginx | 3000 | React SPA |
 
 ---
@@ -158,7 +160,7 @@ Each party operates **two dedicated API gateways**: an *internal* gateway for it
   Placer calls     ►│   GET  /fhir/{resource}?_id=<id>  → OPA → fulfiller partition│
                     │   GET  /fhir/{resource}/{id}      → OPA → fulfiller partition│
                     │   POST /fhir/Task                 → fulfiller partition      │
-                    │   PUT  /fhir/Task/{id}            → fulfiller partition      │
+                    │   PATCH /fhir/Task/{id}           → fulfiller partition      │
                      ──────────────────────────────────────────────────────────────
 ```
 
@@ -174,25 +176,30 @@ Both gateways share the **same Keycloak realm** and the **same HAPI FHIR instanc
 
 ### FHIR Server — URL-based Partitioning
 
-A single HAPI FHIR v7.4 instance provides two logical partitions via URL-based multi-tenancy:
+A single HAPI FHIR v7.4 instance provides three logical partitions via URL-based multi-tenancy:
 
-| Partition | Base URL | Tenant |
-|-----------|----------|--------|
-| **Placer (HospitalP)** | `http://hapi-fhir:8080/fhir/placer/` | `placer` |
-| **Fulfiller (HospitalF)** | `http://hapi-fhir:8080/fhir/fulfiller/` | `fulfiller` |
+| Partition | Base URL | Tenant | Auth |
+|-----------|----------|--------|------|
+| **Placer (HospitalP)** | `http://hapi-fhir:8080/fhir/placer/` | `placer` | JWT required |
+| **Fulfiller (HospitalF)** | `http://hapi-fhir:8080/fhir/fulfiller/` | `fulfiller` | JWT required |
+| **Registry** | `http://hapi-fhir:8080/fhir/registry/` | `registry` | Public (no auth) |
 
-Resources in different partitions have **partition-scoped IDs**:
-- `Organization/placer-HospitalP` exists only in the placer partition
-- `Organization/fulfiller-HospitalP` is the placer org as registered in the fulfiller partition
+**Organization resources live only in the registry partition** and are referenced by absolute URL from both party partitions. The registry implements an mCSD-style directory with `Organization` and `Endpoint` resources:
+- `Organization/HospitalP` — HospitalP with an `endpoint` reference to `Endpoint/EndpointHospitalP`
+- `Organization/HospitalF` — HospitalF with an `endpoint` reference to `Endpoint/EndpointHospitalF`
+- `Endpoint/EndpointHospitalP` — `address` = placer external gateway URL (`__PLACER_EXTERNAL_URL__/fhir`)
+- `Endpoint/EndpointHospitalF` — `address` = fulfiller external gateway URL (`__FULFILLER_EXTERNAL_URL__/fhir`)
 
 **Cross-partition references** use absolute URLs (stored verbatim by HAPI — no placeholder creation):
 
 ```
-Task.owner.reference = "http://localhost:8083/fhir/Organization/fulfiller-HospitalF"
+Task.owner.reference      = "http://localhost:8084/fhir/Organization/HospitalF"
 Task.basedOn[0].reference = "http://localhost:8080/fhir/ServiceRequest/ReferralOrthopedicSurgery"
 ```
 
-The absolute URL base for each partition is injected into the seed data at container start-up via environment variable substitution (`__PLACER_EXTERNAL_URL__` / `__FULFILLER_EXTERNAL_URL__`), making the external gateway addresses configurable without touching the bundle files.
+Absolute URL bases are injected at container start-up via environment variable substitution (`__PLACER_EXTERNAL_URL__`, `__FULFILLER_EXTERNAL_URL__`, `__REGISTRY_URL__`), making all gateway addresses configurable without touching the bundle files.
+
+The registry is exposed publicly on **host port 8084** via a dedicated nginx-proxy server block (port 84) that prepends `/fhir/registry/` to incoming `/fhir/*` paths and rewrites HAPI self-links to `http://localhost:8084/fhir/...`.
 
 ---
 
@@ -228,6 +235,12 @@ Ports 80–83: proxy to hapi-fhir:8080
     proxy_pass: hapi-fhir:8080
     sub_filter: "http://localhost:8090/fhir/fulfiller/"  →  "http://localhost:8083/fhir/"
     Used by: apisix-fulfiller-external (Category 2 — Placer reads Fulfiller data)
+
+Port 84: registry gateway — public, no auth (host port 8084)
+  proxy_pass: hapi-fhir:8080
+  rewrite: /fhir/*  →  /fhir/registry/*   (path prepend via nginx rewrite)
+  sub_filter: "http://localhost:8090/fhir/registry/"  →  "http://localhost:8084/fhir/"
+  Used by: web-app (Organization + Endpoint lookups), seed-loader (registry bundle upload)
 ```
 
 Cross-party proxy responses (`/proxy/fhir/*`, `/api/actions/all-tasks`) are rewritten by APISIX's `response-rewrite` plugin on the internal gateways — partner external URLs are replaced with the calling party's `/proxy/fhir/` base path. nginx is not involved in cross-party response rewriting.
@@ -276,7 +289,7 @@ Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent
 | `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
 | `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
-| `/fhir/Task/{id}` | PUT | — | `nginx-proxy:83` | — |
+| `/fhir/Task/{id}` | PATCH | — | `nginx-proxy:83` | — |
 
 #### Category 3 — Internal Proxy API (internal gateways only)
 
@@ -638,6 +651,7 @@ docker compose up -d --build
 | APISIX Placer (external) | http://localhost:8081/__health | `{"status":"ok"}` |
 | APISIX Fulfiller (internal) | http://localhost:8082/__health | `{"status":"ok"}` |
 | APISIX Fulfiller (external) | http://localhost:8083/__health | `{"status":"ok"}` |
+| Registry | http://localhost:8084/fhir/Organization/HospitalP | Organization JSON |
 | OPA Placer | http://localhost:8181/v1/health | `{"status":"ok"}` |
 | OPA Fulfiller | http://localhost:8182/v1/health | `{"status":"ok"}` |
 
@@ -705,6 +719,9 @@ APISIX_PLACER_EXTERNAL_PORT=8081
 APISIX_FULFILLER_PORT=8082
 APISIX_FULFILLER_EXTERNAL_PORT=8083
 
+# Registry — public mCSD directory (nginx-proxy port 84)
+REGISTRY_PORT=8084
+
 # OPA — one instance per party
 OPA_PLACER_PORT=8181
 OPA_FULFILLER_PORT=8182
@@ -718,6 +735,7 @@ VITE_PLACER_URL=http://localhost:8080
 VITE_PLACER_EXTERNAL_URL=http://localhost:8081
 VITE_FULFILLER_URL=http://localhost:8082
 VITE_FULFILLER_EXTERNAL_URL=http://localhost:8083
+VITE_REGISTRY_URL=http://localhost:8084
 ```
 
 ---
@@ -730,7 +748,7 @@ VITE_FULFILLER_EXTERNAL_URL=http://localhost:8083
 |---------|-------|
 | FHIR version | R4 |
 | Multi-tenancy | URL-based (`/fhir/{tenant}/Resource`) |
-| Partitions | `placer`, `fulfiller` |
+| Partitions | `placer`, `fulfiller`, `registry` |
 | Cross-partition references | Disabled |
 | External (absolute) references | Allowed |
 | Default encoding | JSON |
@@ -918,7 +936,7 @@ openid-connect:
 | `/fhir/*` (read by id) | GET | — | `nginx-proxy:83` | `/fhir/fulfiller/*` | JWT + OPA |
 | `/fhir/*` (search) | GET | `_id` required | `nginx-proxy:83` | `/fhir/fulfiller/*` | JWT + OPA |
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | `/fhir/fulfiller/Task` | JWT |
-| `/fhir/Task/*` | PUT | — | `nginx-proxy:83` | `/fhir/fulfiller/Task/*` | JWT |
+| `/fhir/Task/*` | PATCH | — | `nginx-proxy:83` | `/fhir/fulfiller/Task/*` | JWT |
 
 ---
 
@@ -1038,15 +1056,33 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
 
 **Loader:** `services/seed/` (Docker init container)
 
-The seed loader waits for HAPI FHIR readiness, creates the two partitions, then POSTs FHIR transaction bundles. Before posting, `seed.sh` substitutes `__PLACER_EXTERNAL_URL__` and `__FULFILLER_EXTERNAL_URL__` placeholders in the bundle files with the values from the `PLACER_EXTERNAL_URL` / `FULFILLER_EXTERNAL_URL` environment variables (defaults: `http://localhost:8081` / `http://localhost:8083`).
+The seed loader waits for HAPI FHIR readiness, creates the three partitions (`placer`, `fulfiller`, `registry`), then POSTs FHIR transaction bundles. Before posting, `seed.sh` substitutes template placeholders in the bundle files with values from environment variables:
+
+| Placeholder | Variable | Default |
+|-------------|----------|---------|
+| `__PLACER_EXTERNAL_URL__` | `PLACER_EXTERNAL_URL` | `http://localhost:8081` |
+| `__FULFILLER_EXTERNAL_URL__` | `FULFILLER_EXTERNAL_URL` | `http://localhost:8083` |
+| `__REGISTRY_URL__` | `REGISTRY_EXTERNAL_URL` | `http://localhost:8084` |
+
+#### Registry Partition — mCSD Directory (public)
+
+4 resources providing the mCSD-based organization directory:
+
+| Resource Type | ID | Key Fields |
+|---------------|----|------------|
+| Organization | `HospitalP` | `alias: ["HospitalP"]`, `endpoint → EndpointHospitalP` |
+| Organization | `HospitalF` | `alias: ["HospitalF"]`, `endpoint → EndpointHospitalF` |
+| Endpoint | `EndpointHospitalP` | `address: __PLACER_EXTERNAL_URL__/fhir`, `connectionType: hl7-fhir-rest` |
+| Endpoint | `EndpointHospitalF` | `address: __FULFILLER_EXTERNAL_URL__/fhir`, `connectionType: hl7-fhir-rest` |
+
+The web-app fetches `Organization?_include=Organization:endpoint` from the registry (no auth) to discover both organizations and their external gateway URLs in a single request.
 
 #### Placer Partition — HospitalP
 
-19 resources covering two referral use cases:
+17 resources covering two referral use cases (Organization resources are in the registry, not here):
 
 | Resource Type | ID / Description |
 |---------------|-----------------|
-| Organization | HospitalP (self), HospitalF (partner) |
 | Patient | PetraMeier (F, 1992-03-26, Zürich) |
 | Practitioner | Dr. med. Hans Muster |
 | PractitionerRole | HansMusterRole |
@@ -1059,15 +1095,11 @@ The seed loader waits for HAPI FHIR readiness, creates the two partitions, then 
 | ServiceRequest | ReferralOrthopedicSurgery, ReferralTumorboard |
 | Consent | ConsentOrthopedicReferral, ConsentTumorboardReferral |
 
+All cross-party references (e.g. `ServiceRequest.performer`, `Consent.organization`) point to absolute registry URLs (`__REGISTRY_URL__/fhir/Organization/HospitalF`).
+
 #### Fulfiller Partition — HospitalF
 
-| Resource Type | ID / Description |
-|---------------|-----------------|
-| Organization | HospitalF (self), HospitalP (partner) |
-
-Each Organization carries two FHIR meta tags used by the web-app for cross-party routing:
-- `urn:umzh:keycloak:client-id` — the Keycloak client ID for M2M token requests
-- `urn:umzh:api:external-host` — the base URL of the party's external API gateway
+The fulfiller partition starts empty — Tasks are created at runtime by the Placer during the workflow. No seed data is loaded into this partition.
 
 #### Use Cases
 
@@ -1395,17 +1427,19 @@ hurl --version
 
 ### Test Suite Overview
 
-Seven test files in `tests/hurl/`, run in numeric order:
+Nine test files in `tests/hurl/`, run in numeric order:
 
 | File | What it tests |
 |---|---|
 | `01-health.hurl` | All service health endpoints respond — smoke test for the full stack |
 | `02-auth.hurl` | Keycloak token acquisition for all client types (M2M + user password grant) |
-| `03-fhir-crud.hurl` | FHIR read and search operations on both internal gateways |
+| `03-fhir-crud.hurl` | FHIR CRUD on both internal gateways; registry reads (Organization + Endpoint, `_include` search) |
 | `04-security-negative.hurl` | JWT enforcement — missing/invalid tokens must return 401; partition isolation |
 | `05-cross-party-consent.hurl` | Fulfiller reads Placer data through the external gateway with a consent-scoped token; both consent scenarios |
 | `06-workflow.hurl` | End-to-end clinical order workflow: create Task at Fulfiller → read via proxy → update status |
 | `07-storage.hurl` | FHIR write operations and partition isolation verification |
+| `08-consent-enforcement.hurl` | Detailed OPA consent-graph enforcement: resources inside and outside consent scope |
+| `09-party-id-substring-vuln.hurl` | CVE-style regression: `party_id` substring bypass prevention |
 
 ---
 
@@ -1479,6 +1513,8 @@ Each file is executed with `hurl --test`, injecting all URL variables and tokens
 | `APISIX_FULFILLER_URL` | `http://localhost:8082` | Fulfiller internal gateway |
 | `APISIX_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
 | `HAPI_FHIR_URL` | `http://localhost:8090` | HAPI FHIR direct access |
+| `REGISTRY_URL` | `http://localhost:8084` | Registry public gateway |
+| `RESEED_API_URL` | `http://localhost:9001` | Reseed API |
 | `OPA_PLACER_URL` | `http://localhost:8181` | OPA Placer |
 | `OPA_FULFILLER_URL` | `http://localhost:8182` | OPA Fulfiller |
 | `MAX_WAIT` | `120` | Max seconds to wait for services before timing out |
@@ -1580,7 +1616,8 @@ Sandbox/
 │   │   └── realm-export.json       # Realm, clients, scopes (incl. dynamic consent scope)
 │   │
 │   ├── nginx-proxy/
-│   │   └── nginx.conf              # 4 server blocks (ports 80–83), one sub_filter each
+│   │   └── nginx.conf              # 5 server blocks (ports 80–84), one sub_filter each
+│   │                               # Port 84 = public registry gateway (no auth)
 │   │                               # Rewrites HAPI self-links to gateway base URLs
 │   │
 │   ├── apisix/
@@ -1601,13 +1638,18 @@ Sandbox/
 │   │   ├── config-placer.json      # Per-party OPA data (fhir_base, required_role)
 │   │   └── config-fulfiller.json
 │   │
+│   ├── reseed-api/
+│   │   ├── Dockerfile
+│   │   └── index.js                # Express API: POST /reseed → expunge + reload all bundles
+│   │
 │   └── seed/
 │       ├── Dockerfile
 │       ├── seed.sh                 # Partition creation + bundle upload with URL substitution
 │       └── bundles/
 │           ├── shared-bundle.json     # Shared conformance resources (Questionnaire)
-│           ├── placer-bundle.json     # 19 resources (HospitalP partition)
-│           └── fulfiller-bundle.json  # 2 Organization resources (HospitalF partition)
+│           ├── placer-bundle.json     # 17 resources (HospitalP partition — no Organizations)
+│           ├── fulfiller-bundle.json  # Fulfiller partition seed (Tasks created at runtime)
+│           └── registry-bundle.json  # 4 mCSD resources: Organization×2 + Endpoint×2
 │
 └── web-app/
     ├── Dockerfile                  # Multi-stage build (Node → Nginx)

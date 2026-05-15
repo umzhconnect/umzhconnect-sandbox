@@ -51,7 +51,7 @@ Content-Type: application/json
       "resourceType": "Consent",
       "id": "ConsentOrthopedicReferral",
       "status": "active",
-      "performer": [{"reference": "Organization/placer-HospitalF"}],
+      "performer": [{"reference": "{{registry_url}}/fhir/Organization/HospitalF"}],
       "sourceReference": {"reference": "ServiceRequest/ReferralOrthopedicSurgery"}
     },
     "fhir_base": "http://nginx-proxy:81/fhir/placer"
@@ -88,7 +88,7 @@ Content-Type: application/json
       "resourceType": "Consent",
       "id": "ConsentOrthopedicReferral",
       "status": "active",
-      "performer": [{"reference": "Organization/placer-HospitalF"}],
+      "performer": [{"reference": "{{registry_url}}/fhir/Organization/HospitalF"}],
       "sourceReference": {"reference": "ServiceRequest/ReferralOrthopedicSurgery"}
     },
     "fhir_base": "http://nginx-proxy:81/fhir/placer"

@@ -15,7 +15,7 @@ interface TaggedTask extends Task {
 }
 
 const TaskList: React.FC = () => {
-  const { activeRole } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
@@ -233,8 +233,8 @@ const TaskList: React.FC = () => {
                     onChange={(e) => setEditOwner(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   >
-                    <option value="Organization/HospitalP">Organization/HospitalP</option>
-                    <option value="Organization/HospitalF">Organization/HospitalF</option>
+                    <option value={`${registryBaseUrl}/Organization/HospitalP`}>HospitalP (Placer)</option>
+                    <option value={`${registryBaseUrl}/Organization/HospitalF`}>HospitalF (Fulfiller)</option>
                   </select>
                 </div>
                 <div>

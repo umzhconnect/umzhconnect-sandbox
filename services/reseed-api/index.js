@@ -14,6 +14,7 @@ const fs   = require('fs');
 const FHIR_BASE    = process.env.FHIR_BASE_URL        || 'http://hapi-fhir:8080/fhir';
 const PLACER_URL   = process.env.PLACER_EXTERNAL_URL   || 'http://localhost:8081';
 const FULFILLER_URL= process.env.FULFILLER_EXTERNAL_URL|| 'http://localhost:8083';
+const REGISTRY_URL = process.env.REGISTRY_EXTERNAL_URL || 'http://localhost:8084';
 const PORT         = 9001;
 
 // ---------------------------------------------------------------------------
@@ -70,18 +71,20 @@ async function reseed() {
 
   log('=== RESEED STARTED ===');
 
-  // [1/5] Expunge all three partitions
-  log('\n[1/5] Expunging FHIR partitions…');
+  // [1/6] Expunge all partitions
+  log('\n[1/6] Expunging FHIR partitions…');
   await expungePartition('DEFAULT',   log);
   await expungePartition('placer',    log);
   await expungePartition('fulfiller', log);
+  await expungePartition('registry',  log);
 
-  // [2/5] Re-create named partitions (may already exist in the DB schema)
-  log('\n[2/5] Ensuring FHIR partitions exist…');
+  // [2/6] Re-create named partitions (may already exist in the DB schema)
+  log('\n[2/6] Ensuring FHIR partitions exist…');
   await createPartition(1, 'placer',    'HospitalP (Placer) partition',    log);
   await createPartition(2, 'fulfiller', 'HospitalF (Fulfiller) partition', log);
+  await createPartition(3, 'registry',  'Organization registry partition', log);
 
-  // [3/5] Load shared bundle → /fhir/DEFAULT
+  // [3/6] Load shared bundle → /fhir/DEFAULT
   log('\n[3/5] Loading shared bundle → /fhir/DEFAULT…');
   const sharedBundle = JSON.parse(fs.readFileSync('/seed/bundles/shared-bundle.json', 'utf8'));
   const sharedResult = await fhirPost('/DEFAULT', sharedBundle);
@@ -90,28 +93,43 @@ async function reseed() {
     throw new Error(`Shared bundle failed: HTTP ${sharedResult.status}`);
   }
 
-  // [4/5] Load placer bundle (URL substitution) → /fhir/placer
+  // [4/6] Load placer bundle (URL substitution) → /fhir/placer
   log('\n[4/5] Loading placer bundle → /fhir/placer…');
   let placerStr = fs.readFileSync('/seed/bundles/placer-bundle.json', 'utf8');
   placerStr = placerStr
     .replace(/__PLACER_EXTERNAL_URL__/g,    PLACER_URL)
-    .replace(/__FULFILLER_EXTERNAL_URL__/g, FULFILLER_URL);
+    .replace(/__FULFILLER_EXTERNAL_URL__/g, FULFILLER_URL)
+    .replace(/__REGISTRY_URL__/g,           REGISTRY_URL);
   const placerResult = await fhirPost('/placer', JSON.parse(placerStr));
   log(`  Placer bundle: HTTP ${placerResult.status}`);
   if (placerResult.status !== 200 && placerResult.status !== 201) {
     throw new Error(`Placer bundle failed: HTTP ${placerResult.status}`);
   }
 
-  // [5/5] Load fulfiller bundle (URL substitution) → /fhir/fulfiller
-  log('\n[5/5] Loading fulfiller bundle → /fhir/fulfiller…');
+  // [5/6] Load fulfiller bundle (URL substitution) → /fhir/fulfiller
+  log('\n[5/6] Loading fulfiller bundle → /fhir/fulfiller…');
   let fulfillerStr = fs.readFileSync('/seed/bundles/fulfiller-bundle.json', 'utf8');
   fulfillerStr = fulfillerStr
     .replace(/__PLACER_EXTERNAL_URL__/g,    PLACER_URL)
-    .replace(/__FULFILLER_EXTERNAL_URL__/g, FULFILLER_URL);
+    .replace(/__FULFILLER_EXTERNAL_URL__/g, FULFILLER_URL)
+    .replace(/__REGISTRY_URL__/g,           REGISTRY_URL);
   const fulfillerResult = await fhirPost('/fulfiller', JSON.parse(fulfillerStr));
   log(`  Fulfiller bundle: HTTP ${fulfillerResult.status}`);
   if (fulfillerResult.status !== 200 && fulfillerResult.status !== 201) {
     throw new Error(`Fulfiller bundle failed: HTTP ${fulfillerResult.status}`);
+  }
+
+  // [6/6] Load registry bundle (URL substitution) → /fhir/registry
+  log('\n[6/6] Loading registry bundle → /fhir/registry…');
+  let registryStr = fs.readFileSync('/seed/bundles/registry-bundle.json', 'utf8');
+  registryStr = registryStr
+    .replace(/__PLACER_EXTERNAL_URL__/g,    PLACER_URL)
+    .replace(/__FULFILLER_EXTERNAL_URL__/g, FULFILLER_URL)
+    .replace(/__REGISTRY_URL__/g,           REGISTRY_URL);
+  const registryResult = await fhirPost('/registry', JSON.parse(registryStr));
+  log(`  Registry bundle: HTTP ${registryResult.status}`);
+  if (registryResult.status !== 200 && registryResult.status !== 201) {
+    throw new Error(`Registry bundle failed: HTTP ${registryResult.status}`);
   }
 
   log('\n=== RESEED COMPLETE ===');
@@ -162,4 +180,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`FHIR_BASE_URL:          ${FHIR_BASE}`);
   console.log(`PLACER_EXTERNAL_URL:    ${PLACER_URL}`);
   console.log(`FULFILLER_EXTERNAL_URL: ${FULFILLER_URL}`);
+  console.log(`REGISTRY_EXTERNAL_URL:  ${REGISTRY_URL}`);
 });

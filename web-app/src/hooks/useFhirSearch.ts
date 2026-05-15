@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useFhirClient, useProxyClient } from './useFhirClient';
+import { useFhirClient, useProxyClient, useRegistryClient } from './useFhirClient';
 import type { Bundle, FhirResource } from '../types/fhir';
 import { useRole } from '../contexts/RoleContext';
 
@@ -21,6 +21,23 @@ export function useFhirSearch<T extends FhirResource>(
 
   return useQuery<Bundle>({
     queryKey: ['fhir', activeRole, resourceType, params],
+    queryFn: () => client.search<T>(resourceType, params),
+    enabled,
+  });
+}
+
+/**
+ * Hook to search FHIR resources on the public Organization registry (no auth required).
+ */
+export function useRegistrySearch<T extends FhirResource>(
+  resourceType: string,
+  params?: Record<string, string>,
+  enabled = true
+) {
+  const client = useRegistryClient();
+
+  return useQuery<Bundle>({
+    queryKey: ['registry', resourceType, params],
     queryFn: () => client.search<T>(resourceType, params),
     enabled,
   });

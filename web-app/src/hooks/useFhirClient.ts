@@ -19,6 +19,19 @@ export function useFhirClient(): FhirClient {
 }
 
 /**
+ * Hook to get an unauthenticated FHIR client for the public Organization registry.
+ */
+export function useRegistryClient(): FhirClient {
+  const { registryBaseUrl } = useRole();
+  const { addLog } = useLog();
+
+  return useMemo(
+    () => new FhirClient(registryBaseUrl, undefined, addLog),
+    [registryBaseUrl, addLog]
+  );
+}
+
+/**
  * Hook to get a FHIR client for the partner's FHIR server (via proxy).
  */
 export function useProxyClient(): FhirClient {

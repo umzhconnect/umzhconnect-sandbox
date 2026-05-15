@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import { useFhirClient } from '../../hooks/useFhirClient';
-import { useAllTasks, useFhirSearch } from '../../hooks/useFhirSearch';
-import type { Bundle, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
+import { useAllTasks, useRegistrySearch } from '../../hooks/useFhirSearch';
+import type { Bundle, Endpoint, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
 import JsonViewer from '../common/JsonViewer';
 import LoadingSpinner from '../common/LoadingSpinner';
 import StatusBadge from '../common/StatusBadge';
@@ -204,16 +204,25 @@ const WizardTaskSelectModal: React.FC<{
 // ---------------------------------------------------------------------------
 
 const WorkflowWizard: React.FC = () => {
-  const { activeRole, partnerExternalBaseUrl } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
 
-  const { data: orgBundle } = useFhirSearch<Organization>('Organization', {});
-  const organizations = (orgBundle?.entry?.map((e) => e.resource).filter(Boolean) as Organization[]) ?? [];
-  const partnerOrigin = new URL(partnerExternalBaseUrl).origin;
-  const partnerOrg = organizations.find((o) =>
-    o.meta?.tag?.some((tag) => tag.system === 'urn:umzh:api:external-host' && tag.code === partnerOrigin)
+  const { data: registryBundle } = useRegistrySearch<FhirResource>(
+    'Organization',
+    { '_include': 'Organization:endpoint' }
+  );
+  const organizations = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Organization => r?.resourceType === 'Organization')) ?? [];
+  const endpoints = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Endpoint => r?.resourceType === 'Endpoint')) ?? [];
+  const partnerAlias = activeRole === 'placer' ? 'HospitalF' : 'HospitalP';
+  const partnerOrg = organizations.find((o) => o.alias?.includes(partnerAlias));
+  const partnerEndpoint = endpoints.find((ep) =>
+    ep.managingOrganization?.reference?.endsWith(`/Organization/${partnerAlias}`)
   );
 
   const [step, setStep] = useState(0);
@@ -366,7 +375,7 @@ const WorkflowWizard: React.FC = () => {
             status: 'active',
             patient: { reference: patientRef, display: patientDisplay },
             ...(srId && { sourceReference: { reference: `ServiceRequest/${srId}` } }),
-            ...(partnerOrg?.id && { performer: [{ reference: `Organization/${partnerOrg.id}` }] }),
+            ...(partnerOrg && { performer: [{ reference: `${registryBaseUrl}/Organization/${partnerAlias}` }] }),
             dateTime: new Date().toISOString(),
             provision: {
               type: 'permit',

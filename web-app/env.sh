@@ -18,6 +18,7 @@ window.__ENV__ = {
   VITE_PLACER_EXTERNAL_URL: "${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}",
   VITE_FULFILLER_URL: "${VITE_FULFILLER_URL:-http://localhost:8082}",
   VITE_FULFILLER_EXTERNAL_URL: "${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}",
+  VITE_REGISTRY_URL: "${VITE_REGISTRY_URL:-http://localhost:8084}",
 };
 EOF
 

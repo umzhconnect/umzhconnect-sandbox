@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFhirSearch } from '../../hooks/useFhirSearch';
+import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { TASK_STATUSES } from '../../types/fhir';
@@ -613,7 +613,8 @@ const CreateTaskForm: React.FC<{
   practitionerRoles: FhirResource[];
   serviceRequests: ServiceRequest[];
   organizations: Organization[];
-}> = ({ draft, setDraft, patients, practitionerRoles, serviceRequests, organizations }) => {
+  registryBaseUrl: string;
+}> = ({ draft, setDraft, patients, practitionerRoles, serviceRequests, organizations, registryBaseUrl }) => {
   const basedOnId = extractIdFromRef(draft.basedOn?.[0]?.reference);
   const forPatientId = extractIdFromRef(draft.for?.reference);
   const requesterId = extractIdFromRef(draft.requester?.reference);
@@ -745,7 +746,7 @@ const CreateTaskForm: React.FC<{
               ...draft,
               owner: id
                 ? {
-                    reference: `Organization/${id}`,
+                    reference: `${registryBaseUrl}/Organization/${id}`,
                     display: organizations.find((o) => o.id === id)
                       ? getOrgLabel(organizations.find((o) => o.id === id)!)
                       : undefined,
@@ -882,7 +883,8 @@ const CreateConsentForm: React.FC<{
   patients: Patient[];
   serviceRequests: ServiceRequest[];
   organizations: Organization[];
-}> = ({ draft, setDraft, patients, serviceRequests, organizations }) => {
+  registryBaseUrl: string;
+}> = ({ draft, setDraft, patients, serviceRequests, organizations, registryBaseUrl }) => {
   const patientId = extractIdFromRef(draft.patient?.reference);
   const sourceRefId = extractIdFromRef(draft.sourceReference?.reference);
   const performerId = extractIdFromRef(draft.performer?.[0]?.reference);
@@ -980,7 +982,7 @@ const CreateConsentForm: React.FC<{
           onChange={(id) =>
             setDraft({
               ...draft,
-              performer: id ? [{ reference: `Organization/${id}` }] : undefined,
+              performer: id ? [{ reference: `${registryBaseUrl}/Organization/${id}` }] : undefined,
             })
           }
           options={organizations.map((o) => ({ id: o.id!, label: getOrgLabel(o) }))}
@@ -1097,7 +1099,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
   initialDraft,
   onSuccessResource,
 }) => {
-  const { activeRole } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const client = useFhirClient();
   const queryClient = useQueryClient();
 
@@ -1136,7 +1138,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
     {},
     open && needsSRs
   );
-  const { data: orgBundle, isLoading: orgLoading } = useFhirSearch<Organization>(
+  const { data: orgBundle, isLoading: orgLoading } = useRegistrySearch<Organization>(
     'Organization',
     {},
     open && needsOrgs
@@ -1245,6 +1247,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
                   practitionerRoles={practitionerRoles}
                   serviceRequests={serviceRequests}
                   organizations={organizations}
+                  registryBaseUrl={registryBaseUrl}
                 />
               )}
               {draft.resourceType === 'Condition' && (
@@ -1261,6 +1264,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
                   patients={patients}
                   serviceRequests={serviceRequests}
                   organizations={organizations}
+                  registryBaseUrl={registryBaseUrl}
                 />
               )}
 

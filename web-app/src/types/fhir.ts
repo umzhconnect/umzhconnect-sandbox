@@ -69,6 +69,18 @@ export interface Organization extends FhirResource {
   alias?: string[];
   address?: { line?: string[]; city?: string; postalCode?: string; country?: string }[];
   telecom?: { system?: string; value?: string }[];
+  endpoint?: Reference[];
+}
+
+// --- Endpoint ---
+export interface Endpoint extends FhirResource {
+  resourceType: 'Endpoint';
+  status: string;
+  connectionType: Coding;
+  name?: string;
+  managingOrganization?: Reference;
+  payloadType: CodeableConcept[];
+  address: string;
 }
 
 // --- ServiceRequest ---

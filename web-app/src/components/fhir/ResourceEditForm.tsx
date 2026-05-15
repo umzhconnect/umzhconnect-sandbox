@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFhirSearch } from '../../hooks/useFhirSearch';
+import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { TASK_STATUSES } from '../../types/fhir';
@@ -651,7 +651,8 @@ const TaskForm: React.FC<{
   draft: Task;
   setDraft: (t: Task) => void;
   organizations: Organization[];
-}> = ({ draft, setDraft, organizations }) => {
+  registryBaseUrl: string;
+}> = ({ draft, setDraft, organizations, registryBaseUrl }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const ownerId = extractIdFromRef(draft.owner?.reference);
 
@@ -709,7 +710,7 @@ const TaskForm: React.FC<{
               ...draft,
               owner: id
                 ? {
-                    reference: `Organization/${id}`,
+                    reference: `${registryBaseUrl}/Organization/${id}`,
                     display: organizations.find((o) => o.id === id)
                       ? getOrgLabel(organizations.find((o) => o.id === id)!)
                       : undefined,
@@ -1110,7 +1111,7 @@ interface ResourceEditFormProps {
 }
 
 const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, onSavedResource }) => {
-  const { activeRole } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const client = useFhirClient();
   const queryClient = useQueryClient();
 
@@ -1137,7 +1138,7 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
   const { data: patientBundle } = useFhirSearch<Patient>('Patient', {}, needsPatients);
   const { data: prBundle } = useFhirSearch<FhirResource>('PractitionerRole', {}, needsPRoles);
   const { data: srBundle } = useFhirSearch<ServiceRequest>('ServiceRequest', {}, needsSRs);
-  const { data: orgBundle } = useFhirSearch<Organization>('Organization', {}, needsOrgs);
+  const { data: orgBundle } = useRegistrySearch<Organization>('Organization', {}, needsOrgs);
 
   const patients =
     (patientBundle?.entry?.map((e) => e.resource).filter(Boolean) as Patient[]) ?? [];
@@ -1241,6 +1242,7 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
           draft={draft as Task}
           setDraft={(t) => setDraft(t as FhirResource)}
           organizations={organizations}
+          registryBaseUrl={registryBaseUrl}
         />
       ) : resource.resourceType === 'Condition' ? (
         <ConditionForm

@@ -85,12 +85,11 @@ HTTP 200
 [Asserts]
 jsonpath "$.id" == "ConsentOrthopedicReferral"
 
-# Organizations in fulfiller
-GET {{fulfiller_url}}/fhir/Organization/fulfiller-HospitalF
-Authorization: Bearer {{fulfiller_token}}
+# Organization in registry (public)
+GET {{registry_url}}/fhir/Organization/HospitalF
 HTTP 200
 [Asserts]
-jsonpath "$.id" == "fulfiller-HospitalF"
+jsonpath "$.id" == "HospitalF"
 
 # Questionnaire in DEFAULT (direct HAPI)
 GET {{hapi_url}}/fhir/DEFAULT/Questionnaire/QuestionnaireSmokingStatus
@@ -105,8 +104,8 @@ jsonpath "$.id" == "QuestionnaireSmokingStatus"
 GET {{hapi_url}}/fhir/fulfiller/Patient/PetraMeier
 HTTP 404
 
-# Fulfiller data should NOT appear in placer partition
-GET {{hapi_url}}/fhir/placer/Organization/fulfiller-HospitalF
+# Fulfiller task should NOT appear in placer partition
+GET {{hapi_url}}/fhir/placer/Task/TaskOrthopedicReferral
 HTTP 404
 
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFhirSearch } from '../../hooks/useFhirSearch';
+import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import type { AllTasksResponse } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
-import type { FhirResource, Task, ServiceRequest, Consent, Organization } from '../../types/fhir';
+import type { FhirResource, Task, ServiceRequest, Consent, Organization, Endpoint } from '../../types/fhir';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 interface CreateTaskModalProps {
@@ -35,7 +35,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   defaultConsentId,
   onSuccessResource,
 }) => {
-  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl } = useRole();
+  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
@@ -59,9 +59,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     {},
     open
   );
-  const { data: orgBundle, isLoading: orgLoading } = useFhirSearch<Organization>(
+  const { data: registryBundle, isLoading: orgLoading } = useRegistrySearch<FhirResource>(
     'Organization',
-    {},
+    { '_include': 'Organization:endpoint' },
     open
   );
 
@@ -69,30 +69,27 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     (srBundle?.entry?.map((e) => e.resource).filter(Boolean) as ServiceRequest[]) || [];
   const consents =
     (consentBundle?.entry?.map((e) => e.resource).filter(Boolean) as Consent[]) || [];
-  const organizations =
-    (orgBundle?.entry?.map((e) => e.resource).filter(Boolean) as Organization[]) || [];
+  const organizations = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Organization => r?.resourceType === 'Organization')) ?? [];
+  const endpoints = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Endpoint => r?.resourceType === 'Endpoint')) ?? [];
 
-  // Discover partner organization from meta.tag — the one whose external-host
-  // matches the partner's origin derived from partnerExternalBaseUrl.
-  const partnerOrigin = new URL(partnerExternalBaseUrl).origin;
-  const partnerOrg = organizations.find((org) =>
-    org.meta?.tag?.some(
-      (t) => t.system === 'urn:umzh:api:external-host' && t.code === partnerOrigin
-    )
+  // Discover partner organization and its FHIR endpoint from the registry.
+  const partnerAlias = activeRole === 'placer' ? 'HospitalF' : 'HospitalP';
+  const partnerOrg = organizations.find((org) => org.alias?.includes(partnerAlias));
+  const partnerEndpoint = endpoints.find((ep) =>
+    ep.managingOrganization?.reference?.endsWith(`/Organization/${partnerAlias}`)
   );
-  const partnerClientId = partnerOrg?.meta?.tag?.find(
-    (t) => t.system === 'urn:umzh:keycloak:client-id'
-  )?.code;
-  const partnerApiHost = partnerOrg?.meta?.tag?.find(
-    (t) => t.system === 'urn:umzh:api:external-host'
-  )?.code;
+  const partnerClientId = activeRole === 'placer' ? 'fulfiller-client' : 'placer-client';
+  const partnerApiHost = partnerEndpoint?.address ?? partnerExternalBaseUrl;
 
-  // Build the owner reference using THIS party's own external gateway URL so the
-  // receiving party can follow the link through our external API. HAPI treats
-  // absolute references as external and stores them verbatim — no placeholder
-  // creation, no HAPI-0825.
-  const partnerOrgAbsoluteRef =
-    partnerOrg?.id ? `${ownExternalBaseUrl}/Organization/${partnerOrg.id}` : undefined;
+  // Build the owner reference using the registry URL and the Organisation's canonical
+  // alias (e.g. "HospitalF"), which is the stable ID in the registry partition.
+  // Using a registry URL keeps the reference neutral — neither party's own server.
+  const partnerOrgRegistryRef =
+    partnerOrg?.alias?.[0] ? `${registryBaseUrl}/Organization/${partnerOrg.alias[0]}` : undefined;
 
   // Derive patient from selected ServiceRequest, fallback to PetraMeier
   const selectedSR = serviceRequests.find((sr) => sr.id === selectedSRId) ?? null;
@@ -163,9 +160,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         reference: `${ownExternalBaseUrl}/PractitionerRole/HansMusterRole`,
         display: 'Dr. med. Hans Muster',
       },
-      ...(partnerOrgAbsoluteRef && {
+      ...(partnerOrgRegistryRef && {
         owner: {
-          reference: partnerOrgAbsoluteRef,
+          reference: partnerOrgRegistryRef,
           display: partnerOrg?.name ?? partnerOrg?.alias?.[0],
         },
       }),
@@ -390,7 +387,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || isLoading || !partnerOrgAbsoluteRef}
+            disabled={submitting || isLoading || !partnerOrgRegistryRef}
             className="btn-primary disabled:opacity-50"
           >
             {submitting ? 'Creating…' : 'Create Task'}
