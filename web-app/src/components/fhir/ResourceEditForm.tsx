@@ -1076,9 +1076,12 @@ const ConsentForm: React.FC<{
   setDraft: (c: Consent) => void;
   patients: Patient[];
   serviceRequests: ServiceRequest[];
-}> = ({ draft, setDraft, patients, serviceRequests }) => {
+  organizations: Organization[];
+  registryBaseUrl: string;
+}> = ({ draft, setDraft, patients, serviceRequests, organizations, registryBaseUrl }) => {
   const patientId = extractIdFromRef(draft.patient?.reference);
-  const sourceRefId = extractIdFromRef(draft.sourceReference?.reference);
+  const dataRefId = extractIdFromRef(draft.provision?.data?.[0]?.reference?.reference);
+  const actorId = extractIdFromRef(draft.provision?.actor?.[0]?.reference?.reference);
   const scopeCode = draft.scope?.coding?.[0]?.code ?? '';
   const SCOPE_SYSTEM = 'http://terminology.hl7.org/CodeSystem/consentscope';
 
@@ -1145,29 +1148,6 @@ const ConsentForm: React.FC<{
       </div>
 
       <div>
-        <Label text="Source (ServiceRequest)" hint="optional — document that authorises the consent" />
-        <RefSelect
-          value={sourceRefId}
-          onChange={(id) =>
-            setDraft({
-              ...draft,
-              sourceReference: id
-                ? {
-                    reference: `ServiceRequest/${id}`,
-                    display: serviceRequests.find((sr) => sr.id === id)
-                      ? getSRLabel(serviceRequests.find((sr) => sr.id === id)!)
-                      : undefined,
-                  }
-                : undefined,
-            })
-          }
-          options={serviceRequests.map((sr) => ({ id: sr.id!, label: getSRLabel(sr) }))}
-          placeholder="Select ServiceRequest…"
-          optional
-        />
-      </div>
-
-      <div>
         <Label text="Date / time" />
         <input
           className={textInputCls}
@@ -1178,23 +1158,52 @@ const ConsentForm: React.FC<{
       </div>
 
       <SectionHeader title="Provision" />
+
       <div>
-        <Label text="Type" />
-        <select
-          className={selectCls}
-          value={draft.provision?.type ?? ''}
-          onChange={(e) =>
+        <Label text="Data Reference (ServiceRequest)" hint="optional — ServiceRequest in scope of this consent" />
+        <RefSelect
+          value={dataRefId}
+          onChange={(id) =>
             setDraft({
               ...draft,
-              provision: { ...draft.provision, type: e.target.value },
+              provision: {
+                ...draft.provision,
+                data: id
+                  ? [{ meaning: 'related', reference: { reference: `ServiceRequest/${id}` } }]
+                  : undefined,
+              },
             })
           }
-        >
-          <option value="">— select —</option>
-          <option value="deny">deny</option>
-          <option value="permit">permit</option>
-        </select>
+          options={serviceRequests.map((sr) => ({ id: sr.id!, label: getSRLabel(sr) }))}
+          placeholder="Select ServiceRequest…"
+          optional
+        />
       </div>
+
+      <div>
+        <Label text="Actor (authorized party)" hint="organisation that receives access" />
+        <RefSelect
+          value={actorId}
+          onChange={(id) =>
+            setDraft({
+              ...draft,
+              provision: {
+                ...draft.provision,
+                actor: id
+                  ? [{
+                      role: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType', code: 'IRCP', display: 'information recipient' }] },
+                      reference: { reference: `${registryBaseUrl}/Organization/${id}` },
+                    }]
+                  : undefined,
+              },
+            })
+          }
+          options={organizations.map((o) => ({ id: o.id!, label: getOrgLabel(o) }))}
+          placeholder="Select organisation…"
+          optional
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label text="Valid from" />
@@ -1268,7 +1277,7 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
   const needsPatients = ['ServiceRequest', 'Condition', 'Consent'].includes(resource.resourceType);
   const needsPRoles = resource.resourceType === 'ServiceRequest';
   const needsSRs = resource.resourceType === 'Consent';
-  const needsOrgs = ['Task', 'HealthcareService'].includes(resource.resourceType);
+  const needsOrgs = ['Task', 'HealthcareService', 'Consent'].includes(resource.resourceType);
 
   const { data: patientBundle } = useFhirSearch<Patient>('Patient', {}, needsPatients);
   const { data: prBundle } = useFhirSearch<FhirResource>('PractitionerRole', {}, needsPRoles);
@@ -1403,6 +1412,8 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
           setDraft={(c) => setDraft(c as FhirResource)}
           patients={patients}
           serviceRequests={serviceRequests}
+          organizations={organizations}
+          registryBaseUrl={registryBaseUrl}
         />
       ) : null}
     </div>

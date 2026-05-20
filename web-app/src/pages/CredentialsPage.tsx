@@ -7,19 +7,19 @@ const CredentialsPage: React.FC = () => {
   const [tokenResponse, setTokenResponse] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeClient, setActiveClient] = useState<'placer' | 'fulfiller'>('placer');
-  const [consentId, setConsentId] = useState('');
+  const [contextRef, setContextRef] = useState('');
 
   const clients = {
     placer: {
       clientId: 'placer-client',
       clientSecret: 'placer-secret-2025',
-      partyId: 'hospitalp',
+      partyId: 'http://localhost:8084/fhir/Organization/HospitalP',
       label: 'HospitalP (Placer)',
     },
     fulfiller: {
       clientId: 'fulfiller-client',
       clientSecret: 'fulfiller-secret-2025',
-      partyId: 'hospitalf',
+      partyId: 'http://localhost:8084/fhir/Organization/HospitalF',
       label: 'HospitalF (Fulfiller)',
     },
   };
@@ -30,20 +30,22 @@ const CredentialsPage: React.FC = () => {
     try {
       const tokenUrl = 'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
 
-      // Build scope: always include "openid"; if a consentId is provided,
-      // append the dynamic scope token "consent:<id>" so the resulting JWT
-      // carries `scope: "openid consent:<id>"`. OPA extracts the consent_id
-      // from the JWT scope claim for fine-grained policy enforcement.
-      const scopeValue = consentId.trim()
-        ? `openid consent:${consentId.trim()}`
-        : 'openid';
-
       const body = new URLSearchParams({
         grant_type: 'client_credentials',
         client_id: client.clientId,
         client_secret: client.clientSecret,
-        scope: scopeValue,
+        scope: 'openid',
       });
+
+      // RFC 9396: if a context reference is provided (ResourceType/id), add
+      // authorization_details so Keycloak adds a fhirContext claim to the token.
+      const ref = contextRef.trim();
+      if (ref) {
+        body.set(
+          'authorization_details',
+          JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }])
+        );
+      }
 
       addLog({
         type: 'request',
@@ -150,21 +152,23 @@ const CredentialsPage: React.FC = () => {
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-500 mb-1">
-              Consent ID{' '}
-              <span className="font-normal text-gray-400">(optional — adds <code>consent:&lt;id&gt;</code> dynamic scope)</span>
+              Context Reference{' '}
+              <span className="font-normal text-gray-400">(optional — <code>ResourceType/id</code>, adds RFC 9396 <code>authorization_details</code>)</span>
             </label>
             <input
               type="text"
-              value={consentId}
-              onChange={(e) => setConsentId(e.target.value)}
-              placeholder="e.g. ConsentOrthopedicReferral"
+              value={contextRef}
+              onChange={(e) => setContextRef(e.target.value)}
+              placeholder="e.g. ServiceRequest/ReferralOrthopedicSurgery"
               className="block w-full p-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
-            {consentId.trim() && (
+            {contextRef.trim() && (
               <p className="mt-1 text-xs text-blue-600">
-                Scope will be:{' '}
-                <code className="bg-blue-50 px-1 rounded">openid consent:{consentId.trim()}</code>
-                {' '}→ JWT <code>scope</code> claim will carry the consent ID for policy enforcement.
+                Adds{' '}
+                <code className="bg-blue-50 px-1 rounded">
+                  {`authorization_details=[{"type":"umzh-connect-context","identifier":"${contextRef.trim()}"}]`}
+                </code>
+                {' '}→ JWT will carry <code>fhirContext</code> claim for OPA consent lookup.
               </p>
             )}
           </div>

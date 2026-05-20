@@ -5,7 +5,7 @@ import type { AllTasksResponse } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
-import type { FhirResource, Task, ServiceRequest, Consent, Organization, Endpoint } from '../../types/fhir';
+import type { FhirResource, Task, ServiceRequest, Organization, Endpoint } from '../../types/fhir';
 import LoadingSpinner from '../common/LoadingSpinner';
 
 interface CreateTaskModalProps {
@@ -13,26 +13,14 @@ interface CreateTaskModalProps {
   onClose: () => void;
   onSuccess: () => void;
   defaultSRId?: string;
-  defaultConsentId?: string;
   onSuccessResource?: (resource: FhirResource) => void;
 }
-
-const IRCP_TYPE = {
-  coding: [
-    {
-      system: 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType',
-      code: 'IRCP',
-      display: 'information recipient',
-    },
-  ],
-};
 
 const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   open,
   onClose,
   onSuccess,
   defaultSRId,
-  defaultConsentId,
   onSuccessResource,
 }) => {
   const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl } = useRole();
@@ -40,22 +28,16 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const client = useFhirClient();
   const queryClient = useQueryClient();
 
-  // Form state — initialise SR/Consent from defaults so they're correct on the very first render
+  // Form state — initialise SR from default so it's correct on the very first render
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('routine');
   const [selectedSRId, setSelectedSRId] = useState(defaultSRId ?? '');
-  const [selectedConsentId, setSelectedConsentId] = useState(defaultConsentId ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch local resources (only when modal is open)
   const { data: srBundle, isLoading: srLoading } = useFhirSearch<ServiceRequest>(
     'ServiceRequest',
-    {},
-    open
-  );
-  const { data: consentBundle, isLoading: consentLoading } = useFhirSearch<Consent>(
-    'Consent',
     {},
     open
   );
@@ -67,8 +49,6 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
   const serviceRequests =
     (srBundle?.entry?.map((e) => e.resource).filter(Boolean) as ServiceRequest[]) || [];
-  const consents =
-    (consentBundle?.entry?.map((e) => e.resource).filter(Boolean) as Consent[]) || [];
   const organizations = (registryBundle?.entry
     ?.map((e) => e.resource)
     .filter((r): r is Organization => r?.resourceType === 'Organization')) ?? [];
@@ -99,9 +79,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   // Reset / initialise form on open/close
   useEffect(() => {
     if (open) {
-      // Pre-populate from wizard defaults when provided
       setSelectedSRId(defaultSRId ?? '');
-      setSelectedConsentId(defaultConsentId ?? '');
       setDescription('');
       setPriority('routine');
       setError(null);
@@ -109,43 +87,22 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setDescription('');
       setPriority('routine');
       setSelectedSRId('');
-      setSelectedConsentId('');
       setError(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async () => {
-    if (!selectedConsentId) {
-      setError('A Consent must be selected to authorise cross-party data access.');
-      return;
-    }
-
     setSubmitting(true);
     setError(null);
 
     // All references inside the Task body must use ownExternalBaseUrl (this
     // party's external gateway) so the receiving party can resolve them.
-    // Using apiBasePath (the internal gateway) would produce URLs the partner
-    // cannot reach.
     const srRef = selectedSRId
       ? `${ownExternalBaseUrl}/ServiceRequest/${selectedSRId}`
       : undefined;
 
     const task: Task = {
       resourceType: 'Task',
-      meta: {
-        security: [
-          {
-            system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode',
-            code: 'CONSENT',
-            display: 'consent',
-          },
-          {
-            system: 'urn:umzh:consent:id',
-            code: selectedConsentId,
-          },
-        ],
-      },
       status: 'ready',
       intent: 'order',
       priority,
@@ -166,14 +123,6 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           display: partnerOrg?.name ?? partnerOrg?.alias?.[0],
         },
       }),
-      input: [
-        {
-          type: IRCP_TYPE,
-          valueReference: {
-            reference: `${ownExternalBaseUrl}/Consent/${selectedConsentId}`,
-          },
-        },
-      ],
     };
 
     addLog({ type: 'info', message: `Creating Task → ${partnerApiHost}/fhir/Task via /api/actions/create-task` });
@@ -229,7 +178,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
   if (!open) return null;
 
-  const isLoading = srLoading || consentLoading || orgLoading;
+  const isLoading = srLoading || orgLoading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -344,30 +293,12 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Consent <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={selectedConsentId}
-                    onChange={(e) => setSelectedConsentId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select a consent…</option>
-                    {consents.map((c) => (
-                      <option key={c.id} value={c.id!}>
-                        {c.id} — {c.scope?.coding?.[0]?.code ?? c.status}
-                        {c.provision?.period?.end ? ` (expires ${c.provision.period.end})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedConsentId && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Sets <code className="bg-gray-100 px-1 rounded">meta.security[CONSENT]</code> and{' '}
-                      <code className="bg-gray-100 px-1 rounded">input[IRCP]</code> on the Task.
-                    </p>
-                  )}
-                </div>
+                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                  Authorization is context-centric: the Fulfiller will request a token with{' '}
+                  <code className="bg-gray-100 px-1 rounded">authorization_details</code> referencing
+                  the ServiceRequest above. OPA locates the Consent automatically via{' '}
+                  <code className="bg-gray-100 px-1 rounded">Consent?data=ServiceRequest/&lt;id&gt;&amp;status=active</code>.
+                </p>
               </div>
 
               {/* Error */}

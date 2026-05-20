@@ -1,18 +1,21 @@
 # =============================================================================
 # UMZH Connect Sandbox - OPA Authorization Policies
 # =============================================================================
-# Main policy package for consent-centric authorization enforcement.
+# Main policy package for context-centric authorization enforcement.
 #
-# Scenario 1 — Consent-centric requests:
-# "Is the requesting client associated to the consent, and is the requested
-#  resource part of the service request graph referenced by that consent?"
+# Authorization model:
+# The access token carries a `fhirContext` claim (SMART v2) derived from
+# RFC 9396 `authorization_details` (type "umzh-connect-context").  The Consent
+# is no longer named by the token; instead OPA locates it by searching
+# `Consent?data=<fhirContext-ref>&status=active` and verifies the actor.
 #
-# Resource scope is derived dynamically from Consent.sourceReference → the
-# ServiceRequest.  All resources referenced by the SR's subject, requester,
-# reasonReference, supportingInfo, and insurance fields are considered in
-# scope.  provision.data is not used; performer is intentionally excluded
-# (the receiving organisation is a directory resource, already accessible
-# via Rule 6).
+# Rule 4 enforces cross-party reads:
+#   1. Resolve fhirContext reference → ServiceRequest/<id>
+#   2. Search Consent?data=ServiceRequest/<id>&status=active
+#   3. Verify provision.actor[].reference.reference == token.party_id (exact)
+#      and provision.period.end has not passed
+#   4. Fetch the ServiceRequest and compute its resource graph
+#   5. Permit if the requested resource is in the graph
 # =============================================================================
 
 package umzh.authz
@@ -38,13 +41,11 @@ http_status := 403 if { not allow }
 #   "resource_type": "Patient",
 #   "resource_id": "123",
 #   "token": {
-#     "party_id": "hospitalf",
+#     "party_id":     "http://localhost:8084/fhir/Organization/HospitalF",
 #     "smart_scopes": "system/Patient.r system/Task.cru ...",
-#     "scope": "openid consent:ConsentOrthopedicReferral"   # JWT scope claim
+#     "fhir_context": [{"reference": "ServiceRequest/sr-123"}]
 #   },
-#   "consent_id":  "",           # optional explicit override (legacy)
-#   "consent":     null,         # optional pre-resolved Consent resource
-#   "fhir_base":   "http://nginx-proxy:81/fhir/placer"   # used to fetch Consent + SR
+#   "fhir_base": "http://nginx-proxy:81/fhir/placer"
 # }
 # ---------------------------------------------------------------------------
 
@@ -74,15 +75,20 @@ allow if {
 }
 
 # ==========================================================================
-# Rule 4: Allow read of resources within the consent's service request graph
+# Rule 4: Allow read of resources within the fhirContext service-request graph
 # ==========================================================================
 allow if {
 	input.method == "GET"
 	input.resource_type != "Task"
 	input.resource_type != "QuestionnaireResponse"
 	has_smart_scope(input.resource_type, "r")
-	valid_consent
-	resource_in_consent_scope
+	# Per-context: there must be a ServiceRequest context that has its own
+	# valid Consent AND whose graph contains the requested resource.  Each
+	# fhirContext entry is paired with its own Consent — a Consent covering
+	# one context never grants access to another context's graph.
+	some sr_ref in fhir_context_sr_refs
+	consent_grants(sr_ref)
+	resource_in_graph(sr_ref)
 }
 
 # ==========================================================================
@@ -102,73 +108,82 @@ allow if {
 }
 
 # ==========================================================================
-# Consent resolution
+# fhirContext resolution
 # ==========================================================================
 
-# Branch 1: explicit consent_id field in input takes priority
-effective_consent_id := input.consent_id if {
-	input.consent_id != ""
+# All ServiceRequest references carried by the fhirContext claim.  A token may
+# bind to more than one workflow context — RFC 9396 authorization_details is an
+# array — so this is a set, and each entry is evaluated independently.
+fhir_context_sr_refs contains ref if {
+	some ctx in input.token.fhir_context
+	startswith(ctx.reference, "ServiceRequest/")
+	ref := ctx.reference
 }
 
-# Branch 2: extract consent:<id> from the JWT scope claim
-effective_consent_id := id if {
-	input.consent_id == ""
-	scope_parts := split(input.token.scope, " ")
-	some part in scope_parts
-	startswith(part, "consent:")
-	id := substring(part, count("consent:"), -1)
-	id != ""
-}
+# ==========================================================================
+# Consent resolution — search by fhirContext reference
+# ==========================================================================
 
-# Fetch the Consent resource from HAPI FHIR when not provided inline.
-# Requires input.fhir_base to be set by the calling gateway.
-# The result is cached within the evaluation by OPA's built-in http.send caching.
-fetched_consent := consent if {
-	effective_consent_id != ""
-	input.consent == null
-	input.fhir_base != ""
-	url := concat("/", [input.fhir_base, "Consent", effective_consent_id])
+# Search for active Consents whose provision.data references <sr_ref>.
+# Not cached: the Consent must be re-read live on every request so that
+# revocation (status=inactive) and expiry take effect immediately.
+consent_search(sr_ref) := resp if {
+	url := sprintf("%s/Consent?data=%s&status=active", [input.fhir_base, sr_ref])
 	resp := http.send({
 		"method":            "GET",
 		"url":               url,
 		"headers":           {"Accept": "application/fhir+json"},
 		"force_json_decode": true,
-		"cache":             true,
 	})
 	resp.status_code == 200
-	consent := resp.body
 }
 
-# Effective consent: prefer inline input, fall back to fetched.
-effective_consent := input.consent if {
-	input.consent != null
+# Normalise a FHIR date ("2026-06-15") or datetime ("2026-06-15T00:00:00Z") to
+# nanoseconds since epoch.  date.parse_rfc3339_ns requires a full RFC3339 string.
+_to_ns(s) := t if {
+	contains(s, "T")
+	t := time.parse_rfc3339_ns(s)
 }
 
-effective_consent := fetched_consent if {
-	input.consent == null
+_to_ns(s) := t if {
+	not contains(s, "T")
+	t := time.parse_rfc3339_ns(concat("", [s, "T00:00:00Z"]))
+}
+
+# Expiry test for a Consent.
+# A missing provision.period.end means the Consent is open-ended (never
+# expires) — only an end value that has actually passed makes it expired.
+consent_not_expired(consent) if {
+	not consent.provision.period.end
+}
+
+consent_not_expired(consent) if {
+	# Handles both date-only ("2026-06-15") and full RFC3339 end values.
+	time.now_ns() < _to_ns(consent.provision.period.end)
 }
 
 # ==========================================================================
-# Helper: Validate consent is active and issued to the requesting party
+# Helper: an active, non-expired Consent issued to this party covers <sr_ref>
 # ==========================================================================
-valid_consent if {
-	effective_consent.status == "active"
-	some performer in effective_consent.performer
-	# Case-insensitive check: party_id (e.g. "hospitalf") must be the suffix of
-	# the performer reference (e.g. "Organization/placer-HospitalF") to prevent
-	# substring bypass where "hospital" would match both HospitalF and HospitalP.
-	endswith(lower(performer.reference), lower(input.token.party_id))
+consent_grants(sr_ref) if {
+	resp := consent_search(sr_ref)
+	some entry in resp.body.entry
+	consent := entry.resource
+	consent.status == "active"
+	# Exact match: party_id must equal the actor's full Registry URL
+	some actor in consent.provision.actor
+	actor.reference.reference == input.token.party_id
+	consent_not_expired(consent)
 }
 
 # ==========================================================================
-# ServiceRequest graph — derive resource scope from Consent.sourceReference
+# ServiceRequest graph — derive resource scope from a fhirContext reference
 # ==========================================================================
 
-# Fetch the ServiceRequest referenced by Consent.sourceReference.
-# Cached for the lifetime of the OPA process.
-fetched_service_request := sr if {
-	effective_consent.sourceReference != null
-	url := concat("/", [input.fhir_base, effective_consent.sourceReference.reference])
+# Fetch the ServiceRequest named by <sr_ref>.  Cached: a ServiceRequest is
+# immutable for the lifetime of the workflow it anchors.
+fetched_service_request(sr_ref) := sr if {
+	url := concat("/", [input.fhir_base, sr_ref])
 	resp := http.send({
 		"method":            "GET",
 		"url":               url,
@@ -180,46 +195,28 @@ fetched_service_request := sr if {
 	sr := resp.body
 }
 
-# Collect all resource references from the ServiceRequest into a set.
-# performer is intentionally excluded — it is the receiving organisation, not
-# a clinical data resource, and is already accessible via Rule 6 (directory reads).
-
-service_request_refs contains ref if {
-	ref := fetched_service_request.subject.reference
-}
-
-service_request_refs contains ref if {
-	ref := fetched_service_request.requester.reference
-}
-
-service_request_refs contains ref if {
-	some item in fetched_service_request.reasonReference
-	ref := item.reference
-}
-
-service_request_refs contains ref if {
-	some item in fetched_service_request.supportingInfo
-	ref := item.reference
-}
-
-service_request_refs contains ref if {
-	some item in fetched_service_request.insurance
-	ref := item.reference
-}
-
-# The ServiceRequest itself is always in scope.
-service_request_refs contains ref if {
-	ref := effective_consent.sourceReference.reference
+# The set of resource references reachable from ServiceRequest <sr_ref>: the SR
+# itself plus everything its subject, requester, reasonReference, supportingInfo
+# and insurance fields point to.  performer is intentionally excluded — it is the
+# receiving organisation, already reachable via Rule 6 (directory reads).
+service_request_graph(sr_ref) := graph if {
+	sr := fetched_service_request(sr_ref)
+	graph := (
+		{sr_ref} |
+		{ref | ref := sr.subject.reference} |
+		{ref | ref := sr.requester.reference} |
+		{ref | some item in sr.reasonReference;  ref := item.reference} |
+		{ref | some item in sr.supportingInfo;   ref := item.reference} |
+		{ref | some item in sr.insurance;        ref := item.reference}
+	)
 }
 
 # ==========================================================================
-# Helper: Check that the requested resource is within the consent's scope
+# Helper: the requested resource lies within ServiceRequest <sr_ref>'s graph
 # ==========================================================================
-
-# Resource appears in the ServiceRequest graph
-resource_in_consent_scope if {
+resource_in_graph(sr_ref) if {
 	resource_ref := concat("/", [input.resource_type, input.resource_id])
-	some ref in service_request_refs
+	some ref in service_request_graph(sr_ref)
 	# endswith handles both relative ("Patient/X") and absolute URL references
 	endswith(ref, resource_ref)
 }
@@ -227,7 +224,7 @@ resource_in_consent_scope if {
 # Search operations with no specific resource_id pass the scope check.
 # The gateway always supplies a concrete _id on the external endpoint, so
 # this branch is unreachable from there but preserved for direct OPA calls.
-resource_in_consent_scope if {
+resource_in_graph(_) if {
 	input.resource_id == ""
 }
 
@@ -235,14 +232,12 @@ resource_in_consent_scope if {
 # Helper: Check if token carries the required SMART on FHIR scope
 # ==========================================================================
 has_smart_scope(resource, action) if {
-	scopes := split(input.token.smart_scopes, " ")
-	some scope in scopes
-	scope_parts := split(scope, "/")
-	count(scope_parts) == 2
-	resource_action := scope_parts[1]
-	ra_parts := split(resource_action, ".")
-	ra_parts[0] == resource
-	contains(ra_parts[1], action)
+	some scope in split(input.token.smart_scopes, " ")
+	parts := split(scope, "/")
+	count(parts) == 2
+	ra := split(parts[1], ".")
+	ra[0] == resource
+	contains(ra[1], action)
 }
 
 # ==========================================================================
@@ -267,7 +262,7 @@ decision := {
 	"party_id":      input.token.party_id,
 	"resource_type": input.resource_type,
 	"method":        input.method,
-	"consent_id":    effective_consent_id,
+	"fhir_context":  input.token.fhir_context,
 	"reason":        reason,
 }
 
@@ -284,9 +279,10 @@ reason := "Directory resource access granted" if {
 reason := "Resource access granted via valid consent" if {
 	not input.resource_type in {"Task", "Organization", "Practitioner", "PractitionerRole"}
 	allow
-	valid_consent
+	some sr_ref in fhir_context_sr_refs
+	consent_grants(sr_ref)
 }
 
-reason := "Access denied: insufficient scope, missing consent, or resource not in consent graph" if {
+reason := "Access denied: insufficient scope, missing or invalid consent, or resource not in context graph" if {
 	not allow
 }

@@ -95,30 +95,6 @@
         "display.on.consent.screen": "true",
         "consent.screen.text": "Create and update questionnaire responses"
       }
-    },
-    {
-      "name": "consent",
-      "description": "Dynamic consent scope \u2014 parameterized as consent:<consentId>. Adds consent_id claim to the access token for fine-grained policy enforcement at the remote API gateway.",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "false",
-        "is.dynamic.scope": "true",
-        "dynamic.scope.regexp": "consent:(.*)"
-      },
-      "protocolMappers": [
-        {
-          "name": "consent-id-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-allowed-dynamic-scope-mapper",
-          "config": {
-            "claim.name": "consent_id",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        }
-      ]
     }
   ],
   "clients": [
@@ -185,8 +161,7 @@
         "smart-task-write",
         "smart-servicerequest-read",
         "smart-clinical-read",
-        "smart-questionnaire-write",
-        "consent"
+        "smart-questionnaire-write"
       ],
       "protocolMappers": [
         {
@@ -195,8 +170,18 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "party_id",
-            "claim.value": "hospitalp",
+            "claim.value": "http://localhost:8084/fhir/Organization/HospitalP",
             "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "fhir-context-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "umzh-fhir-context-mapper",
+          "config": {
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
@@ -277,8 +262,7 @@
         "smart-servicerequest-read",
         "smart-clinical-read",
         "smart-patient-read",
-        "smart-questionnaire-write",
-        "consent"
+        "smart-questionnaire-write"
       ],
       "protocolMappers": [
         {
@@ -287,8 +271,18 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "party_id",
-            "claim.value": "hospitalf",
+            "claim.value": "http://localhost:8084/fhir/Organization/HospitalF",
             "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "fhir-context-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "umzh-fhir-context-mapper",
+          "config": {
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false"

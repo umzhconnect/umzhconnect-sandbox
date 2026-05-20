@@ -155,6 +155,7 @@ const buildInitialDraft = (resourceType: string): FhirResource | null => {
         scope: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/consentscope', code: 'patient-privacy' }] },
         category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'INFAUT' }] }],
         dateTime: new Date().toISOString(),
+        provision: { type: 'permit' },
       } as Consent;
 
     default:
@@ -1005,8 +1006,8 @@ const CreateConsentForm: React.FC<{
   registryBaseUrl: string;
 }> = ({ draft, setDraft, patients, serviceRequests, organizations, registryBaseUrl }) => {
   const patientId = extractIdFromRef(draft.patient?.reference);
-  const sourceRefId = extractIdFromRef(draft.sourceReference?.reference);
-  const performerId = extractIdFromRef(draft.performer?.[0]?.reference);
+  const dataRefId = extractIdFromRef(draft.provision?.data?.[0]?.reference?.reference);
+  const actorId = extractIdFromRef(draft.provision?.actor?.[0]?.reference?.reference);
   const scopeCode = draft.scope?.coding?.[0]?.code ?? '';
   const SCOPE_SYSTEM = 'http://terminology.hl7.org/CodeSystem/consentscope';
 
@@ -1071,21 +1072,21 @@ const CreateConsentForm: React.FC<{
         />
       </div>
 
+      <SectionHeader title="Provision" />
+
       <div>
-        <Label text="Source (ServiceRequest)" hint="optional — document that authorises the consent" />
+        <Label text="Data Reference (ServiceRequest)" hint="optional — ServiceRequest in scope of this consent" />
         <RefSelect
-          value={sourceRefId}
+          value={dataRefId}
           onChange={(id) =>
             setDraft({
               ...draft,
-              sourceReference: id
-                ? {
-                    reference: `ServiceRequest/${id}`,
-                    display: serviceRequests.find((sr) => sr.id === id)
-                      ? getSRLabel(serviceRequests.find((sr) => sr.id === id)!)
-                      : undefined,
-                  }
-                : undefined,
+              provision: {
+                ...draft.provision,
+                data: id
+                  ? [{ meaning: 'related', reference: { reference: `ServiceRequest/${id}` } }]
+                  : undefined,
+              },
             })
           }
           options={serviceRequests.map((sr) => ({ id: sr.id!, label: getSRLabel(sr) }))}
@@ -1095,13 +1096,21 @@ const CreateConsentForm: React.FC<{
       </div>
 
       <div>
-        <Label text="Performer (who may access)" hint="organisation that receives access" />
+        <Label text="Actor (authorized party)" hint="organisation that receives access" />
         <RefSelect
-          value={performerId}
+          value={actorId}
           onChange={(id) =>
             setDraft({
               ...draft,
-              performer: id ? [{ reference: `${registryBaseUrl}/Organization/${id}` }] : undefined,
+              provision: {
+                ...draft.provision,
+                actor: id
+                  ? [{
+                      role: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType', code: 'IRCP', display: 'information recipient' }] },
+                      reference: { reference: `${registryBaseUrl}/Organization/${id}` },
+                    }]
+                  : undefined,
+              },
             })
           }
           options={organizations.map((o) => ({ id: o.id!, label: getOrgLabel(o) }))}
@@ -1110,23 +1119,6 @@ const CreateConsentForm: React.FC<{
         />
       </div>
 
-      <SectionHeader title="Provision" />
-      <div>
-        <Label text="Type" />
-        <select
-          className={selectCls}
-          value={draft.provision?.type ?? 'permit'}
-          onChange={(e) =>
-            setDraft({
-              ...draft,
-              provision: { ...draft.provision, type: e.target.value },
-            })
-          }
-        >
-          <option value="deny">deny</option>
-          <option value="permit">permit</option>
-        </select>
-      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label text="Valid from" />

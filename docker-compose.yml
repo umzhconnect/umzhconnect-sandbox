@@ -23,12 +23,31 @@ services:
       - umzh-net
 
   # ===========================================================================
+  # Keycloak mapper builder — compiles the FhirContextMapper JAR once and
+  # places it in services/keycloak/providers/ for Keycloak to pick up.
+  # ===========================================================================
+  keycloak-mapper-build:
+    image: maven:3.9-eclipse-temurin-17
+    container_name: umzh-keycloak-mapper-build
+    volumes:
+      - ./services/keycloak/mapper:/app
+      - ./services/keycloak/providers:/providers
+      - keycloak_m2_cache:/root/.m2
+    working_dir: /app
+    command: >
+      sh -c "mvn -B package -DskipTests -q &&
+             cp target/umzh-fhir-context-mapper-*.jar /providers/ &&
+             echo 'FhirContextMapper JAR installed.'"
+    networks:
+      - umzh-net
+
+  # ===========================================================================
   # Keycloak - Authorization Server (shared by both parties)
   # ===========================================================================
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:26.6.1
     container_name: umzh-keycloak
-    command: start-dev --import-realm --features=dynamic-scopes
+    command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -44,13 +63,16 @@ services:
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+      - ./services/keycloak/providers:/opt/keycloak/providers
     ports:
       - '${KEYCLOAK_PORT}:8080'
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak-mapper-build:
+        condition: service_completed_successfully
     healthcheck:
-      # Keycloak 25 exposes /health/ready on the management port 9000
+      # Keycloak 26 exposes /health/ready on the management port 9000
       test:
         [
           'CMD-SHELL',
@@ -310,6 +332,7 @@ services:
       FHIR_BASE_URL: http://hapi-fhir:8080/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
+      REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
     volumes:
       - ./services/seed:/seed
     depends_on:
@@ -362,6 +385,7 @@ services:
 
 volumes:
   postgres_data:
+  keycloak_m2_cache:
 
 networks:
   umzh-net:

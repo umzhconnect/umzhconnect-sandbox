@@ -788,14 +788,6 @@
             "reference": "__REGISTRY_URL__/fhir/Organization/HospitalP"
           }
         ],
-        "performer": [
-          {
-            "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
-          }
-        ],
-        "sourceReference": {
-          "reference": "ServiceRequest/ReferralOrthopedicSurgery"
-        },
         "provision": {
           "type": "permit",
           "period": {
@@ -815,6 +807,14 @@
               },
               "reference": {
                 "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
+              }
+            }
+          ],
+          "data": [
+            {
+              "meaning": "related",
+              "reference": {
+                "reference": "ServiceRequest/ReferralOrthopedicSurgery"
               }
             }
           ]
@@ -860,14 +860,6 @@
             "reference": "__REGISTRY_URL__/fhir/Organization/HospitalP"
           }
         ],
-        "performer": [
-          {
-            "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
-          }
-        ],
-        "sourceReference": {
-          "reference": "ServiceRequest/ReferralTumorboard"
-        },
         "provision": {
           "type": "permit",
           "period": {
@@ -887,6 +879,14 @@
               },
               "reference": {
                 "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
+              }
+            }
+          ],
+          "data": [
+            {
+              "meaning": "related",
+              "reference": {
+                "reference": "ServiceRequest/ReferralTumorboard"
               }
             }
           ]

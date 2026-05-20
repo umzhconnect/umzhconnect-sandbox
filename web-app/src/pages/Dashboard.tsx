@@ -155,8 +155,8 @@ const CAPABILITIES = [
   },
   {
     icon: '🛡️',
-    title: 'Consent-gated cross-party FHIR access',
-    body: 'OPA policies enforce that cross-party reads are authorised by an active Consent resource. Consent ID travels in the M2M JWT via Keycloak dynamic scope consent:<id>.',
+    title: 'Context-centric cross-party FHIR access',
+    body: 'OPA enforces cross-party reads against an active Consent resource. The M2M token carries a fhirContext claim (SMART v2) derived from RFC 9396 authorization_details. OPA locates the Consent via Consent?data=ServiceRequest/<id>&status=active and verifies the actor.',
   },
   {
     icon: '🔑',
