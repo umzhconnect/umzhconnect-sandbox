@@ -10,7 +10,7 @@
 GET {{placer_url}}/fhir/Patient/PetraMeier
 HTTP 401
 
-GET {{fulfiller_url}}/fhir/Organization/fulfiller-HospitalF
+GET {{fulfiller_url}}/fhir/Task/TaskOrthopedicReferral
 HTTP 401
 
 
@@ -46,10 +46,9 @@ HTTP 404
 
 
 # --- Partition isolation: Placer internal cannot see Fulfiller-only data ---
-# Organization/fulfiller-HospitalF lives in the fulfiller partition only.
-# The placer partition has Organization/placer-HospitalF instead.
+# Task/TaskOrthopedicReferral lives in the fulfiller partition only.
 
-GET {{placer_url}}/fhir/Organization/fulfiller-HospitalF
+GET {{placer_url}}/fhir/Task/TaskOrthopedicReferral
 Authorization: Bearer {{placer_token}}
 HTTP 404
 

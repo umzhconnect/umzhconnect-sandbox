@@ -30,9 +30,9 @@ FULFILLER_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller)
 [ -z "$FULFILLER_TOKEN" ] && echo "  FATAL: could not acquire fulfiller token" && exit 1
 echo "  fulfiller M2M             OK"
 
-FULFILLER_CONSENT_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller ConsentOrthopedicReferral)
-[ -z "$FULFILLER_CONSENT_TOKEN" ] && echo "  FATAL: could not acquire fulfiller consent token" && exit 1
-echo "  fulfiller M2M + consent   OK"
+FULFILLER_CONTEXT_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller-context ReferralOrthopedicSurgery)
+[ -z "$FULFILLER_CONTEXT_TOKEN" ] && echo "  FATAL: could not acquire fulfiller context token" && exit 1
+echo "  fulfiller M2M + context   OK"
 
 PLACER_USER_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-user)
 [ -z "$PLACER_USER_TOKEN" ] && echo "  FATAL: could not acquire placer-user token" && exit 1
@@ -54,9 +54,16 @@ KRAKEND_PLACER_EXT_URL="${APISIX_PLACER_EXT_URL:-${KRAKEND_PLACER_EXT_URL:-http:
 KRAKEND_FULFILLER_URL="${APISIX_FULFILLER_URL:-${KRAKEND_FULFILLER_URL:-http://localhost:8082}}"
 KRAKEND_FULFILLER_EXT_URL="${APISIX_FULFILLER_EXT_URL:-${KRAKEND_FULFILLER_EXT_URL:-http://localhost:8083}}"
 HAPI_FHIR_URL="${HAPI_FHIR_URL:-http://localhost:8090}"
+REGISTRY_URL="${REGISTRY_URL:-http://localhost:8084}"
 OPA_PLACER_URL="${OPA_PLACER_URL:-http://localhost:8181}"
 OPA_FULFILLER_URL="${OPA_FULFILLER_URL:-http://localhost:8182}"
 RESEED_API_URL="${RESEED_API_URL:-http://localhost:9001}"
+
+# Consent validity window: now + 3 months (tests always refresh end dates)
+# Tries GNU date (Linux/CI), then BSD date (macOS), then falls back.
+CONSENT_END=$(date -d "+3 months" "+%Y-%m-%d" 2>/dev/null \
+  || date -v+3m "+%Y-%m-%d" 2>/dev/null \
+  || echo "2030-01-01")
 
 # -------------------------------------------------------------------
 # Step 4: Run each Hurl file in sequence
@@ -80,14 +87,16 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "fulfiller_url=$KRAKEND_FULFILLER_URL" \
         --variable "fulfiller_ext_url=$KRAKEND_FULFILLER_EXT_URL" \
         --variable "hapi_url=$HAPI_FHIR_URL" \
+        --variable "registry_url=$REGISTRY_URL" \
         --variable "opa_placer_url=$OPA_PLACER_URL" \
         --variable "opa_fulfiller_url=$OPA_FULFILLER_URL" \
         --variable "reseed_url=$RESEED_API_URL" \
         --variable "placer_token=$PLACER_TOKEN" \
         --variable "fulfiller_token=$FULFILLER_TOKEN" \
-        --variable "fulfiller_consent_token=$FULFILLER_CONSENT_TOKEN" \
+        --variable "fulfiller_context_token=$FULFILLER_CONTEXT_TOKEN" \
         --variable "placer_user_token=$PLACER_USER_TOKEN" \
         --variable "fulfiller_user_token=$FULFILLER_USER_TOKEN" \
+        --variable "consent_end=$CONSENT_END" \
         --report-junit "$REPORT_DIR/${test_name}.xml" \
         "$hurl_file"; then
         PASSED=$((PASSED + 1))

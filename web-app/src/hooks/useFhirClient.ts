@@ -9,12 +9,28 @@ import { useLog } from '../contexts/LogContext';
  */
 export function useFhirClient(): FhirClient {
   const { token } = useAuth();
-  const { apiBasePath } = useRole();
+  const { apiBasePath, activeRole } = useRole();
+  const { addLog } = useLog();
+
+  // Registry is public — never send an auth token to it.
+  const effectiveToken = activeRole === 'registry' ? undefined : token;
+
+  return useMemo(
+    () => new FhirClient(apiBasePath, effectiveToken, addLog),
+    [apiBasePath, effectiveToken, addLog]
+  );
+}
+
+/**
+ * Hook to get an unauthenticated FHIR client for the public Organization registry.
+ */
+export function useRegistryClient(): FhirClient {
+  const { registryBaseUrl } = useRole();
   const { addLog } = useLog();
 
   return useMemo(
-    () => new FhirClient(apiBasePath, token, addLog),
-    [apiBasePath, token, addLog]
+    () => new FhirClient(registryBaseUrl, undefined, addLog),
+    [registryBaseUrl, addLog]
   );
 }
 

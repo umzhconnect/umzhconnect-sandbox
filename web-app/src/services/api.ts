@@ -59,31 +59,3 @@ export async function createReferralWorkflow(
     task: createdTask,
   };
 }
-
-/**
- * Update task status and owner (Task state machine transition)
- */
-export async function updateTaskStatus(
-  client: FhirClient,
-  task: Task,
-  newStatus: string,
-  newOwner?: string,
-  onLog?: LogCallback
-): Promise<Task> {
-  onLog?.({
-    type: 'info',
-    message: `Updating Task/${task.id}: status=${newStatus}${newOwner ? `, owner=${newOwner}` : ''}`,
-  });
-
-  const updatedTask: Task = {
-    ...task,
-    status: newStatus,
-    lastModified: new Date().toISOString(),
-  };
-
-  if (newOwner) {
-    updatedTask.owner = { reference: newOwner };
-  }
-
-  return client.update(updatedTask);
-}

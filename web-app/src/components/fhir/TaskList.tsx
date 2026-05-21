@@ -15,7 +15,7 @@ interface TaggedTask extends Task {
 }
 
 const TaskList: React.FC = () => {
-  const { activeRole } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
@@ -53,19 +53,19 @@ const TaskList: React.FC = () => {
     if (!selectedTask) return;
     setSaving(true);
     try {
-      const updated: Task = {
-        ...selectedTask,
-        status: editStatus,
-        owner: editOwner ? { reference: editOwner } : selectedTask.owner,
-        lastModified: new Date().toISOString(),
-      };
-
       addLog({
         type: 'info',
-        message: `Updating Task/${selectedTask.id}: status=${editStatus}, owner=${editOwner}`,
+        message: `Patching Task/${selectedTask.id}: status=${editStatus}${editOwner ? `, owner=${editOwner}` : ''}`,
       });
 
-      const result = await client.update(updated);
+      const ops: Array<{ op: string; path: string; value: unknown }> = [
+        { op: 'replace', path: '/status', value: editStatus },
+      ];
+      if (editOwner) {
+        ops.push({ op: 'replace', path: '/owner', value: { reference: editOwner } });
+      }
+
+      const result = await client.patch<Task>('Task', selectedTask.id!, ops);
       setSelectedTask({ ...result, _source: selectedTask._source });
       queryClient.invalidateQueries({ queryKey: ['all-tasks', activeRole] });
     } catch (err) {
@@ -233,8 +233,8 @@ const TaskList: React.FC = () => {
                     onChange={(e) => setEditOwner(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   >
-                    <option value="Organization/HospitalP">Organization/HospitalP</option>
-                    <option value="Organization/HospitalF">Organization/HospitalF</option>
+                    <option value={`${registryBaseUrl}/Organization/HospitalP`}>HospitalP (Placer)</option>
+                    <option value={`${registryBaseUrl}/Organization/HospitalF`}>HospitalF (Fulfiller)</option>
                   </select>
                 </div>
                 <div>

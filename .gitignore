@@ -9,4 +9,6 @@ web-app/node_modules/
 web-app/dist/
 .claude/settings.local.json
 tests/reports/
+services/keycloak/mapper/target/
+services/keycloak/providers/*.jar
 

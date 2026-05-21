@@ -13,6 +13,21 @@ const TasksPage: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['all-tasks', activeRole] });
   };
 
+  if (activeRole === 'registry') {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Tasks</h2>
+          <p className="text-gray-500 mt-1">Tasks are party-specific and not part of the shared registry.</p>
+        </div>
+        <div className="card p-8 text-center text-gray-400 space-y-2">
+          <p className="text-sm">The Registry is a public mCSD directory containing Organizations and Endpoints.</p>
+          <p className="text-sm">Switch to <strong className="text-gray-600">HospitalP (Placer)</strong> or <strong className="text-gray-600">HospitalF (Fulfiller)</strong> to manage Tasks.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">

@@ -54,7 +54,8 @@ This is a reference implementation of a two-party healthcare order workflow (Pla
 | `apisix-placer-internal` / `apisix-fulfiller-internal` | APISIX 3.9.0 | Internal gateways (ports 8080/8082) for own web-app |
 | `apisix-placer-external` / `apisix-fulfiller-external` | APISIX 3.9.0 | External gateways (ports 8081/8083) for cross-party access |
 | `opa-placer` / `opa-fulfiller` | OPA 0.70.0 | Consent-based policy enforcement (Rego) |
-| `nginx-proxy` | nginx:alpine | Self-link URL rewriting (ports 80–83) |
+| `nginx-proxy` | nginx:alpine | Self-link URL rewriting (ports 80–84); port 84 = public registry gateway |
+| `reseed-api` | Node.js | Admin HTTP API to expunge + reload all FHIR seed data (port 9001) |
 | `postgres` | PostgreSQL 16 | Shared DB for HAPI FHIR + Keycloak |
 
 ### Dual-Gateway Pattern
@@ -68,8 +69,9 @@ Each hospital runs two APISIX gateways (standalone mode — YAML config, hot-rel
 Single HAPI instance with URL-based partitioning:
 - `/fhir/placer/` → HospitalP partition
 - `/fhir/fulfiller/` → HospitalF partition
+- `/fhir/registry/` → mCSD registry partition (public, no auth — served via nginx port 84 → host port 8084)
 
-Cross-partition references use absolute URLs configured at seed time. Resource IDs are partition-scoped (e.g., `Organization/placer-HospitalP`).
+Organization resources live only in the registry partition. Both party partitions reference Organizations via absolute registry URLs (`__REGISTRY_URL__/fhir/Organization/HospitalX`). Cross-partition references use absolute URLs configured at seed time via environment variable substitution.
 
 ### URL Rewriting Chain
 
@@ -106,7 +108,9 @@ Keycloak admin: `admin/admin` at http://localhost:8180/admin
 - HAPI FHIR direct: http://localhost:8090
 - Placer internal/external: http://localhost:8080 / :8081
 - Fulfiller internal/external: http://localhost:8082 / :8083
+- Registry (public): http://localhost:8084
 - OPA Placer/Fulfiller: http://localhost:8181 / :8182
+- Reseed API: http://localhost:9001
 
 ### Test Suite
 

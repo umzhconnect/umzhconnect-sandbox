@@ -54,7 +54,7 @@ routes:
   # ─── Task update — JWT only, no OPA ──────────────────────────────────
   - id: ext-task-update
     uri: /fhir/Task/*
-    methods: [PUT]
+    methods: [PATCH]
     priority: 10
     upstream_id: hapi-${PARTY}
     plugins:
@@ -131,7 +131,7 @@ global_rules:
       cors:
         allow_origins: "**"
         allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-        allow_headers: "Authorization,Content-Type,Accept,X-Tenant,X-Consent-Id"
+        allow_headers: "Authorization,Content-Type,Accept,X-Tenant"
         expose_headers: "Content-Length,Content-Type"
         max_age: 43200
         allow_credential: true

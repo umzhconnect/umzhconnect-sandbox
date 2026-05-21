@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import { useFhirClient } from '../../hooks/useFhirClient';
-import { useAllTasks, useFhirSearch } from '../../hooks/useFhirSearch';
-import type { Bundle, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
+import { useAllTasks, useRegistrySearch } from '../../hooks/useFhirSearch';
+import type { Bundle, Endpoint, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
 import JsonViewer from '../common/JsonViewer';
 import LoadingSpinner from '../common/LoadingSpinner';
 import StatusBadge from '../common/StatusBadge';
@@ -204,16 +204,25 @@ const WizardTaskSelectModal: React.FC<{
 // ---------------------------------------------------------------------------
 
 const WorkflowWizard: React.FC = () => {
-  const { activeRole, partnerExternalBaseUrl } = useRole();
+  const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const queryClient = useQueryClient();
 
-  const { data: orgBundle } = useFhirSearch<Organization>('Organization', {});
-  const organizations = (orgBundle?.entry?.map((e) => e.resource).filter(Boolean) as Organization[]) ?? [];
-  const partnerOrigin = new URL(partnerExternalBaseUrl).origin;
-  const partnerOrg = organizations.find((o) =>
-    o.meta?.tag?.some((tag) => tag.system === 'urn:umzh:api:external-host' && tag.code === partnerOrigin)
+  const { data: registryBundle } = useRegistrySearch<FhirResource>(
+    'Organization',
+    { '_include': 'Organization:endpoint' }
+  );
+  const organizations = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Organization => r?.resourceType === 'Organization')) ?? [];
+  const endpoints = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Endpoint => r?.resourceType === 'Endpoint')) ?? [];
+  const partnerAlias = activeRole === 'placer' ? 'HospitalF' : 'HospitalP';
+  const partnerOrg = organizations.find((o) => o.alias?.includes(partnerAlias));
+  const partnerEndpoint = endpoints.find((ep) =>
+    ep.managingOrganization?.reference?.endsWith(`/Organization/${partnerAlias}`)
   );
 
   const [step, setStep] = useState(0);
@@ -228,7 +237,7 @@ const WorkflowWizard: React.FC = () => {
     type: string;
     draft: Record<string, unknown>;
   }>({ open: false, type: '', draft: {} });
-  const [taskModal, setTaskModal] = useState({ open: false, srId: '', consentId: '' });
+  const [taskModal, setTaskModal] = useState({ open: false, srId: '' });
   const [updateModal, setUpdateModal] = useState<{
     open: boolean;
     resource: FhirResource | null;
@@ -243,11 +252,11 @@ const WorkflowWizard: React.FC = () => {
     },
     {
       title: 'Step 2: Create Consent',
-      description: 'Open a Consent form linked to the ServiceRequest created in step 1.',
+      description: 'Create a Consent with actor (fulfiller) and data reference to the ServiceRequest.',
     },
     {
       title: 'Step 3: Create Task at Fulfiller',
-      description: 'Open the Task form with SR and Consent pre-selected.',
+      description: 'Create a Task at the Fulfiller referencing the ServiceRequest.',
     },
   ];
 
@@ -365,43 +374,43 @@ const WorkflowWizard: React.FC = () => {
           draft: {
             status: 'active',
             patient: { reference: patientRef, display: patientDisplay },
-            ...(srId && { sourceReference: { reference: `ServiceRequest/${srId}` } }),
-            ...(partnerOrg?.id && { performer: [{ reference: `Organization/${partnerOrg.id}` }] }),
             dateTime: new Date().toISOString(),
             provision: {
               type: 'permit',
               period: {
                 start: new Date().toISOString().split('T')[0],
-                end: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
+                end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
                   .toISOString()
                   .split('T')[0],
               },
+              // actor: the fulfiller — OPA exact-matches token.party_id against this
+              ...(partnerOrg && {
+                actor: [
+                  {
+                    role: {
+                      coding: [
+                        {
+                          system: 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType',
+                          code: 'IRCP',
+                          display: 'information recipient',
+                        },
+                      ],
+                    },
+                    reference: { reference: `${registryBaseUrl}/Organization/${partnerAlias}` },
+                  },
+                ],
+              }),
+              // data: the ServiceRequest — OPA finds this Consent via Consent?data=SR/<id>
+              ...(srId && {
+                data: [{ meaning: 'related', reference: { reference: `ServiceRequest/${srId}` } }],
+              }),
             },
           },
         });
       } else if (step === 2) {
         const sr = results['step-0'] as ServiceRequest | undefined;
-        const consent = results['step-1'] as FhirResource | undefined;
 
-        // Synchronously inject the newly-created Consent (and SR) into cache
-        // so the Task modal's dropdowns are pre-selected on first render.
-        if (consent) {
-          queryClient.setQueryData<Bundle>(
-            ['fhir', activeRole, 'Consent', {}],
-            (old): Bundle => {
-              const entry = { resource: consent };
-              if (!old) {
-                return { resourceType: 'Bundle', type: 'searchset', total: 1, entry: [entry] };
-              }
-              if (old.entry?.some((e) => e.resource?.id === consent.id)) return old;
-              return {
-                ...old,
-                total: (old.total ?? 0) + 1,
-                entry: [...(old.entry ?? []), entry],
-              };
-            }
-          );
-        }
+        // Inject the SR into cache so the Task modal's dropdown is pre-selected.
         if (sr) {
           queryClient.setQueryData<Bundle>(
             ['fhir', activeRole, 'ServiceRequest', {}],
@@ -420,11 +429,7 @@ const WorkflowWizard: React.FC = () => {
           );
         }
 
-        setTaskModal({
-          open: true,
-          srId: sr?.id ?? '',
-          consentId: consent?.id ?? '',
-        });
+        setTaskModal({ open: true, srId: sr?.id ?? '' });
       }
 
     } else {
@@ -437,7 +442,7 @@ const WorkflowWizard: React.FC = () => {
 
       } else if (step === 1) {
         // Load content: replicate TaskList's "Load Content" button logic exactly.
-        // Builds an _include search URL and forwards the X-Consent-Id header.
+        // Builds an _include search URL for the ServiceRequest graph.
         const task = results['step-0'] as TaggedTask | undefined;
         const ref = task?.basedOn?.[0]?.reference;
         if (!ref) {
@@ -458,15 +463,7 @@ const WorkflowWizard: React.FC = () => {
             `&_include=ServiceRequest:subject:Patient` +
             `&_include=ServiceRequest:requester:Practitioner`;
 
-          // Consent ID lives in meta.security (system: 'urn:umzh:consent:id')
-          const consentId = task?.meta?.security?.find(
-            (s) => s.system === 'urn:umzh:consent:id'
-          )?.code;
-
-          const data = await client.fetchAbsolute<FhirResource>(
-            searchUrl,
-            consentId ? { 'X-Consent-Id': consentId } : undefined
-          );
+          const data = await client.fetchAbsolute<FhirResource>(searchUrl);
 
           setPendingResult(data);
           setViewModal({ open: true, title: 'Step 2 — ServiceRequest Content (read-only)' });
@@ -512,7 +509,7 @@ const WorkflowWizard: React.FC = () => {
 
   const handleTaskSuccess = (resource: FhirResource) => {
     advanceStep(resource);
-    setTaskModal({ open: false, srId: '', consentId: '' });
+    setTaskModal({ open: false, srId: '' });
   };
 
   const handleViewContinue = () => {
@@ -633,8 +630,7 @@ const WorkflowWizard: React.FC = () => {
       <CreateTaskModal
         open={taskModal.open}
         defaultSRId={taskModal.srId}
-        defaultConsentId={taskModal.consentId}
-        onClose={() => setTaskModal({ open: false, srId: '', consentId: '' })}
+        onClose={() => setTaskModal({ open: false, srId: '' })}
         onSuccess={() => {}}
         onSuccessResource={handleTaskSuccess}
       />

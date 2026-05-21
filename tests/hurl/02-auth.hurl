@@ -38,18 +38,31 @@ jsonpath "$.access_token" exists
 jsonpath "$.token_type" == "Bearer"
 
 
-# --- Fulfiller with consent dynamic scope ---
+# --- Fulfiller with RFC 9396 authorization_details (fhirContext) ---
 
 POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
 [FormParams]
 grant_type: client_credentials
 client_id: fulfiller-client
 client_secret: fulfiller-secret-2025
-scope: smart-patient-read consent:ConsentOrthopedicReferral
+scope: smart-patient-read smart-servicerequest-read
+authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralOrthopedicSurgery"}]
 HTTP 200
+[Captures]
+fulfiller_context_token: jsonpath "$.access_token"
 [Asserts]
 jsonpath "$.access_token" exists
-jsonpath "$.scope" contains "consent:ConsentOrthopedicReferral"
+
+# party_id must be the full Registry URL, not a short name
+POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token/introspect
+[FormParams]
+token: {{fulfiller_context_token}}
+client_id: fulfiller-client
+client_secret: fulfiller-secret-2025
+HTTP 200
+[Asserts]
+jsonpath "$.active" == true
+jsonpath "$.party_id" contains "/fhir/Organization/HospitalF"
 
 
 # --- Password grant: placer-user ---
@@ -100,4 +113,4 @@ client_id: web-app
 username: placer-user
 password: wrongpassword
 scope: openid
-HTTP 401
+HTTP 400

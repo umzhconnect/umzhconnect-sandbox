@@ -10,7 +10,7 @@ import rego.v1
 #       "method":  "GET",
 #       "path":    "/fhir/ServiceRequest",     # no query string
 #       "query":   {"_id": "ReferralOrthopedicSurgery"},
-#       "headers": {"x-access-token": "...", ...}
+#       "headers": {"authorization": "Bearer ...", ...}
 #     }
 #   }
 # }
@@ -79,10 +79,8 @@ allow if {
 		"token": {
 			"party_id":     object.get(jwt_payload, "party_id", ""),
 			"smart_scopes": object.get(jwt_payload, "smart_scopes", ""),
-			"scope":        object.get(jwt_payload, "scope", ""),
+			"fhir_context": object.get(jwt_payload, "fhirContext", []),
 		},
-		"consent_id": "",
-		"consent":    null,
-		"fhir_base":  fhir_base,
+		"fhir_base": fhir_base,
 	}
 }

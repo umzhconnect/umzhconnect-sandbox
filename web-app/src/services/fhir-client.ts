@@ -242,6 +242,54 @@ export class FhirClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Patch a resource (RFC 6902 JSON Patch)
+  // ---------------------------------------------------------------------------
+  async patch<T extends FhirResource>(
+    resourceType: string,
+    id: string,
+    ops: Array<{ op: string; path: string; value?: unknown }>
+  ): Promise<T> {
+    const url = `${this.basePath}/${resourceType}/${id}`;
+    const headers = this.getHeaders({ 'Content-Type': 'application/json-patch+json' });
+
+    this.log({ type: 'request', method: 'PATCH', url, headers, body: ops });
+
+    const start = Date.now();
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(ops),
+      });
+      const body = await response.json();
+      const duration = Date.now() - start;
+
+      this.log({
+        type: response.ok ? 'response' : 'error',
+        method: 'PATCH',
+        url,
+        status: response.status,
+        body,
+        duration,
+      });
+
+      if (!response.ok) {
+        throw new Error(`FHIR patch failed: ${response.status}`);
+      }
+
+      return body as T;
+    } catch (error) {
+      this.log({
+        type: 'error',
+        method: 'PATCH',
+        url,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // POST to a non-standard action endpoint (e.g. /api/actions/create-task)
   // Path is resolved relative to the gateway origin (not the FHIR base path).
   // ---------------------------------------------------------------------------
