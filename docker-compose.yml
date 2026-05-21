@@ -33,9 +33,11 @@ services:
       - ./services/keycloak/mapper:/app
       - ./services/keycloak/providers:/providers
       - keycloak_m2_cache:/root/.m2
+    environment:
+      MAVEN_FLAGS: ${MAVEN_FLAGS:-}
     working_dir: /app
     command: >
-      sh -c "mvn -B package -DskipTests -q &&
+      sh -c "mvn -B package -DskipTests -q $MAVEN_FLAGS &&
              cp target/umzh-fhir-context-mapper-*.jar /providers/ &&
              echo 'FhirContextMapper JAR installed.'"
     networks:
@@ -185,7 +187,7 @@ services:
   #   apisix-fulfiller-external (external) — consumed by placer to read fulfiller data
   # ===========================================================================
   apisix-placer-internal:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.16.0-debian
     container_name: umzh-apisix-placer-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -196,11 +198,13 @@ services:
       OWN_URL: "http://localhost:${APISIX_PLACER_PORT}"
       CLIENT_ID: "${PLACER_CLIENT_ID}"
       CLIENT_SECRET: "${PLACER_CLIENT_SECRET}"
+      KEYCLOAK_URL: "${KEYCLOAK_URL}"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
+      - ./services/apisix/plugins/m2m_token.lua:/usr/local/apisix/apisix/plugins/m2m_token.lua:ro
     ports:
       - '${APISIX_PLACER_PORT}:9080'
     depends_on:
@@ -223,7 +227,7 @@ services:
       - umzh-net
 
   apisix-placer-external:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.16.0-debian
     container_name: umzh-apisix-placer-external
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -253,7 +257,7 @@ services:
       - umzh-net
 
   apisix-fulfiller-internal:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.16.0-debian
     container_name: umzh-apisix-fulfiller-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -264,11 +268,13 @@ services:
       OWN_URL: "http://localhost:${APISIX_FULFILLER_PORT}"
       CLIENT_ID: "${FULFILLER_CLIENT_ID}"
       CLIENT_SECRET: "${FULFILLER_CLIENT_SECRET}"
+      KEYCLOAK_URL: "${KEYCLOAK_URL}"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
+      - ./services/apisix/plugins/m2m_token.lua:/usr/local/apisix/apisix/plugins/m2m_token.lua:ro
     ports:
       - '${APISIX_FULFILLER_PORT}:9080'
     depends_on:
@@ -291,7 +297,7 @@ services:
       - umzh-net
 
   apisix-fulfiller-external:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.16.0-debian
     container_name: umzh-apisix-fulfiller-external
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -372,6 +378,8 @@ services:
     build:
       context: ./web-app
       dockerfile: Dockerfile
+      args:
+        NPM_FLAGS: ${NPM_FLAGS:-}
     container_name: umzh-web-app
     ports:
       - '${WEB_APP_PORT}:80'

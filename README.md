@@ -121,10 +121,10 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 | `nginx-proxy` | `nginx:alpine` | 8084 | Self-link rewriting proxy (ports 80–83); port 84 = public registry gateway |
 | `opa-placer` | `openpolicyagent/opa:0.70.0` | 8181 | Policy engine for HospitalP |
 | `opa-fulfiller` | `openpolicyagent/opa:0.70.0` | 8182 | Policy engine for HospitalF |
-| `apisix-placer-internal` | `apache/apisix:3.9.0-debian` | 8080 | Internal API gateway for HospitalP |
-| `apisix-placer-external` | `apache/apisix:3.9.0-debian` | 8081 | External API gateway for HospitalP |
-| `apisix-fulfiller-internal` | `apache/apisix:3.9.0-debian` | 8082 | Internal API gateway for HospitalF |
-| `apisix-fulfiller-external` | `apache/apisix:3.9.0-debian` | 8083 | External API gateway for HospitalF |
+| `apisix-placer-internal` | `apache/apisix:3.16.0-debian` | 8080 | Internal API gateway for HospitalP |
+| `apisix-placer-external` | `apache/apisix:3.16.0-debian` | 8081 | External API gateway for HospitalP |
+| `apisix-fulfiller-internal` | `apache/apisix:3.16.0-debian` | 8082 | Internal API gateway for HospitalF |
+| `apisix-fulfiller-external` | `apache/apisix:3.16.0-debian` | 8083 | External API gateway for HospitalF |
 | `seed-loader` | custom | — | Init container (loads FHIR data) |
 | `reseed-api` | Node.js | 9001 | Admin HTTP API to expunge + reload FHIR seed data |
 | `web-app` | Node 20 + Nginx | 3000 | React SPA |

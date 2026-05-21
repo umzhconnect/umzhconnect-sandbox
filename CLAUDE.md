@@ -51,8 +51,8 @@ This is a reference implementation of a two-party healthcare order workflow (Pla
 | `web-app` | React 18 + TypeScript + Vite | Dual-role SPA (switch Placer/Fulfiller in UI) |
 | `hapi-fhir` | HAPI FHIR v7.4.0 | Single FHIR server with URL-based multi-tenancy |
 | `keycloak` | Keycloak 25.0 | OAuth2/OIDC authorization server |
-| `apisix-placer-internal` / `apisix-fulfiller-internal` | APISIX 3.9.0 | Internal gateways (ports 8080/8082) for own web-app |
-| `apisix-placer-external` / `apisix-fulfiller-external` | APISIX 3.9.0 | External gateways (ports 8081/8083) for cross-party access |
+| `apisix-placer-internal` / `apisix-fulfiller-internal` | APISIX 3.16.0 | Internal gateways (ports 8080/8082) for own web-app |
+| `apisix-placer-external` / `apisix-fulfiller-external` | APISIX 3.16.0 | External gateways (ports 8081/8083) for cross-party access |
 | `opa-placer` / `opa-fulfiller` | OPA 0.70.0 | Consent-based policy enforcement (Rego) |
 | `nginx-proxy` | nginx:alpine | Self-link URL rewriting (ports 80–84); port 84 = public registry gateway |
 | `reseed-api` | Node.js | Admin HTTP API to expunge + reload all FHIR seed data (port 9001) |
@@ -90,8 +90,9 @@ APISIX policy enforcement uses the built-in `opa` plugin plus a custom `umzh-rol
 
 - `.env` — ports, credentials, OAuth client secrets, gateway URLs
 - `docker-compose.yml` — all service definitions with env-var substitution
-- `services/apisix/{placer,fulfiller}-{internal,external}/apisix.yaml` — route + plugin config per gateway instance
-- `services/apisix/{placer,fulfiller}-{internal,external}/config.yaml` — APISIX global config (plugin list, nginx snippets)
+- `services/apisix/{internal,external}/apisix.yaml` — shared route + plugin config template (rendered per gateway by `entrypoint.sh` substituting `PARTY`, `PARTNER`, `NGINX_OWN_PORT`, `PARTNER_EXTERNAL_URL`, `OWN_URL`)
+- `services/apisix/{internal,external}/config.yaml` — APISIX global config (plugin list, nginx snippets)
+- `services/apisix/plugins/` — custom Lua: `umzh-role-check.lua` (APISIX plugin) and `m2m_token.lua` (helper module loaded via `require()`)
 - `services/opa/config-{placer,fulfiller}.json` — per-party OPA data (fhir_base, required_role) read by `apisix.rego`
 - `services/keycloak/realm-export.json` — full realm config including `consent:*` dynamic scopes
 - `services/hapi-fhir/application.yaml` — FHIR R4 multitenancy, partitioning, CORS

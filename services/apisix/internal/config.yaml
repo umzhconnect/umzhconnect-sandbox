@@ -6,11 +6,11 @@ nginx_config:
   main_configuration_snippet: |
     env CLIENT_ID;
     env CLIENT_SECRET;
+    env KEYCLOAK_URL;
 
 plugins:
   - cors
   - openid-connect
-  - opa
   - proxy-rewrite
   - response-rewrite
   - serverless-pre-function

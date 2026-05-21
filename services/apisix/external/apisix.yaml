@@ -1,3 +1,15 @@
+plugin_configs:
+  - id: oidc-jwt
+    plugins:
+      openid-connect:
+        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: false
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+
 routes:
   # ─── Health check ────────────────────────────────────────────────────
   - id: health
@@ -15,39 +27,14 @@ routes:
               return ngx.exit(200)
             end
 
-  # ─── Task list — JWT only, no OPA (workflow resource) ────────────────
-  - id: ext-task-list
+  # ─── Task (list + create) — JWT only, no OPA (workflow resource) ──────
+  - id: ext-task
     uri: /fhir/Task
-    methods: [GET]
+    methods: [GET, POST]
     priority: 10
     upstream_id: hapi-${PARTY}
+    plugin_config_id: oidc-jwt
     plugins:
-      openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
-        bearer_only: true
-        use_jwks: true
-        set_access_token_header: true
-        set_userinfo_header: false
-        client_id: "unused"
-        client_secret: "unused"
-      proxy-rewrite:
-        uri: /fhir/${PARTY}/Task
-
-  # ─── Task create — JWT only, no OPA ──────────────────────────────────
-  - id: ext-task-create
-    uri: /fhir/Task
-    methods: [POST]
-    priority: 10
-    upstream_id: hapi-${PARTY}
-    plugins:
-      openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
-        bearer_only: true
-        use_jwks: true
-        set_access_token_header: true
-        set_userinfo_header: false
-        client_id: "unused"
-        client_secret: "unused"
       proxy-rewrite:
         uri: /fhir/${PARTY}/Task
 
@@ -57,15 +44,8 @@ routes:
     methods: [PATCH]
     priority: 10
     upstream_id: hapi-${PARTY}
+    plugin_config_id: oidc-jwt
     plugins:
-      openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
-        bearer_only: true
-        use_jwks: true
-        set_access_token_header: true
-        set_userinfo_header: false
-        client_id: "unused"
-        client_secret: "unused"
       proxy-rewrite:
         regex_uri: ["^/fhir/Task/(.+)$", "/fhir/${PARTY}/Task/$1"]
 
@@ -79,15 +59,8 @@ routes:
         - "^/fhir/[^/]+/[^/]+$"
     priority: 5
     upstream_id: hapi-${PARTY}
+    plugin_config_id: oidc-jwt
     plugins:
-      openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
-        bearer_only: true
-        use_jwks: true
-        set_access_token_header: true
-        set_userinfo_header: false
-        client_id: "unused"
-        client_secret: "unused"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"
@@ -104,15 +77,8 @@ routes:
         - "^/fhir/[^/]+/?$"
     priority: 1
     upstream_id: hapi-${PARTY}
+    plugin_config_id: oidc-jwt
     plugins:
-      openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
-        bearer_only: true
-        use_jwks: true
-        set_access_token_header: true
-        set_userinfo_header: false
-        client_id: "unused"
-        client_secret: "unused"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"
