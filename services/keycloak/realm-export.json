@@ -165,11 +165,11 @@
       ],
       "protocolMappers": [
         {
-          "name": "party-id-mapper",
+          "name": "org-reference-mapper",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
-            "claim.name": "party_id",
+            "claim.name": "extensions.umzhconnect.organization_reference",
             "claim.value": "http://localhost:8084/fhir/Organization/HospitalP",
             "jsonType.label": "String",
             "id.token.claim": "false",
@@ -182,19 +182,6 @@
           "protocol": "openid-connect",
           "protocolMapper": "umzh-fhir-context-mapper",
           "config": {
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
-          "name": "party-name-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "party_name",
-            "claim.value": "HospitalP",
-            "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
@@ -266,11 +253,11 @@
       ],
       "protocolMappers": [
         {
-          "name": "party-id-mapper",
+          "name": "org-reference-mapper",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
-            "claim.name": "party_id",
+            "claim.name": "extensions.umzhconnect.organization_reference",
             "claim.value": "http://localhost:8084/fhir/Organization/HospitalF",
             "jsonType.label": "String",
             "id.token.claim": "false",
@@ -283,19 +270,6 @@
           "protocol": "openid-connect",
           "protocolMapper": "umzh-fhir-context-mapper",
           "config": {
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
-          "name": "party-name-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "party_name",
-            "claim.value": "HospitalF",
-            "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false"

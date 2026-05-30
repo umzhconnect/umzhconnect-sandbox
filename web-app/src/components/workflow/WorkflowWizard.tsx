@@ -383,7 +383,7 @@ const WorkflowWizard: React.FC = () => {
                   .toISOString()
                   .split('T')[0],
               },
-              // actor: the fulfiller — OPA exact-matches token.party_id against this
+              // actor: the fulfiller — OPA exact-matches token.organization_reference against this
               ...(partnerOrg && {
                 actor: [
                   {

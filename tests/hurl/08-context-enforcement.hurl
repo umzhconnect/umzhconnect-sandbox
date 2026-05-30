@@ -11,7 +11,7 @@
 #
 # OPA resolves the Consent by searching
 #   GET /Consent?data=ServiceRequest/<id>&status=active
-# and verifies provision.actor[].reference.reference == token.party_id (exact).
+# and verifies provision.actor[].reference.reference == token.organization_reference (exact).
 #
 # ReferralOrthopedicSurgery graph includes:
 #   Patient/PetraMeier, Condition/SuspectedACLRupture,
