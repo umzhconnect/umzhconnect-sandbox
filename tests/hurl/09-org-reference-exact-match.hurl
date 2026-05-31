@@ -29,7 +29,7 @@ Content-Type: application/json
     "resource_id": "",
     "token": {
       "organization_reference": "http://localhost:8084/fhir/Organization/Hospital",
-      "smart_scopes": "system/Patient.r",
+      "scope": "system/Patient.r",
       "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery", "type": "ServiceRequest"}]
     },
     "fhir_base": "http://nginx-proxy:81/fhir/placer"
@@ -55,7 +55,7 @@ Content-Type: application/json
     "resource_id": "",
     "token": {
       "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-      "smart_scopes": "system/Patient.r",
+      "scope": "system/Patient.r",
       "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery", "type": "ServiceRequest"}]
     },
     "fhir_base": "http://nginx-proxy:81/fhir/placer"

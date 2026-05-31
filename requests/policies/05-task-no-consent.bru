@@ -23,8 +23,7 @@ body:json {
       "resource_id": "placer-TaskOrthopedicReferral",
       "token": {
         "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-        "smart_scopes": "system/Task.cru",
-        "scope": "openid smart-task-write"
+        "scope": "system/Task.cru"
       },
       "consent_id": "",
       "consent": null,
@@ -35,7 +34,7 @@ body:json {
 
 docs {
   Demonstrates Rule 1: Task operations are owner-based and do not require a
-  consent scope in the JWT. Any party with system/Task.cru in smart_scopes
+  consent scope in the JWT. Any party with system/Task.cru in scope
   can read Tasks.
 
   Returns reason: "Task operations are owner-based, no consent needed"

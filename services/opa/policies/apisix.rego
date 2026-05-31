@@ -78,7 +78,7 @@ allow if {
 		"resource_id":   resource_id,
 		"token": {
 			"organization_reference": object.get(object.get(object.get(jwt_payload, "extensions", {}), "umzhconnect", {}), "organization_reference", ""),
-			"smart_scopes":           object.get(jwt_payload, "smart_scopes", ""),
+			"scope":                  object.get(jwt_payload, "scope", ""),
 			"fhir_context":           object.get(jwt_payload, "fhirContext", []),
 		},
 		"fhir_base": fhir_base,

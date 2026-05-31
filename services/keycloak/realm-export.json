@@ -40,21 +40,7 @@
         "display.on.consent.screen": "true",
         "consent.screen.text": "Read patient demographic data"
       },
-      "protocolMappers": [
-        {
-          "name": "smart-scope-patient-read",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "scope",
-            "claim.value": "system/Patient.r",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        }
-      ]
+      "protocolMappers": []
     },
     {
       "name": "smart-task-write",
@@ -95,6 +81,142 @@
         "display.on.consent.screen": "true",
         "consent.screen.text": "Create and update questionnaire responses"
       }
+    },
+    {
+      "name": "system/Task.cru",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/ServiceRequest.rs",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/ServiceRequest.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Patient.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Condition.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/MedicationStatement.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/AllergyIntolerance.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Coverage.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Observation.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Procedure.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Immunization.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/DiagnosticReport.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/QuestionnaireResponse.cru",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/ImagingStudy.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Organization.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Practitioner.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/PractitionerRole.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
     }
   ],
   "clients": [
@@ -156,7 +278,21 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "defaultClientScopes": [],
+      "defaultClientScopes": [
+        "system/Task.cru",
+        "system/ServiceRequest.rs",
+        "system/Patient.r",
+        "system/Condition.r",
+        "system/MedicationStatement.r",
+        "system/AllergyIntolerance.r",
+        "system/Coverage.r",
+        "system/Observation.r",
+        "system/Procedure.r",
+        "system/Immunization.r",
+        "system/DiagnosticReport.r",
+        "system/QuestionnaireResponse.cru",
+        "system/ImagingStudy.r"
+      ],
       "optionalClientScopes": [
         "smart-task-write",
         "smart-servicerequest-read",
@@ -194,19 +330,6 @@
           "config": {
             "claim.name": "tenant",
             "claim.value": "placer",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
-          "name": "smart-scopes-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/ImagingStudy.r",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -243,7 +366,24 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "defaultClientScopes": [],
+      "defaultClientScopes": [
+        "system/Task.cru",
+        "system/ServiceRequest.r",
+        "system/Patient.r",
+        "system/Condition.r",
+        "system/MedicationStatement.r",
+        "system/AllergyIntolerance.r",
+        "system/Coverage.r",
+        "system/Observation.r",
+        "system/Procedure.r",
+        "system/Immunization.r",
+        "system/DiagnosticReport.r",
+        "system/QuestionnaireResponse.cru",
+        "system/ImagingStudy.r",
+        "system/Organization.r",
+        "system/Practitioner.r",
+        "system/PractitionerRole.r"
+      ],
       "optionalClientScopes": [
         "smart-task-write",
         "smart-servicerequest-read",
@@ -289,19 +429,6 @@
           }
         },
         {
-          "name": "smart-scopes-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r system/ImagingStudy.r",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
           "name": "realm-roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
@@ -315,12 +442,11 @@
           }
         }
       ]
-    }
-    ,
+    },
     {
       "clientId": "placer-client-l2",
-      "name": "Placer (HospitalP) Machine Client — Level 2",
-      "description": "M2M client for HospitalP — private_key_jwt baseline",
+      "name": "Placer (HospitalP) Machine Client \u2014 Level 2",
+      "description": "M2M client for HospitalP \u2014 private_key_jwt baseline",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -331,7 +457,21 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "defaultClientScopes": [],
+      "defaultClientScopes": [
+        "system/Task.cru",
+        "system/ServiceRequest.rs",
+        "system/Patient.r",
+        "system/Condition.r",
+        "system/MedicationStatement.r",
+        "system/AllergyIntolerance.r",
+        "system/Coverage.r",
+        "system/Observation.r",
+        "system/Procedure.r",
+        "system/Immunization.r",
+        "system/DiagnosticReport.r",
+        "system/QuestionnaireResponse.cru",
+        "system/ImagingStudy.r"
+      ],
       "optionalClientScopes": [
         "smart-task-write",
         "smart-servicerequest-read",
@@ -376,19 +516,6 @@
           }
         },
         {
-          "name": "smart-scopes-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/ImagingStudy.r",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
           "name": "realm-roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
@@ -405,8 +532,8 @@
     },
     {
       "clientId": "fulfiller-client-l2",
-      "name": "Fulfiller (HospitalF) Machine Client — Level 2",
-      "description": "M2M client for HospitalF — private_key_jwt baseline",
+      "name": "Fulfiller (HospitalF) Machine Client \u2014 Level 2",
+      "description": "M2M client for HospitalF \u2014 private_key_jwt baseline",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -417,7 +544,24 @@
       "webOrigins": [
         "http://localhost:3000"
       ],
-      "defaultClientScopes": [],
+      "defaultClientScopes": [
+        "system/Task.cru",
+        "system/ServiceRequest.r",
+        "system/Patient.r",
+        "system/Condition.r",
+        "system/MedicationStatement.r",
+        "system/AllergyIntolerance.r",
+        "system/Coverage.r",
+        "system/Observation.r",
+        "system/Procedure.r",
+        "system/Immunization.r",
+        "system/DiagnosticReport.r",
+        "system/QuestionnaireResponse.cru",
+        "system/ImagingStudy.r",
+        "system/Organization.r",
+        "system/Practitioner.r",
+        "system/PractitionerRole.r"
+      ],
       "optionalClientScopes": [
         "smart-task-write",
         "smart-servicerequest-read",
@@ -456,19 +600,6 @@
           "config": {
             "claim.name": "tenant",
             "claim.value": "fulfiller",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
-          "name": "smart-scopes-mapper",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
-          "config": {
-            "claim.name": "smart_scopes",
-            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r system/ImagingStudy.r",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",

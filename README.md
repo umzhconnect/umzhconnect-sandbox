@@ -367,7 +367,7 @@ localhost:3000                                         (enforces its own securit
 │     · Sets X-Access-Token from validated M2M token                             │
 │                                                                                │
 │  6. opa plugin — consent gate (apisix.rego adapter → main.rego)                │
-│     · Reads extensions.umzhconnect.organization_reference, smart_scopes        │
+│     · Reads extensions.umzhconnect.organization_reference, scope               │
 │       from JWT via Authorization header                                         │
 │     · 403 if OPA denies                                                        │
 │                                                                                │
@@ -509,7 +509,7 @@ Both L1 and L2 issue structurally identical tokens. The only difference is how t
 
 ```
 1. Browser → Keycloak  (client_credentials, scope=openid [consent:<id>])
-2. Keycloak → Browser  (JWT with extensions.umzhconnect.organization_reference, smart_scopes, scope claims)
+2. Keycloak → Browser  (JWT with extensions.umzhconnect.organization_reference, scope claims)
 3. Browser → apisix-placer-internal  (Bearer <JWT>)
 4. apisix-placer-internal: openid-connect validates JWT (Keycloak JWKS)
 5. apisix-placer-internal: umzh-role-check enforces realm_role == "placer"
@@ -528,7 +528,7 @@ Both L1 and L2 issue structurally identical tokens. The only difference is how t
 | JWT Claim | Purpose |
 |-----------|---------|
 | `extensions.umzhconnect.organization_reference` | Caller's registry URL — exact-matched against `Consent.provision.actor.reference` |
-| `smart_scopes` | SMART resource-level permissions |
+| `scope` | SMART resource-level permissions (`system/<Resource>.<perms>`) — RFC 9068 standard claim |
 | `fhirContext` | Array of `{reference}` objects — identifies the ServiceRequest workflow context |
 
 **SMART on FHIR system scopes** embedded in M2M tokens:
@@ -830,7 +830,7 @@ Every M2M token (L1 and L2) includes the following hardcoded claims — identica
 |-------|------------------|-------------------|---------|
 | `extensions.umzhconnect.organization_reference` | `http://localhost:8084/fhir/Organization/HospitalP` | `http://localhost:8084/fhir/Organization/HospitalF` | Caller-org registry URL — enforced by OPA consent check |
 | `tenant` | `placer` | `fulfiller` | FHIR partition routing |
-| `smart_scopes` | `system/Task.cru system/Patient.r ...` | `system/Task.cru system/Patient.r ...` | SMART permissions |
+| `scope` | `system/Task.cru system/Patient.r ...` | `system/Task.cru system/Patient.r ...` | SMART system scopes (RFC 9068 standard claim) |
 
 #### Client Scopes
 
@@ -863,7 +863,7 @@ The `consent` client scope enables **per-request consent context** to be embedde
       "organization_reference": "http://localhost:8084/fhir/Organization/HospitalP"
     }
   },
-  "smart_scopes": "system/Task.cru system/Patient.r ...",
+  "scope": "system/Task.cru system/Patient.r ...",
   "tenant": "placer"
 }
 ```
@@ -1004,7 +1004,7 @@ The policy expects a JSON input document sent by the gateway or client:
   "resource_id":   "PetraMeier",
   "token": {
     "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-    "smart_scopes":           "system/Patient.r system/Task.cru ...",
+    "scope":                  "system/Patient.r system/Task.cru ...",
     "fhir_context":           [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
   },
   "fhir_base":  "http://nginx-proxy:81/fhir/placer"
@@ -1071,7 +1071,7 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
       "resource_id": "PetraMeier",
       "token": {
         "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-        "smart_scopes": "system/Patient.r system/Task.cru",
+        "scope": "system/Patient.r system/Task.cru",
         "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
       },
       "fhir_base": "http://localhost:8090/fhir/placer"
@@ -1244,7 +1244,7 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
       "resource_id": "PetraMeier",
       "token": {
         "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-        "smart_scopes": "system/Patient.r",
+        "scope": "system/Patient.r",
         "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
       }
     }
@@ -1333,7 +1333,7 @@ Partner hospital system
         │  POST /token  grant_type=client_credentials  (L1: secret, L2: private_key_jwt)
         ▼
     Keycloak ──────► JWT with extensions.umzhconnect.organization_reference,
-                       smart_scopes, fhirContext
+                       scope (SMART system scopes), fhirContext
         │
         │  Authorization: Bearer <token>
         ▼

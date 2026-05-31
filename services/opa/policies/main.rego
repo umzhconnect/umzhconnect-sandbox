@@ -42,7 +42,7 @@ http_status := 403 if { not allow }
 #   "resource_id": "123",
 #   "token": {
 #     "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-#     "smart_scopes":           "system/Patient.r system/Task.cru ...",
+#     "scope":                  "system/Patient.r system/Task.cru ...",
 #     "fhir_context":           [{"reference": "ServiceRequest/sr-123"}]
 #   },
 #   "fhir_base": "http://nginx-proxy:81/fhir/placer"
@@ -232,7 +232,7 @@ resource_in_graph(_) if {
 # Helper: Check if token carries the required SMART on FHIR scope
 # ==========================================================================
 has_smart_scope(resource, action) if {
-	some scope in split(input.token.smart_scopes, " ")
+	some scope in split(input.token.scope, " ")
 	parts := split(scope, "/")
 	count(parts) == 2
 	ra := split(parts[1], ".")

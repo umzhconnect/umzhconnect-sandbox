@@ -9,7 +9,7 @@
 # This file verifies that those L2-authenticated tokens:
 #   1. Are issued to the *-l2 clients (azp), proving private_key_jwt succeeded
 #   2. Carry the correct extensions.umzhconnect.organization_reference claim
-#   3. Carry the expected realm_roles and smart_scopes
+#   3. Carry the expected realm_roles and scope (SMART system scopes)
 #   4. (context variant) Grant a cross-party FHIR read gated by fhirContext + OPA
 #
 # Introspection uses the L1 client credentials: any valid client can introspect
@@ -33,7 +33,7 @@ jsonpath "$.active" == true
 jsonpath "$.azp" == "placer-client-l2"
 jsonpath "$.extensions.umzhconnect.organization_reference" contains "/fhir/Organization/HospitalP"
 jsonpath "$.realm_roles" contains "placer"
-jsonpath "$.smart_scopes" isString
+jsonpath "$.scope" isString
 
 
 # ---------------------------------------------------------------------------
