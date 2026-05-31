@@ -349,8 +349,8 @@ localhost:3000                                         (enforces its own securit
 │                                                                                │
 │  2. umzh-role-check plugin — checks realm_role == "placer"                     │
 │                                                                                │
-│  3. serverless-post-function — M2M token exchange                              │
-│     · POST /token client_credentials (placer-client + consent scope)           │
+│  3. umzh-m2m-token plugin — M2M token exchange                                 │
+│     · POST /token client_credentials (L1 secret or L2 private_key_jwt)         │
 │     · Replaces Authorization header with M2M token                             │
 │                                                                                │
 │  4. proxy-rewrite — strips /proxy/fhir prefix                                  │
@@ -367,7 +367,8 @@ localhost:3000                                         (enforces its own securit
 │     · Sets X-Access-Token from validated M2M token                             │
 │                                                                                │
 │  6. opa plugin — consent gate (apisix.rego adapter → main.rego)                │
-│     · Reads party_id, scope, smart_scopes from JWT via X-Access-Token          │
+│     · Reads extensions.umzhconnect.organization_reference, smart_scopes        │
+│       from JWT via Authorization header                                         │
 │     · 403 if OPA denies                                                        │
 │                                                                                │
 │  7. proxy-rewrite — /fhir/Task → /fhir/fulfiller/Task                          │
@@ -431,13 +432,13 @@ The gateways use a mix of built-in APISIX plugins and one custom Lua plugin.
 | `opa` | access | external gateway FHIR reads | Consent gate — calls OPA via `apisix.rego` adapter |
 | `proxy-rewrite` | — | all routes | URL prefix rewriting (e.g. `/fhir/*` → `/fhir/fulfiller/*`) |
 | `response-rewrite` | — | internal gateway `/fhir/*` + `/proxy/fhir/*` | Regex URL rewriting in response body |
-| `serverless-post-function` | access (1) | internal gateway proxy + action routes | M2M token exchange and `/all-tasks` fan-out |
+| `serverless-post-function` | access (1) | internal gateway `/api/actions/all-tasks` | Fan-out local + remote Task lists (needs both user token and M2M token simultaneously) |
 | `serverless-pre-function` | access | `/__health` | In-process health response (no upstream) |
 
 #### Custom plugin — `umzh-role-check`
 
 **File:** `services/apisix/plugins/umzh-role-check.lua`  
-**Priority:** 2500 (after `openid-connect` at 2599, before `serverless-post-function` at 1)
+**Priority:** 2500 (after `openid-connect` at 2599, before `umzh-m2m-token` at 1002)
 
 Reads the `Authorization: Bearer <token>` header, decodes the JWT payload without re-verifying the signature (already verified by `openid-connect`), and checks that `realm_roles` contains `conf.required_role`. Returns 403 if the role is absent.
 
@@ -447,6 +448,28 @@ umzh-role-check:
 ```
 
 Used on all internal gateway routes. Registered via `plugins:` list in the internal gateways' `config.yaml` and volume-mounted into both internal containers.
+
+#### Custom plugin — `umzh-m2m-token`
+
+**File:** `services/apisix/plugins/umzh-m2m-token.lua`  
+**Priority:** 1002 (after `umzh-role-check`, before `serverless-post-function`)
+
+Acquires an M2M token from Keycloak and replaces the `Authorization` header with it. Supports two authentication levels, selected by environment variables:
+
+- **L1** (`CLIENT_ID` + `CLIENT_SECRET`): `client_credentials` with shared secret
+- **L2** (`CLIENT_ID_L2` + `CLIENT_KEY_PATH`): `private_key_jwt` — signs an RS256 client-assertion JWT using the key provisioned by `seed-loader` into the `l2-keys` volume
+
+The `acquire(extra_body)` function is also called directly from the `all-tasks` fan-out (which needs both the user token and an M2M token simultaneously), so token-acquisition logic lives in exactly one place.
+
+```yaml
+umzh-m2m-token:
+  include_fhir_context: true   # derive authorization_details from /proxy/fhir/<Type>/<id>
+```
+
+| Route | `include_fhir_context` | Effect |
+|---|---|---|
+| `/proxy/fhir/*` | `true` | Adds `authorization_details` from path → `fhirContext` in token |
+| `/api/actions/create-task` | `false` | Plain M2M token, no consent scope |
 
 #### OPA adapter — `apisix.rego`
 
@@ -472,23 +495,25 @@ Per-party values (`fhir_base`, `required_role`) come from OPA data documents mou
 
 ### Security Model
 
-The sandbox implements **Level 1** (basic client credentials) of the three-level security model:
+The sandbox implements both client authentication levels of the IG's staged model:
 
 | Level | Method | Status | Use Case |
 |-------|--------|--------|----------|
-| **Level 1** | Client credentials — shared secret | ✅ Active | Sandbox, PoC, early pilots |
-| Level 2 | `private_key_jwt` — asymmetric keys | Planned | Production, external partners |
+| **Level 1** | `client_secret` — shared secret | ✅ Active | Sandbox, PoC, early pilots |
+| **Level 2** | `private_key_jwt` — asymmetric keys | ✅ Active | Production baseline |
 | Level 3 | mTLS — mutual TLS | Planned | Highest-risk scopes, regulated workflows |
+
+Both L1 and L2 issue structurally identical tokens. The only difference is how the client authenticates to Keycloak's token endpoint. Run tests under L2 with `./tests/scripts/run-tests.sh -l2`.
 
 **Token flow for a cross-party proxy request:**
 
 ```
 1. Browser → Keycloak  (client_credentials, scope=openid [consent:<id>])
-2. Keycloak → Browser  (JWT with party_id, smart_scopes, scope claims)
+2. Keycloak → Browser  (JWT with extensions.umzhconnect.organization_reference, smart_scopes, scope claims)
 3. Browser → apisix-placer-internal  (Bearer <JWT>)
 4. apisix-placer-internal: openid-connect validates JWT (Keycloak JWKS)
 5. apisix-placer-internal: umzh-role-check enforces realm_role == "placer"
-6. apisix-placer-internal: serverless-post-function exchanges for M2M token
+6. apisix-placer-internal: umzh-m2m-token plugin exchanges for M2M token
 7. apisix-placer-internal forwards to apisix-fulfiller-external (Bearer <M2M>)
 8. apisix-fulfiller-external: openid-connect validates M2M JWT (independent check)
 9. apisix-fulfiller-external: opa plugin enforces consent policy
@@ -498,13 +523,13 @@ The sandbox implements **Level 1** (basic client credentials) of the three-level
 13. Browser receives navigable self-links for its own gateway
 ```
 
-**JWT claims used by OPA (read via `X-Access-Token` header set by `openid-connect`):**
+**JWT claims used by OPA (read from the `Authorization` header):**
 
 | JWT Claim | Purpose |
 |-----------|---------|
-| `party_id` | Organisation identifier for policy enforcement (e.g. `hospitalf`) |
+| `extensions.umzhconnect.organization_reference` | Caller's registry URL — exact-matched against `Consent.provision.actor.reference` |
 | `smart_scopes` | SMART resource-level permissions |
-| `scope` | Full scope string — OPA extracts `consent:<id>` from here |
+| `fhirContext` | Array of `{reference}` objects — identifies the ServiceRequest workflow context |
 
 **SMART on FHIR system scopes** embedded in M2M tokens:
 
@@ -665,12 +690,19 @@ docker compose up -d --build
 | `fulfiller-user` | `fulfiller123` | Fulfiller (Anna Schmidt @ HospitalF) |
 | `admin-user` | `admin123` | Admin (all roles) |
 
-**M2M Clients:**
+**M2M Clients — Level 1 (shared secret):**
 
-| Client ID | Secret | Party | `party_id` | `tenant` |
-|-----------|--------|-------|------------|---------|
-| `placer-client` | `placer-secret-2025` | HospitalP | `hospitalp` | `placer` |
-| `fulfiller-client` | `fulfiller-secret-2025` | HospitalF | `hospitalf` | `fulfiller` |
+| Client ID | Secret | Party | `tenant` |
+|-----------|--------|-------|---------|
+| `placer-client` | `placer-secret-2025` | HospitalP | `placer` |
+| `fulfiller-client` | `fulfiller-secret-2025` | HospitalF | `fulfiller` |
+
+**M2M Clients — Level 2 (private_key_jwt):**
+
+| Client ID | Key | Party | `tenant` |
+|-----------|-----|-------|---------|
+| `placer-client-l2` | `/l2-keys/placer-l2.key` (generated at startup) | HospitalP | `placer` |
+| `fulfiller-client-l2` | `/l2-keys/fulfiller-l2.key` (generated at startup) | HospitalF | `fulfiller` |
 
 **Keycloak Admin:** `admin` / `admin` at http://localhost:8180/admin
 
@@ -707,11 +739,15 @@ KEYCLOAK_ADMIN_PASSWORD=admin
 KEYCLOAK_PORT=8180
 KEYCLOAK_REALM=umzh-connect
 
-# OAuth Clients (Level 1)
+# OAuth Clients — Level 1 (shared secret)
 PLACER_CLIENT_ID=placer-client
 PLACER_CLIENT_SECRET=placer-secret-2025
 FULFILLER_CLIENT_ID=fulfiller-client
 FULFILLER_CLIENT_SECRET=fulfiller-secret-2025
+
+# OAuth Clients — Level 2 (private_key_jwt; keys provisioned by seed-loader)
+PLACER_L2_CLIENT_ID=placer-client-l2
+FULFILLER_L2_CLIENT_ID=fulfiller-client-l2
 
 # APISIX — two gateways per party (internal + external)
 APISIX_PLACER_PORT=8080
@@ -776,22 +812,23 @@ curl http://localhost:8090/fhir/fulfiller/Task
 
 #### Clients
 
-| Client | Type | Grant Type | Purpose |
-|--------|------|------------|---------|
+| Client | Type | Auth method | Purpose |
+|--------|------|-------------|---------|
 | `web-app` | Public | Authorization Code + PKCE | React SPA browser login |
-| `placer-client` | Confidential | Client Credentials | HospitalP M2M |
-| `fulfiller-client` | Confidential | Client Credentials | HospitalF M2M |
+| `placer-client` | Confidential | `client_secret` (L1) | HospitalP M2M — pilot/sandbox |
+| `fulfiller-client` | Confidential | `client_secret` (L1) | HospitalF M2M — pilot/sandbox |
+| `placer-client-l2` | Confidential | `private_key_jwt` (L2) | HospitalP M2M — production baseline |
+| `fulfiller-client-l2` | Confidential | `private_key_jwt` (L2) | HospitalF M2M — production baseline |
 
-**CORS:** `placer-client` and `fulfiller-client` both have `webOrigins: ["http://localhost:3000"]` so the browser can call the token endpoint directly from the React SPA.
+L2 client keys are RSA-2048, generated by `seed-loader` at startup and registered with Keycloak via the Admin API. The private keys live in the `l2-keys` Docker volume.
 
 #### Hardcoded Token Claims (M2M Clients)
 
-Every client credentials token for the M2M clients includes the following hardcoded claims:
+Every M2M token (L1 and L2) includes the following hardcoded claims — identical across both levels:
 
-| Claim | `placer-client` | `fulfiller-client` | Purpose |
-|-------|-----------------|---------------------|---------|
-| `party_id` | `hospitalp` | `hospitalf` | Organisation identifier for policy enforcement |
-| `party_name` | `HospitalP` | `HospitalF` | Display name |
+| Claim | HospitalP clients | HospitalF clients | Purpose |
+|-------|------------------|-------------------|---------|
+| `extensions.umzhconnect.organization_reference` | `http://localhost:8084/fhir/Organization/HospitalP` | `http://localhost:8084/fhir/Organization/HospitalF` | Caller-org registry URL — enforced by OPA consent check |
 | `tenant` | `placer` | `fulfiller` | FHIR partition routing |
 | `smart_scopes` | `system/Task.cru system/Patient.r ...` | `system/Task.cru system/Patient.r ...` | SMART permissions |
 
@@ -821,7 +858,11 @@ The `consent` client scope enables **per-request consent context** to be embedde
 ```json
 {
   "scope": "openid consent:ConsentOrthopedicReferral",
-  "party_id": "hospitalp",
+  "extensions": {
+    "umzhconnect": {
+      "organization_reference": "http://localhost:8084/fhir/Organization/HospitalP"
+    }
+  },
   "smart_scopes": "system/Task.cru system/Patient.r ...",
   "tenant": "placer"
 }
@@ -962,13 +1003,10 @@ The policy expects a JSON input document sent by the gateway or client:
   "resource_type": "Patient",
   "resource_id":   "PetraMeier",
   "token": {
-    "party_id":    "hospitalf",
-    "smart_scopes": "system/Patient.r system/Task.cru ...",
-    "tenant":      "fulfiller",
-    "scope":       "openid consent:ConsentOrthopedicReferral"
+    "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
+    "smart_scopes":           "system/Patient.r system/Task.cru ...",
+    "fhir_context":           [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
   },
-  "consent_id": "",
-  "consent":    null,
   "fhir_base":  "http://nginx-proxy:81/fhir/placer"
 }
 ```
@@ -1023,11 +1061,7 @@ Both OPA instances expose the same HTTP API on their respective ports (8181/8182
 #### Example Policy Calls
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token \
-  -d "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&scope=openid consent:ConsentOrthopedicReferral" \
-  | jq -r '.access_token')
-
-# Direct OPA evaluation — access granted (consent in JWT scope)
+# Direct OPA evaluation — access granted (fhirContext + organization_reference match consent)
 curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
   -H "Content-Type: application/json" \
   -d '{
@@ -1036,16 +1070,14 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
       "resource_type": "Patient",
       "resource_id": "PetraMeier",
       "token": {
-        "party_id": "hospitalf",
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
         "smart_scopes": "system/Patient.r system/Task.cru",
-        "scope": "openid consent:ConsentOrthopedicReferral"
+        "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
       },
-      "consent_id": "",
-      "consent": null,
       "fhir_base": "http://localhost:8090/fhir/placer"
     }
   }' | jq '.result'
-# → { "allow": true, "consent_id": "ConsentOrthopedicReferral", "reason": "Resource access granted via valid consent" }
+# → { "allow": true, "reason": "Resource access granted via valid consent" }
 ```
 
 > **Note:** The gateway's `/api/policy/check` proxies to `/v1/data/umzh/authz/allow` (the boolean endpoint). For the full `decision` object, call OPA directly on ports 8181/8182.
@@ -1056,7 +1088,12 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
 
 **Loader:** `services/seed/` (Docker init container)
 
-The seed loader waits for HAPI FHIR readiness, creates the three partitions (`placer`, `fulfiller`, `registry`), then POSTs FHIR transaction bundles. Before posting, `seed.sh` substitutes template placeholders in the bundle files with values from environment variables:
+The seed loader has two responsibilities:
+
+1. **FHIR data** — waits for HAPI, creates partitions (`placer`, `fulfiller`, `registry`), POSTs transaction bundles with placeholder substitution.
+2. **L2 key provisioning** — waits for Keycloak, generates RSA-2048 key pairs for `placer-client-l2` and `fulfiller-client-l2`, uploads the self-signed certificates to Keycloak via the Admin API, and writes private keys to the `l2-keys` Docker volume (shared read-only with both internal APISIX gateways). Idempotent: skips if key files already exist.
+
+Before posting bundles, `seed.sh` substitutes template placeholders with environment variable values:
 
 | Placeholder | Variable | Default |
 |-------------|----------|---------|
@@ -1206,12 +1243,10 @@ curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
       "resource_type": "Patient",
       "resource_id": "PetraMeier",
       "token": {
-        "party_id": "hospitalf",
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
         "smart_scopes": "system/Patient.r",
-        "scope": "openid consent:ConsentOrthopedicReferral"
-      },
-      "consent_id": "",
-      "consent": null
+        "fhir_context": [{"reference": "ServiceRequest/ReferralOrthopedicSurgery"}]
+      }
     }
   }' | jq '.result | {allow, consent_id, reason}'
 ```
@@ -1286,25 +1321,26 @@ apisix-fulfiller-internal :8082  (validates role == "fulfiller")
 | apisix-placer-external | 8081 | `client_credentials` | `fulfiller-client` | OPA (party + scope + consent) |
 | apisix-fulfiller-external | 8083 | `client_credentials` | `placer-client` | OPA (party + scope + consent) |
 
-External gateways represent access from a **partner hospital**. They validate the JWT and then forward token claims (`party_id`, `smart_scopes`, `scope`) to OPA for policy evaluation. OPA enforces:
+External gateways represent access from a **partner hospital**. They validate the JWT and then pass token claims to OPA for policy evaluation. OPA enforces:
 
-- **Party check**: the token's `party_id` must match the expected partner (e.g. `hospitalp` calling the Fulfiller external gateway)
+- **Organization check**: `extensions.umzhconnect.organization_reference` must exactly match the actor reference in the Consent resource
 - **SMART scope check**: token must carry the required system-level SMART scope (e.g. `system/Patient.r`)
-- **Consent check**: for Patient and ServiceRequest resources the token's `scope` must carry `consent:<id>` matching a valid Consent resource; Task resources are exempt
+- **Consent check**: OPA searches `Consent?data=<ServiceRequest>&status=active` and verifies the consent grants access; Task resources are exempt
 
 ```
 Partner hospital system
         │
-        │  POST /token  grant_type=client_credentials  client=placer-client
+        │  POST /token  grant_type=client_credentials  (L1: secret, L2: private_key_jwt)
         ▼
-    Keycloak ──────► JWT with party_id, smart_scopes, scope=consent:<id>
+    Keycloak ──────► JWT with extensions.umzhconnect.organization_reference,
+                       smart_scopes, fhirContext
         │
-        │  Authorization: Bearer <placerToken>
+        │  Authorization: Bearer <token>
         ▼
 apisix-fulfiller-external :8083
-        │  openid-connect validates JWT; opa plugin checks consent
+        │  openid-connect validates JWT; opa plugin enforces consent
         ▼
-      OPA  ──────► allow / deny based on party + scopes + consent
+      OPA  ──────► allow / deny based on organization_reference + scopes + consent
         │
         ▼
    HAPI FHIR (fulfiller partition)
@@ -1321,9 +1357,9 @@ Web app  ──►  apisix-placer-internal :8080  (validates adminToken, role=pl
                      │
                      │  POST /token  grant_type=client_credentials
                      ▼
-                 Keycloak  ──► M2M JWT (placer-client + consent scope)
+                 Keycloak  ──► M2M JWT (placer-client-l2 or placer-client + fhirContext)
                      │
-                     │  Authorization: Bearer <m2mToken>  (injected by serverless-post-function)
+                     │  Authorization: Bearer <m2mToken>  (injected by umzh-m2m-token plugin)
                      ▼
           apisix-fulfiller-external :8083  (OPA: party + scopes + consent)
 ```
@@ -1427,19 +1463,20 @@ hurl --version
 
 ### Test Suite Overview
 
-Nine test files in `tests/hurl/`, run in numeric order:
+Ten test files in `tests/hurl/`, run in numeric order:
 
 | File | What it tests |
 |---|---|
 | `01-health.hurl` | All service health endpoints respond — smoke test for the full stack |
-| `02-auth.hurl` | Keycloak token acquisition for all client types (M2M + user password grant) |
+| `02-auth.hurl` | Keycloak token acquisition for all client types; asserts `extensions.umzhconnect.organization_reference` claim |
 | `03-fhir-crud.hurl` | FHIR CRUD on both internal gateways; registry reads (Organization + Endpoint, `_include` search) |
 | `04-security-negative.hurl` | JWT enforcement — missing/invalid tokens must return 401; partition isolation |
-| `05-cross-party-consent.hurl` | Fulfiller reads Placer data through the external gateway with a consent-scoped token; both consent scenarios |
+| `05-cross-party-context.hurl` | Fulfiller reads Placer data through the external gateway with a context-scoped token; both consent scenarios |
 | `06-workflow.hurl` | End-to-end clinical order workflow: create Task at Fulfiller → read via proxy → update status |
 | `07-storage.hurl` | FHIR write operations and partition isolation verification |
-| `08-consent-enforcement.hurl` | Detailed OPA consent-graph enforcement: resources inside and outside consent scope |
-| `09-party-id-substring-vuln.hurl` | CVE-style regression: `party_id` substring bypass prevention |
+| `08-context-enforcement.hurl` | Detailed OPA consent-graph enforcement: resources inside and outside consent scope |
+| `09-org-reference-exact-match.hurl` | Security regression: `organization_reference` exact-match (substring/prefix attacks must be denied) |
+| `10-l2-auth.hurl` | L2 (`private_key_jwt`) token structure — `*-l2` azp, org-reference / realm-role / smart-scope claims, and an end-to-end cross-party FHIR read |
 
 ---
 
@@ -1448,13 +1485,19 @@ Nine test files in `tests/hurl/`, run in numeric order:
 Ensure all services are running first (`docker compose up -d`), then:
 
 ```bash
-# Run the full suite
+# Run the full suite (L1 — client_secret)
 ./tests/scripts/run-tests.sh
 
-# Run a single file manually
+# Run the full suite with L2 (private_key_jwt) tokens
+./tests/scripts/run-tests.sh -l2
+
+# Run a single file manually — get-token.sh acquires a token for either level
+# (L2 signs a private_key_jwt assertion locally)
+TOKEN=$(./tests/scripts/get-token.sh placer)        # or: placer-l2 for private_key_jwt
+
 hurl --test \
   --variable "placer_url=http://localhost:8080" \
-  --variable "placer_token=<token>" \
+  --variable "placer_token=$TOKEN" \
   tests/hurl/01-health.hurl
 ```
 
@@ -1462,6 +1505,7 @@ hurl --test \
 ```
 =============================================
  UMZH Connect Sandbox — Integration Tests
+ Auth mode: Level 1 (client_secret)
 =============================================
 === Waiting for services ===
   Waiting for Keycloak...              OK (0s)
@@ -1473,7 +1517,7 @@ hurl --test \
 --- Running: 02-auth ---
 ...
 =============================================
- Results: 7/7 passed, 0 failed
+ Results: 10/10 passed, 0 failed
 =============================================
 ```
 
@@ -1489,15 +1533,18 @@ Polls all service health endpoints with a configurable timeout (default 120 s, `
 
 **2. Acquire tokens** (`get-token.sh`)
 
-Fetches five tokens from Keycloak before any test runs — all are injected as Hurl variables so individual test files do not contain credentials:
+Fetches eight tokens before any test runs — all injected as Hurl variables so test files contain no credentials. With `-l2`, `placer_token`, `fulfiller_token`, and `fulfiller_context_token` are replaced by their L2 equivalents (identical variable names, different token content):
 
-| Variable | Grant type | Client / User | Scope |
+| Variable | Client / User | Auth method | Scope |
 |---|---|---|---|
-| `placer_token` | `client_credentials` | `placer-client` | SMART scopes (no consent) |
-| `fulfiller_token` | `client_credentials` | `fulfiller-client` | SMART scopes (no consent) |
-| `fulfiller_consent_token` | `client_credentials` | `fulfiller-client` | SMART + `consent:ConsentOrthopedicReferral` |
-| `placer_user_token` | `password` | `placer-user` / `web-app` | SMART scopes |
-| `fulfiller_user_token` | `password` | `fulfiller-user` / `web-app` | SMART scopes |
+| `placer_token` | `placer-client` (L1) / `placer-client-l2` (L2) | secret / private_key_jwt | SMART scopes |
+| `fulfiller_token` | `fulfiller-client` / `fulfiller-client-l2` | secret / private_key_jwt | SMART scopes |
+| `fulfiller_context_token` | `fulfiller-client` / `fulfiller-client-l2` | secret / private_key_jwt | SMART + `fhirContext` |
+| `placer_user_token` | `placer-user` / `web-app` | password | SMART scopes |
+| `fulfiller_user_token` | `fulfiller-user` / `web-app` | password | SMART scopes |
+| `placer_l2_token` | `placer-client-l2` | private_key_jwt | SMART scopes |
+| `fulfiller_l2_token` | `fulfiller-client-l2` | private_key_jwt | SMART scopes |
+| `fulfiller_l2_context_token` | `fulfiller-client-l2` | private_key_jwt | SMART + `fhirContext` |
 
 **3. Run each Hurl file**
 
@@ -1527,7 +1574,7 @@ JUnit XML reports are written to `tests/reports/` after each run (one file per `
 
 ```bash
 # View a report summary (requires xmllint or a JUnit viewer)
-cat tests/reports/05-cross-party-consent.xml
+cat tests/reports/05-cross-party-context.xml
 ```
 
 Reports can be consumed directly by CI systems (GitHub Actions, Jenkins, GitLab CI) as JUnit test results.

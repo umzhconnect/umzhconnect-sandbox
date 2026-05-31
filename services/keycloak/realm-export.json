@@ -316,6 +316,180 @@
         }
       ]
     }
+    ,
+    {
+      "clientId": "placer-client-l2",
+      "name": "Placer (HospitalP) Machine Client — Level 2",
+      "description": "M2M client for HospitalP — private_key_jwt baseline",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-jwt",
+      "protocol": "openid-connect",
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "smart-task-write",
+        "smart-servicerequest-read",
+        "smart-clinical-read",
+        "smart-questionnaire-write"
+      ],
+      "protocolMappers": [
+        {
+          "name": "org-reference-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "extensions.umzhconnect.organization_reference",
+            "claim.value": "http://localhost:8084/fhir/Organization/HospitalP",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "fhir-context-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "umzh-fhir-context-mapper",
+          "config": {
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "placer",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "smart-scopes-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "smart_scopes",
+            "claim.value": "system/Task.cru system/ServiceRequest.rs system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/ImagingStudy.r",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "fulfiller-client-l2",
+      "name": "Fulfiller (HospitalF) Machine Client — Level 2",
+      "description": "M2M client for HospitalF — private_key_jwt baseline",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-jwt",
+      "protocol": "openid-connect",
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
+        "smart-task-write",
+        "smart-servicerequest-read",
+        "smart-clinical-read",
+        "smart-patient-read",
+        "smart-questionnaire-write"
+      ],
+      "protocolMappers": [
+        {
+          "name": "org-reference-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "extensions.umzhconnect.organization_reference",
+            "claim.value": "http://localhost:8084/fhir/Organization/HospitalF",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "fhir-context-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "umzh-fhir-context-mapper",
+          "config": {
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "fulfiller",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "smart-scopes-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "smart_scopes",
+            "claim.value": "system/Task.cru system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/QuestionnaireResponse.cru system/Organization.r system/Practitioner.r system/PractitionerRole.r system/ImagingStudy.r",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
   ],
   "users": [
     {
@@ -386,6 +560,22 @@
       "username": "service-account-fulfiller-client",
       "enabled": true,
       "serviceAccountClientId": "fulfiller-client",
+      "realmRoles": [
+        "fulfiller"
+      ]
+    },
+    {
+      "username": "service-account-placer-client-l2",
+      "enabled": true,
+      "serviceAccountClientId": "placer-client-l2",
+      "realmRoles": [
+        "placer"
+      ]
+    },
+    {
+      "username": "service-account-fulfiller-client-l2",
+      "enabled": true,
+      "serviceAccountClientId": "fulfiller-client-l2",
       "realmRoles": [
         "fulfiller"
       ]

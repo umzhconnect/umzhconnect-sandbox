@@ -1,6 +1,7 @@
-FROM curlimages/curl:8.5.0
+FROM alpine:3.19
 
-COPY seed.sh /seed.sh
+RUN apk add --no-cache curl openssl
+
 COPY bundles/ /seed/bundles/
 
-ENTRYPOINT ["/bin/sh", "/seed.sh"]
+ENTRYPOINT ["/bin/sh", "/seed/seed.sh"]

@@ -39,21 +39,10 @@ HTTP 200
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — Acquire a context-scoped token for ReferralOrthopedicSurgery
+# Step 1 — Context-scoped token for ReferralOrthopedicSurgery
+# Injected as fulfiller_context_token (L1 by default, L2 under -l2); carries a
+# fhirContext claim derived from authorization_details.
 # ---------------------------------------------------------------------------
-
-POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
-[FormParams]
-grant_type: client_credentials
-client_id: fulfiller-client
-client_secret: fulfiller-secret-2025
-scope: smart-clinical-read smart-servicerequest-read
-authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralOrthopedicSurgery"}]
-HTTP 200
-[Captures]
-ortho_token: jsonpath "$.access_token"
-[Asserts]
-jsonpath "$.access_token" exists
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +50,7 @@ jsonpath "$.access_token" exists
 # ---------------------------------------------------------------------------
 
 GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
-Authorization: Bearer {{ortho_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Condition"
@@ -73,29 +62,17 @@ jsonpath "$.id"           == "SuspectedACLRupture"
 # ---------------------------------------------------------------------------
 
 GET {{placer_ext_url}}/fhir/Condition/SarcomaKnee
-Authorization: Bearer {{ortho_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 403
 
 
 # ---------------------------------------------------------------------------
 # POSITIVE TEST — Tumorboard context grants access to its own graph
+# Token injected as fulfiller_context_tumorboard_token (L1/L2 per mode).
 # ---------------------------------------------------------------------------
 
-POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
-[FormParams]
-grant_type: client_credentials
-client_id: fulfiller-client
-client_secret: fulfiller-secret-2025
-scope: smart-clinical-read
-authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralTumorboard"}]
-HTTP 200
-[Captures]
-tumor_token: jsonpath "$.access_token"
-[Asserts]
-jsonpath "$.access_token" exists
-
 GET {{placer_ext_url}}/fhir/ImagingStudy/ImagingCT
-Authorization: Bearer {{tumor_token}}
+Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "ImagingStudy"
@@ -107,7 +84,7 @@ jsonpath "$.id"           == "ImagingCT"
 # ---------------------------------------------------------------------------
 
 GET {{placer_ext_url}}/fhir/MedicationStatement/MedicationEntresto
-Authorization: Bearer {{tumor_token}}
+Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 403
 
 
@@ -126,7 +103,7 @@ HTTP 200
 
 # Cross-party read must now be denied — Consent.status=inactive → search returns no valid entry
 GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
-Authorization: Bearer {{ortho_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 403
 
 # Restore Consent to active so subsequent tests still work
@@ -154,7 +131,7 @@ HTTP 200
 
 # Cross-party read must now be denied — period.end is in the past
 GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
-Authorization: Bearer {{ortho_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 403
 
 # Restore to fresh future date (now + 3 months, computed by run-tests.sh)
@@ -168,7 +145,7 @@ HTTP 200
 
 # Confirm access is restored
 GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
-Authorization: Bearer {{ortho_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.id" == "SuspectedACLRupture"

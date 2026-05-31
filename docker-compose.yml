@@ -196,11 +196,16 @@ services:
       OWN_URL: "http://localhost:${APISIX_PLACER_PORT}"
       CLIENT_ID: "${PLACER_CLIENT_ID}"
       CLIENT_SECRET: "${PLACER_CLIENT_SECRET}"
+      CLIENT_ID_L2: "${PLACER_L2_CLIENT_ID}"
+      CLIENT_KEY_PATH: "/l2-keys/placer-l2.key"
+      KEYCLOAK_TOKEN_ENDPOINT: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
+      - ./services/apisix/plugins/umzh-m2m-token.lua:/usr/local/apisix/apisix/plugins/umzh-m2m-token.lua:ro
+      - l2-keys:/l2-keys:ro
     ports:
       - '${APISIX_PLACER_PORT}:9080'
     depends_on:
@@ -264,11 +269,16 @@ services:
       OWN_URL: "http://localhost:${APISIX_FULFILLER_PORT}"
       CLIENT_ID: "${FULFILLER_CLIENT_ID}"
       CLIENT_SECRET: "${FULFILLER_CLIENT_SECRET}"
+      CLIENT_ID_L2: "${FULFILLER_L2_CLIENT_ID}"
+      CLIENT_KEY_PATH: "/l2-keys/fulfiller-l2.key"
+      KEYCLOAK_TOKEN_ENDPOINT: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
+      - ./services/apisix/plugins/umzh-m2m-token.lua:/usr/local/apisix/apisix/plugins/umzh-m2m-token.lua:ro
+      - l2-keys:/l2-keys:ro
     ports:
       - '${APISIX_FULFILLER_PORT}:9080'
     depends_on:
@@ -333,11 +343,20 @@ services:
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      KEYCLOAK_URL: ${KEYCLOAK_URL}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      PLACER_L2_CLIENT_ID: ${PLACER_L2_CLIENT_ID}
+      FULFILLER_L2_CLIENT_ID: ${FULFILLER_L2_CLIENT_ID}
     volumes:
       - ./services/seed:/seed
+      - l2-keys:/l2-keys
     depends_on:
       hapi-fhir:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     networks:
       - umzh-net
 
@@ -375,17 +394,22 @@ services:
     container_name: umzh-web-app
     ports:
       - '${WEB_APP_PORT}:80'
+    volumes:
+      - l2-keys:/l2-keys:ro
     depends_on:
       apisix-placer-internal:
         condition: service_healthy
       apisix-fulfiller-internal:
         condition: service_healthy
+      seed-loader:
+        condition: service_completed_successfully
     networks:
       - umzh-net
 
 volumes:
   postgres_data:
   keycloak_m2_cache:
+  l2-keys:
 
 networks:
   umzh-net:

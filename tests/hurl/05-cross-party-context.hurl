@@ -26,26 +26,16 @@ Content-Type: application/json-patch+json
 HTTP 200
 
 
-# --- Step 1: Acquire a context-scoped token for ReferralOrthopedicSurgery ---
-
-POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
-[FormParams]
-grant_type: client_credentials
-client_id: fulfiller-client
-client_secret: fulfiller-secret-2025
-scope: smart-patient-read smart-clinical-read smart-servicerequest-read smart-task-write
-authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralOrthopedicSurgery"}]
-HTTP 200
-[Captures]
-context_token: jsonpath "$.access_token"
-[Asserts]
-jsonpath "$.access_token" exists
+# --- Step 1: Context-scoped token for ReferralOrthopedicSurgery ---
+# Injected by the runner as fulfiller_context_token — acquired via
+# authorization_details so the JWT carries a fhirContext claim. L1 by default,
+# L2 under -l2; the token is structurally identical, only client auth differs.
 
 
 # --- Step 2: Read Patient/PetraMeier via Placer External (in SR graph) ---
 
 GET {{placer_ext_url}}/fhir/Patient/PetraMeier
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Patient"
@@ -55,7 +45,7 @@ jsonpath "$.id" == "PetraMeier"
 # --- Step 3: Read Condition/SuspectedACLRupture (in SR graph) ---
 
 GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Condition"
@@ -65,7 +55,7 @@ jsonpath "$.id" == "SuspectedACLRupture"
 # --- Step 4: Read ServiceRequest/ReferralOrthopedicSurgery (in SR graph) ---
 
 GET {{placer_ext_url}}/fhir/ServiceRequest/ReferralOrthopedicSurgery
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "ServiceRequest"
@@ -75,7 +65,7 @@ jsonpath "$.id" == "ReferralOrthopedicSurgery"
 # --- Step 5: Read Coverage/CoverageMeier (in SR graph) ---
 
 GET {{placer_ext_url}}/fhir/Coverage/CoverageMeier
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Coverage"
@@ -85,7 +75,7 @@ jsonpath "$.id" == "CoverageMeier"
 # --- Step 6: Read MedicationStatement (in SR graph) ---
 
 GET {{placer_ext_url}}/fhir/MedicationStatement/MedicationEntresto
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "MedicationStatement"
@@ -95,38 +85,26 @@ jsonpath "$.id" == "MedicationEntresto"
 # --- Step 7: Read Practitioner/HansMuster (directory — Rule 6) ---
 
 GET {{placer_ext_url}}/fhir/Practitioner/HansMuster
-Authorization: Bearer {{context_token}}
+Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Practitioner"
 jsonpath "$.id" == "HansMuster"
 
 
-# --- Step 8: Test second context — ReferralTumorboard ---
-
-POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
-[FormParams]
-grant_type: client_credentials
-client_id: fulfiller-client
-client_secret: fulfiller-secret-2025
-scope: smart-patient-read smart-clinical-read
-authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralTumorboard"}]
-HTTP 200
-[Captures]
-tumor_context_token: jsonpath "$.access_token"
-[Asserts]
-jsonpath "$.access_token" exists
+# --- Step 8: Second context — ReferralTumorboard ---
+# Injected as fulfiller_context_tumorboard_token (L1 by default, L2 under -l2).
 
 # Read Patient (in tumorboard SR graph too)
 GET {{placer_ext_url}}/fhir/Patient/PetraMeier
-Authorization: Bearer {{tumor_context_token}}
+Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.id" == "PetraMeier"
 
 # Read ImagingStudy/ImagingCT (in tumorboard SR graph)
 GET {{placer_ext_url}}/fhir/ImagingStudy/ImagingCT
-Authorization: Bearer {{tumor_context_token}}
+Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "ImagingStudy"
@@ -134,7 +112,7 @@ jsonpath "$.id" == "ImagingCT"
 
 # Read AllergyIntolerance/AllergyGado (in tumorboard SR graph)
 GET {{placer_ext_url}}/fhir/AllergyIntolerance/AllergyGado
-Authorization: Bearer {{tumor_context_token}}
+Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "AllergyIntolerance"

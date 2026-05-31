@@ -23,21 +23,21 @@ docker compose logs -f <service>      # Follow logs
 
 ### Integration Tests (Hurl)
 ```bash
-./tests/scripts/run-tests.sh          # Run all tests (acquires tokens automatically)
+./tests/scripts/run-tests.sh          # Run all tests with L1 (client_secret)
+./tests/scripts/run-tests.sh -l2      # Same tests using L2 (private_key_jwt) tokens
 ```
 
-To run a single test file, acquire a token first and then use hurl directly:
+To run a single test file, acquire a token first and then use hurl directly.
+`get-token.sh` acquires a token for either level (L2 signs a `private_key_jwt`
+assertion locally):
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025" \
-  | jq -r '.access_token')
+TOKEN=$(./tests/scripts/get-token.sh placer)        # or: placer-l2 for private_key_jwt
 
 hurl --test \
   --variable "placer_url=http://localhost:8080" \
   --variable "fulfiller_url=http://localhost:8082" \
   --variable "placer_token=$TOKEN" \
-  tests/hurl/05-cross-party-consent.hurl
+  tests/hurl/05-cross-party-context.hurl
 ```
 
 ## Architecture
@@ -84,7 +84,11 @@ HAPI embeds `http://localhost:8090/...` in self-links (internal Docker address).
 3. SMART on FHIR system scopes in M2M tokens
 4. Cross-party requests carry two JWTs (validated at each hop)
 
-APISIX policy enforcement uses the built-in `opa` plugin plus a custom `umzh-role-check` Lua plugin (`services/apisix/plugins/`). OPA policies are in `services/opa/policies/`.
+APISIX policy enforcement uses the built-in `opa` plugin plus two custom Lua plugins (`services/apisix/plugins/`):
+- `umzh-role-check` — enforces realm role on internal gateway routes
+- `umzh-m2m-token` — acquires M2M tokens from Keycloak (L1 `client_secret` or L2 `private_key_jwt`) and injects them as `Authorization` headers
+
+OPA policies are in `services/opa/policies/`.
 
 ### Key Configuration
 
@@ -99,7 +103,8 @@ APISIX policy enforcement uses the built-in `opa` plugin plus a custom `umzh-rol
 ### Default Credentials
 
 Web App users: `placer-user/placer123`, `fulfiller-user/fulfiller123`, `admin-user/admin123`  
-M2M clients: `placer-client/placer-secret-2025`, `fulfiller-client/fulfiller-secret-2025`  
+M2M clients L1 (shared secret): `placer-client/placer-secret-2025`, `fulfiller-client/fulfiller-secret-2025`  
+M2M clients L2 (private_key_jwt): `placer-client-l2`, `fulfiller-client-l2` — keys provisioned by `seed-loader` into the `l2-keys` Docker volume at startup  
 Keycloak admin: `admin/admin` at http://localhost:8180/admin
 
 ### Service URLs
@@ -114,5 +119,5 @@ Keycloak admin: `admin/admin` at http://localhost:8180/admin
 
 ### Test Suite
 
-Tests are Hurl plain-text HTTP files in `tests/hurl/`. Files prefixed `0N-` run in order. The test runner (`tests/scripts/run-tests.sh`) waits for services, acquires Keycloak tokens, and executes each file, writing JUnit XML to `tests/reports/`.
+Tests are Hurl plain-text HTTP files in `tests/hurl/`. Files prefixed `0N-` run in order. The test runner (`tests/scripts/run-tests.sh`) waits for services, acquires Keycloak tokens (both L1 and L2), and executes each file, writing JUnit XML to `tests/reports/`. Pass `-l2` to run all tests using L2 tokens instead of L1.
 
