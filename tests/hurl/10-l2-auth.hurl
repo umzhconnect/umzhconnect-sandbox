@@ -32,7 +32,7 @@ HTTP 200
 jsonpath "$.active" == true
 jsonpath "$.azp" == "placer-client-l2"
 jsonpath "$.extensions.umzhconnect.organization_reference" contains "/fhir/Organization/HospitalP"
-jsonpath "$.realm_roles" contains "placer"
+jsonpath "$.realm_roles" includes "placer"
 jsonpath "$.scope" isString
 
 
@@ -50,7 +50,7 @@ HTTP 200
 jsonpath "$.active" == true
 jsonpath "$.azp" == "fulfiller-client-l2"
 jsonpath "$.extensions.umzhconnect.organization_reference" contains "/fhir/Organization/HospitalF"
-jsonpath "$.realm_roles" contains "fulfiller"
+jsonpath "$.realm_roles" includes "fulfiller"
 
 
 # ---------------------------------------------------------------------------

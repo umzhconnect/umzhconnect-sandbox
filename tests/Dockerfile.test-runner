@@ -1,12 +1,11 @@
-FROM alpine:3.19
-
+# Test runner image: the upstream hurl image is Alpine with only wget.
+# get-token.sh's L2 (private_key_jwt) flow needs curl to fetch the RSA key
+# and openssl to sign the assertion — add both.
+FROM ghcr.io/orange-opensource/hurl:6.0.0
+USER root
 # Set APK_INSECURE=1 (build arg) to fetch packages over the http mirror — a
 # local escape hatch for networks with a TLS-intercepting proxy. Unset in CI,
 # so the default https mirror is used.
 ARG APK_INSECURE=
 RUN if [ -n "$APK_INSECURE" ]; then sed -i 's|https://|http://|g' /etc/apk/repositories; fi \
  && apk add --no-cache curl openssl
-
-COPY bundles/ /seed/bundles/
-
-ENTRYPOINT ["/bin/sh", "/seed/seed.sh"]

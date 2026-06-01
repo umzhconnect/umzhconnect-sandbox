@@ -20,9 +20,14 @@
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
 TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
 
-# The L2 client assertion's `aud` must be Keycloak's *published* token endpoint
-# (its KC_HOSTNAME frontend URL); on the host that's the same URL we POST to.
-TOKEN_AUD="${TOKEN_AUD:-$TOKEN_URL}"
+# The L2 client assertion's `aud` must be Keycloak's *published* (frontend)
+# token endpoint — the URL it advertises under KC_HOSTNAME and validates the
+# assertion against. In CI we POST to the internal backchannel (keycloak:8080)
+# but must still claim the frontend endpoint (localhost:8180), so derive `aud`
+# from the published issuer rather than the POST URL. On a dev host the two
+# coincide, so KEYCLOAK_ISSUER defaults back to KEYCLOAK_URL.
+KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-${KEYCLOAK_URL}/realms/umzh-connect}"
+TOKEN_AUD="${TOKEN_AUD:-${KEYCLOAK_ISSUER}/protocol/openid-connect/token}"
 
 # L2 private keys are served from the l2-keys volume by the web-app — the same
 # source the browser uses. Override WEB_APP_URL for non-default hosts.
@@ -61,9 +66,9 @@ b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 #   $1 = client_id   $2 = key basename (<name>.key in the l2-keys volume)
 #   $3 = space-separated scope   $4 = optional authorization_details JSON
 #
-# L2 assumes a full host (curl + openssl); the wget-only hurl image can't sign
-# assertions anyway. run-tests waits for the web-app, so the key is already
-# served by the time this runs.
+# L2 needs curl + openssl (the CI test-runner image installs both on top of the
+# hurl base). run-tests waits for the web-app, so the key is already served by
+# the time this runs.
 fetch_l2_token() {
     l2_cid="$1"; key_name="$2"; l2_scope="$3"; auth_details="$4"
 
