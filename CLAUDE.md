@@ -104,7 +104,7 @@ OPA policies are in `services/opa/policies/`.
 
 Web App users: `placer-user/placer123`, `fulfiller-user/fulfiller123`, `admin-user/admin123`  
 M2M clients L1 (shared secret): `placer-client/placer-secret-2025`, `fulfiller-client/fulfiller-secret-2025`  
-M2M clients L2 (private_key_jwt): `placer-client-l2`, `fulfiller-client-l2` — keys provisioned by `seed-loader` into the `l2-keys` Docker volume at startup  
+M2M clients L2 (private_key_jwt): `placer-client-l2`, `fulfiller-client-l2` — demo private keys committed at `services/keys/`; matching JWK Sets exposed by each party's external APISIX gateway at `http://localhost:8081/jwks.json` (placer) and `http://localhost:8083/jwks.json` (fulfiller), and Keycloak fetches them via each L2 client's `jwks.url` attribute  
 Keycloak admin: `admin/admin` at http://localhost:8180/admin
 
 ### Service URLs
@@ -114,6 +114,7 @@ Keycloak admin: `admin/admin` at http://localhost:8180/admin
 - Placer internal/external: http://localhost:8080 / :8081
 - Fulfiller internal/external: http://localhost:8082 / :8083
 - Registry (public): http://localhost:8084
+- Placer/Fulfiller L2 JWKS: http://localhost:8081/jwks.json / :8083/jwks.json (served by the external gateways)
 - OPA Placer/Fulfiller: http://localhost:8181 / :8182
 - Reseed API: http://localhost:9001
 

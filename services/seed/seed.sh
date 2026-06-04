@@ -31,10 +31,10 @@ echo "Placer external URL:   ${PLACER_EXTERNAL_URL}"
 echo "Fulfiller external URL:${FULFILLER_EXTERNAL_URL}"
 
 # ---------------------------------------------------------------------------
-# [1/8] Wait for HAPI FHIR to be ready
+# [1/7] Wait for HAPI FHIR to be ready
 # ---------------------------------------------------------------------------
 echo ""
-echo "[1/8] Waiting for HAPI FHIR server to be ready..."
+echo "[1/7] Waiting for HAPI FHIR server to be ready..."
 retries=0
 while [ $retries -lt $MAX_RETRIES ]; do
     # With multi-tenancy enabled, use the DEFAULT partition for the readiness check
@@ -53,10 +53,10 @@ if [ $retries -eq $MAX_RETRIES ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# [2/8] Create named partitions
+# [2/7] Create named partitions
 # ---------------------------------------------------------------------------
 echo ""
-echo "[2/8] Creating FHIR partitions..."
+echo "[2/7] Creating FHIR partitions..."
 
 create_partition() {
     PARTITION_ID=$1
@@ -94,11 +94,11 @@ create_partition 2 "fulfiller" "HospitalF (Fulfiller) partition"
 create_partition 3 "registry"  "Organization registry partition"
 
 # ---------------------------------------------------------------------------
-# [3/8] Load shared conformance resources -> /fhir/DEFAULT
+# [3/7] Load shared conformance resources -> /fhir/DEFAULT
 #        (Questionnaire and other non-partitionable resource types)
 # ---------------------------------------------------------------------------
 echo ""
-echo "[3/8] Loading shared conformance resources into /fhir/DEFAULT..."
+echo "[3/7] Loading shared conformance resources into /fhir/DEFAULT..."
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "${FHIR_BASE_URL}/DEFAULT" \
     -H "Content-Type: application/fhir+json" \
@@ -115,10 +115,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [4/8] Load Placer data -> /fhir/placer
+# [4/7] Load Placer data -> /fhir/placer
 # ---------------------------------------------------------------------------
 echo ""
-echo "[4/8] Loading Placer (HospitalP) seed data into /fhir/placer..."
+echo "[4/7] Loading Placer (HospitalP) seed data into /fhir/placer..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
@@ -140,10 +140,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [5/8] Load Fulfiller data -> /fhir/fulfiller
+# [5/7] Load Fulfiller data -> /fhir/fulfiller
 # ---------------------------------------------------------------------------
 echo ""
-echo "[5/8] Loading Fulfiller (HospitalF) seed data into /fhir/fulfiller..."
+echo "[5/7] Loading Fulfiller (HospitalF) seed data into /fhir/fulfiller..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
@@ -165,10 +165,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [6/8] Load Registry data -> /fhir/registry
+# [6/7] Load Registry data -> /fhir/registry
 # ---------------------------------------------------------------------------
 echo ""
-echo "[6/8] Loading Registry (Organization directory) seed data into /fhir/registry..."
+echo "[6/7] Loading Registry (Organization directory) seed data into /fhir/registry..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
@@ -190,10 +190,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [7/8] Verify seed data in each partition
+# [7/7] Verify seed data in each partition
 # ---------------------------------------------------------------------------
 echo ""
-echo "[7/8] Verifying seed data..."
+echo "[7/7] Verifying seed data..."
 
 check_resource() {
     PARTITION=$1
@@ -225,103 +225,13 @@ check_resource "registry"  "Organization"   "HospitalF"
 check_resource "registry"  "Endpoint"       "EndpointHospitalP"
 check_resource "registry"  "Endpoint"       "EndpointHospitalF"
 
+# L2 (private_key_jwt) clients use committed demo keys in services/keys/ and
+# Keycloak's `jwks.url` client attribute — no runtime provisioning required.
+# See services/keys/README.md for the trust model.
+
 echo ""
 echo "============================================="
 echo "Seed data loading complete!"
-echo "============================================="
-
-# ---------------------------------------------------------------------------
-# [8/8] Generate L2 key pairs and register certificates with Keycloak
-# ---------------------------------------------------------------------------
-echo ""
-echo "[8/8] Provisioning L2 key pairs..."
-
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak:8080}"
-KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-umzh-connect}"
-PLACER_L2_CLIENT_ID="${PLACER_L2_CLIENT_ID:-placer-client-l2}"
-FULFILLER_L2_CLIENT_ID="${FULFILLER_L2_CLIENT_ID:-fulfiller-client-l2}"
-L2_KEY_DIR="${L2_KEY_DIR:-/l2-keys}"
-
-mkdir -p "$L2_KEY_DIR"
-chmod 755 "$L2_KEY_DIR"
-
-# Get a short-lived admin token from the master realm.
-ADMIN_TOKEN=$(curl -sf -X POST \
-    "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "grant_type=password&client_id=admin-cli&username=${KEYCLOAK_ADMIN}&password=${KEYCLOAK_ADMIN_PASSWORD}" \
-    | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
-
-if [ -z "$ADMIN_TOKEN" ]; then
-    echo "  ERROR: Could not acquire Keycloak admin token. Exiting."
-    exit 1
-fi
-echo "  Admin token acquired"
-
-# Generate RSA-2048 key pair, self-signed certificate, and register with Keycloak.
-# Idempotent: if the private key already exists the client was already provisioned.
-register_l2_client() {
-    CLIENT_ID_L2="$1"
-    KEY_NAME="$2"
-
-    KEY_FILE="${L2_KEY_DIR}/${KEY_NAME}.key"
-    CERT_FILE="${L2_KEY_DIR}/${KEY_NAME}.crt"
-
-    if [ -f "$KEY_FILE" ]; then
-        echo "  ${CLIENT_ID_L2}: key already exists — skipping"
-        return 0
-    fi
-
-    echo "  ${CLIENT_ID_L2}: generating RSA-2048 key pair..."
-    openssl genrsa -out "$KEY_FILE" 2048 2>/dev/null
-    chmod 644 "$KEY_FILE"
-    openssl req -new -x509 \
-        -key "$KEY_FILE" \
-        -out "$CERT_FILE" \
-        -days 3650 \
-        -subj "/CN=${CLIENT_ID_L2}" 2>/dev/null
-
-    # Resolve client UUID.
-    # Anchor the pattern to the start of the array so the greedy .* in sed
-    # does not overshoot to a nested protocolMapper "id" field.
-    UUID=$(curl -sf \
-        -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients?clientId=${CLIENT_ID_L2}" \
-        | sed 's/^\[{"id":"\([^"]*\)".*/\1/')
-
-    # Validate it looks like a UUID (contains hyphens, not the raw JSON).
-    case "$UUID" in
-        *-*-*-*-*)
-            ;; # ok
-        *)
-            echo "  WARNING: ${CLIENT_ID_L2} not found in Keycloak (UUID='${UUID}')"
-            echo "  If this is a fresh install, run: docker compose down -v && docker compose up -d --build"
-            return 1
-            ;;
-    esac
-
-    # Upload the self-signed certificate so Keycloak can verify client assertions.
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-        -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        -F "keystoreFormat=Certificate PEM" \
-        -F "file=@${CERT_FILE}" \
-        "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${UUID}/certificates/jwt.credential/upload-certificate")
-
-    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
-        echo "  ${CLIENT_ID_L2}: certificate registered (HTTP ${HTTP_CODE})"
-    else
-        echo "  WARNING: certificate upload for ${CLIENT_ID_L2} returned HTTP ${HTTP_CODE}"
-    fi
-}
-
-register_l2_client "${PLACER_L2_CLIENT_ID}"    "placer-l2"
-register_l2_client "${FULFILLER_L2_CLIENT_ID}" "fulfiller-l2"
-
-echo ""
-echo "============================================="
-echo "Seed data loading and L2 key provisioning complete!"
 echo "============================================="
 echo ""
 echo "Partition layout:"

@@ -11,13 +11,13 @@ const KEYCLOAK_TOKEN_URL =
 const CLIENT_CONFIG = {
   placer: {
     l1: { clientId: 'placer-client', clientSecret: 'placer-secret-2025' },
-    l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key' },
+    l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key', kid: 'placer-l2' },
     orgReference: 'http://localhost:8084/fhir/Organization/HospitalP',
     label: 'HospitalP (Placer)',
   },
   fulfiller: {
     l1: { clientId: 'fulfiller-client', clientSecret: 'fulfiller-secret-2025' },
-    l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key' },
+    l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key', kid: 'fulfiller-l2' },
     orgReference: 'http://localhost:8084/fhir/Organization/HospitalF',
     label: 'HospitalF (Fulfiller)',
   },
@@ -48,7 +48,7 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 }
 
 interface AssertionParts {
-  header:  { typ: string; alg: string };
+  header:  { typ: string; alg: string; kid?: string };
   payload: { iss: string; sub: string; aud: string; exp: number; jti: string };
   jwt:     string;
 }
@@ -57,8 +57,15 @@ async function buildClientAssertion(
   clientId: string,
   audience: string,
   key: CryptoKey,
+  kid?: string,
 ): Promise<AssertionParts> {
-  const headerObj  = { typ: 'JWT', alg: 'RS256' };
+  // kid links this signed assertion to a specific JWK in the JWKS that
+  // Keycloak fetches from the client's jwks.url. With one key per client
+  // today it's not strictly required, but it's the linkage that makes
+  // overlap-window rotation work.
+  const headerObj  = kid
+    ? { typ: 'JWT', alg: 'RS256', kid }
+    : { typ: 'JWT', alg: 'RS256' };
   const now        = Math.floor(Date.now() / 1000);
   const payloadObj = {
     iss: clientId,
@@ -141,7 +148,7 @@ const CredentialsPage: React.FC = () => {
           body: { note: 'RSA-2048 private key (PEM)' }, duration: 0 });
 
         const cryptoKey = await importPrivateKey(pem);
-        const assertion = await buildClientAssertion(cfg.l2.clientId, KEYCLOAK_TOKEN_URL, cryptoKey);
+        const assertion = await buildClientAssertion(cfg.l2.clientId, KEYCLOAK_TOKEN_URL, cryptoKey, cfg.l2.kid);
         setAssertionData(assertion);
 
         const body = new URLSearchParams({
@@ -435,13 +442,19 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2 font-mono">placer-client-l2</td>
               <td className="py-2"><span className="badge bg-amber-100 text-amber-800">L2</span></td>
               <td className="py-2">HospitalP</td>
-              <td className="py-2 font-mono text-amber-700">/l2-keys/placer-l2.key</td>
+              <td className="py-2 font-mono text-amber-700">
+                /l2-keys/placer-l2.key
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8081/jwks.json" target="_blank" rel="noreferrer">localhost:8081/jwks.json</a></span>
+              </td>
             </tr>
             <tr>
               <td className="py-2 font-mono">fulfiller-client-l2</td>
               <td className="py-2"><span className="badge bg-amber-100 text-amber-800">L2</span></td>
               <td className="py-2">HospitalF</td>
-              <td className="py-2 font-mono text-amber-700">/l2-keys/fulfiller-l2.key</td>
+              <td className="py-2 font-mono text-amber-700">
+                /l2-keys/fulfiller-l2.key
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8083/jwks.json" target="_blank" rel="noreferrer">localhost:8083/jwks.json</a></span>
+              </td>
             </tr>
           </tbody>
         </table>

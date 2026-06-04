@@ -453,6 +453,10 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "clientAuthenticatorType": "client-jwt",
+      "attributes": {
+        "use.jwks.url": "true",
+        "jwks.url": "http://apisix-placer-external:9080/jwks.json"
+      },
       "protocol": "openid-connect",
       "webOrigins": [
         "http://localhost:3000"
@@ -540,6 +544,10 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "clientAuthenticatorType": "client-jwt",
+      "attributes": {
+        "use.jwks.url": "true",
+        "jwks.url": "http://apisix-fulfiller-external:9080/jwks.json"
+      },
       "protocol": "openid-connect",
       "webOrigins": [
         "http://localhost:3000"

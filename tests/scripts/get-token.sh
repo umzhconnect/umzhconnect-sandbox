@@ -9,8 +9,11 @@
 # L2 variants sign an RS256 private_key_jwt client assertion locally (openssl)
 # and exchange it directly at Keycloak's token endpoint — the same flow a real
 # Level-2 client uses, mirroring the browser's Web Crypto implementation. The
-# RSA private key is fetched over HTTP from the l2-keys volume (served by the
-# web-app, the same source the browser uses).
+# RSA private key is committed in services/keys/ and served over HTTP by the
+# web-app at /l2-keys/ — the same source the browser uses. Keycloak verifies
+# the signature against the corresponding *.jwks.json, also committed in
+# services/keys/ and published by each party's external APISIX gateway at
+# http://localhost:8081/jwks.json (placer) / :8083/jwks.json (fulfiller).
 #
 # Uses curl or wget (no jq) to stay compatible with both the hurl Docker image
 # (wget only) and macOS dev environments (curl only). The L2 variants also need
@@ -29,8 +32,9 @@ TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
 KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-${KEYCLOAK_URL}/realms/umzh-connect}"
 TOKEN_AUD="${TOKEN_AUD:-${KEYCLOAK_ISSUER}/protocol/openid-connect/token}"
 
-# L2 private keys are served from the l2-keys volume by the web-app — the same
-# source the browser uses. Override WEB_APP_URL for non-default hosts.
+# L2 private keys are served at /l2-keys/ by the web-app (bind-mounted from
+# services/keys/) — the same source the browser uses. Override WEB_APP_URL
+# for non-default hosts.
 WEB_APP_URL="${WEB_APP_URL:-http://localhost:3000}"
 L2_KEY_BASE_URL="${L2_KEY_BASE_URL:-${WEB_APP_URL}/l2-keys}"
 CLIENT_ASSERTION_TYPE="urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
@@ -63,12 +67,18 @@ url_encode() {
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
 # Sign a private_key_jwt assertion and exchange it for an M2M access token.
-#   $1 = client_id   $2 = key basename (<name>.key in the l2-keys volume)
+#   $1 = client_id   $2 = key basename (matches both <name>.key in services/keys/
+#                         and the JWK kid in <name>.jwks.json)
 #   $3 = space-separated scope   $4 = optional authorization_details JSON
 #
 # L2 needs curl + openssl (the CI test-runner image installs both on top of the
 # hurl base). run-tests waits for the web-app, so the key is already served by
 # the time this runs.
+#
+# The `kid` we emit in the JWT header matches the `kid` of the corresponding
+# JWK that Keycloak fetches from the client's jwks.url (see services/keys/
+# *.jwks.json). With one key per JWKS today that lookup is trivial, but the
+# linkage is what makes overlap-window rotation work.
 fetch_l2_token() {
     l2_cid="$1"; key_name="$2"; l2_scope="$3"; auth_details="$4"
 
@@ -80,7 +90,8 @@ fetch_l2_token() {
         return 1
     fi
 
-    header=$(printf '%s' '{"typ":"JWT","alg":"RS256"}' | b64url)
+    # kid matches the JWK kid in services/keys/${key_name}.jwks.json
+    header=$(printf '{"typ":"JWT","alg":"RS256","kid":"%s"}' "$key_name" | b64url)
     now=$(date +%s)
     payload=$(printf '{"iss":"%s","sub":"%s","aud":"%s","exp":%s,"jti":"%s"}' \
               "$l2_cid" "$l2_cid" "$TOKEN_AUD" "$((now + 60))" "${now}-$(openssl rand -hex 8)" \

@@ -37,6 +37,7 @@ function _M.acquire(extra_body)
   local http     = require("resty.http")
   local cid_l2   = os.getenv("CLIENT_ID_L2")   or ""
   local key_path = os.getenv("CLIENT_KEY_PATH") or ""
+  local kid      = os.getenv("CLIENT_KID")     or ""
   local body
 
   if cid_l2 ~= "" and key_path ~= "" then
@@ -50,8 +51,13 @@ function _M.acquire(extra_body)
     -- against its own issuer/token-endpoint URLs, which use the public hostname).
     local aud = os.getenv("KEYCLOAK_TOKEN_ENDPOINT") or TOKEN_URL
     local now = ngx.time()
+    -- The kid in the JWT header tells Keycloak which JWK in the fetched
+    -- jwks.url payload to verify against. With one key per JWKS today this is
+    -- redundant, but it's the linkage that makes overlap-window rotation work.
+    local header = { typ = "JWT", alg = "RS256" }
+    if kid ~= "" then header.kid = kid end
     local sig = jwt:sign(pem, {
-      header  = { typ = "JWT", alg = "RS256" },
+      header  = header,
       payload = {
         iss = cid_l2,
         sub = cid_l2,
