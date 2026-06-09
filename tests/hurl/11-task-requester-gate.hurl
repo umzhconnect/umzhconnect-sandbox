@@ -34,8 +34,8 @@ GET {{hapi_url}}/fhir/fulfiller/Task
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Bundle"
-jsonpath "$.entry[*].resource.id" contains "TaskOrthopedicReferral"
-jsonpath "$.entry[*].resource.id" contains "TaskInternalLabReview"
+jsonpath "$.entry[*].resource.id" includes "TaskOrthopedicReferral"
+jsonpath "$.entry[*].resource.id" includes "TaskInternalLabReview"
 
 
 # --- 2. Placer searches Task list at Fulfiller's external gateway ---
@@ -53,8 +53,8 @@ Authorization: Bearer {{placer_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.resourceType" == "Bundle"
-jsonpath "$.entry[*].resource.id" contains "TaskOrthopedicReferral"
-jsonpath "$.entry[*].resource.id" not contains "TaskInternalLabReview"
+jsonpath "$.entry[*].resource.id" includes "TaskOrthopedicReferral"
+jsonpath "$.entry[*].resource.id" not includes "TaskInternalLabReview"
 
 
 # --- 3. Placer reads that Task by id (Task.requester matches → allow) ---
