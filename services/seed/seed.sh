@@ -31,10 +31,10 @@ echo "Placer external URL:   ${PLACER_EXTERNAL_URL}"
 echo "Fulfiller external URL:${FULFILLER_EXTERNAL_URL}"
 
 # ---------------------------------------------------------------------------
-# [1/6] Wait for HAPI FHIR to be ready
+# [1/7] Wait for HAPI FHIR to be ready
 # ---------------------------------------------------------------------------
 echo ""
-echo "[1/6] Waiting for HAPI FHIR server to be ready..."
+echo "[1/7] Waiting for HAPI FHIR server to be ready..."
 retries=0
 while [ $retries -lt $MAX_RETRIES ]; do
     # With multi-tenancy enabled, use the DEFAULT partition for the readiness check
@@ -53,10 +53,10 @@ if [ $retries -eq $MAX_RETRIES ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# [2/6] Create named partitions
+# [2/7] Create named partitions
 # ---------------------------------------------------------------------------
 echo ""
-echo "[2/6] Creating FHIR partitions..."
+echo "[2/7] Creating FHIR partitions..."
 
 create_partition() {
     PARTITION_ID=$1
@@ -94,11 +94,11 @@ create_partition 2 "fulfiller" "HospitalF (Fulfiller) partition"
 create_partition 3 "registry"  "Organization registry partition"
 
 # ---------------------------------------------------------------------------
-# [3/6] Load shared conformance resources -> /fhir/DEFAULT
+# [3/7] Load shared conformance resources -> /fhir/DEFAULT
 #        (Questionnaire and other non-partitionable resource types)
 # ---------------------------------------------------------------------------
 echo ""
-echo "[3/6] Loading shared conformance resources into /fhir/DEFAULT..."
+echo "[3/7] Loading shared conformance resources into /fhir/DEFAULT..."
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "${FHIR_BASE_URL}/DEFAULT" \
     -H "Content-Type: application/fhir+json" \
@@ -115,10 +115,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [4/6] Load Placer data -> /fhir/placer
+# [4/7] Load Placer data -> /fhir/placer
 # ---------------------------------------------------------------------------
 echo ""
-echo "[4/6] Loading Placer (HospitalP) seed data into /fhir/placer..."
+echo "[4/7] Loading Placer (HospitalP) seed data into /fhir/placer..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
@@ -140,10 +140,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# [5/6] Load Fulfiller data -> /fhir/fulfiller
+# [5/7] Load Fulfiller data -> /fhir/fulfiller
 # ---------------------------------------------------------------------------
 echo ""
-echo "[5/6] Loading Fulfiller (HospitalF) seed data into /fhir/fulfiller..."
+echo "[5/7] Loading Fulfiller (HospitalF) seed data into /fhir/fulfiller..."
 sed \
     -e "s|__PLACER_EXTERNAL_URL__|${PLACER_EXTERNAL_URL}|g" \
     -e "s|__FULFILLER_EXTERNAL_URL__|${FULFILLER_EXTERNAL_URL}|g" \
@@ -224,6 +224,10 @@ check_resource "registry"  "Organization"   "HospitalP"
 check_resource "registry"  "Organization"   "HospitalF"
 check_resource "registry"  "Endpoint"       "EndpointHospitalP"
 check_resource "registry"  "Endpoint"       "EndpointHospitalF"
+
+# L2 (private_key_jwt) clients use committed demo keys in services/keys/ and
+# Keycloak's `jwks.url` client attribute — no runtime provisioning required.
+# See services/keys/README.md for the trust model.
 
 echo ""
 echo "============================================="

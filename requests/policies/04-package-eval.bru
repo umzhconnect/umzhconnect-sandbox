@@ -22,9 +22,8 @@ body:json {
       "resource_type": "Condition",
       "resource_id": "SuspectedACLRupture",
       "token": {
-        "party_id": "hospitalf",
-        "smart_scopes": "system/Patient.r system/Condition.r system/ServiceRequest.r",
-        "scope": "openid smart-clinical-read consent:ConsentOrthopedicReferral"
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
+        "scope": "system/Patient.r system/Condition.r system/ServiceRequest.r"
       },
       "consent_id": "",
       "consent": null,
@@ -47,7 +46,7 @@ docs {
       "http_status": 200,
       "decision": {
         "allow":         true,
-        "party_id":      "hospitalf",
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
         "resource_type": "Condition",
         "method":        "GET",
         "consent_id":    "ConsentOrthopedicReferral",

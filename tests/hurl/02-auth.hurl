@@ -53,7 +53,7 @@ fulfiller_context_token: jsonpath "$.access_token"
 [Asserts]
 jsonpath "$.access_token" exists
 
-# party_id must be the full Registry URL, not a short name
+# organization_reference must be the full Registry URL, not a short name
 POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token/introspect
 [FormParams]
 token: {{fulfiller_context_token}}
@@ -62,7 +62,7 @@ client_secret: fulfiller-secret-2025
 HTTP 200
 [Asserts]
 jsonpath "$.active" == true
-jsonpath "$.party_id" contains "/fhir/Organization/HospitalF"
+jsonpath "$.extensions.umzhconnect.organization_reference" contains "/fhir/Organization/HospitalF"
 
 
 # --- Password grant: placer-user ---

@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "placer-l2",
+      "n": "jgaj6zXzlg6QhbcsoXq2qQuGckB2gbmUlQXUbyAHgS2yWslSaVVfAwXDgYuVaePkQK1B2hAg6dCPivnVZJHzL0XrpJ_wofGqrzt540h-XniqnyR5h-S8sLSvivtUVyF4jwvHurFoxKFlCcXYDA2L_uqvdkz62kan1lVNOAWC7HXesnXuu6-wMB1fJNYb_SqLlyTtXpbobG0LXcYUhDlqK4IBdZ1eYuHvX1GXjztqQiknpKG6GQ4CqVoa6aeVEoZcpmGNcr0FnsMN9VhRWGTWAse1D3Tr5HqB4OhXwrOfaewW-2oiHRZr4bhuDlBUdq9ClrOTzInpBqdo13nnf6QgDw",
+      "e": "AQAB"
+    }
+  ]
+}

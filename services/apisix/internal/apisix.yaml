@@ -49,7 +49,7 @@ routes:
           - regex: "${PARTNER_EXTERNAL_URL}/fhir/"
             replace: "${OWN_URL}/proxy/${PARTNER}/"
 
-  # ─── Proxy to partner: token exchange → forward to partner external ───
+  # ─── Proxy to partner: M2M token exchange → partner external ─────────
   - id: int-proxy-partner
     uri: /proxy/fhir/*
     methods: [GET]
@@ -66,50 +66,8 @@ routes:
         client_secret: "unused"
       umzh-role-check:
         required_role: "${PARTY}"
-      serverless-post-function:
-        phase: access
-        functions:
-          - |
-            return function(conf, ctx)
-              local http = require("resty.http")
-
-              -- Context-scoped M2M token exchange (RFC 9396 authorization_details).
-              -- Derive the fhirContext from the request path/query so the caller
-              -- does not need to pass any extra header.
-              local cid     = os.getenv("CLIENT_ID")     or ""
-              local csecret = os.getenv("CLIENT_SECRET") or ""
-
-              -- Extract the FHIR identifier from the request URI.
-              -- request_uri before proxy-rewrite: /proxy/fhir/<Type>[/<id>][?_id=<id>&...]
-              local orig_uri   = ngx.var.request_uri
-              local path       = orig_uri:match("^([^?]+)") or orig_uri
-              local identifier = path:match("/proxy/fhir/(.+)") or ""
-              if not identifier:find("/") then
-                local args = ngx.req.get_uri_args()
-                local qid = (args and args["_id"]) or ""
-                if qid ~= "" then identifier = identifier .. "/" .. qid end
-              end
-
-              local body = "grant_type=client_credentials"
-                        .. "&client_id=" .. cid
-                        .. "&client_secret=" .. csecret
-              if identifier:find("/") then
-                local auth_json = '[{"type":"umzh-connect-context","identifier":"'
-                                  .. identifier .. '"}]'
-                body = body .. "&authorization_details=" .. ngx.escape_uri(auth_json)
-              end
-
-              local httpc = http.new()
-              local tr, err = httpc:request_uri(
-                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
-                { method = "POST", body = body,
-                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
-              if not tr or tr.status ~= 200 then return ngx.exit(502) end
-
-              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
-              if not m2m then return ngx.exit(502) end
-              ngx.req.set_header("Authorization", "Bearer " .. m2m)
-            end
+      umzh-m2m-token:
+        include_fhir_context: true
       proxy-rewrite:
         regex_uri: ["^/proxy/fhir/(.*)$", "/fhir/$1"]
       response-rewrite:
@@ -133,31 +91,16 @@ routes:
         client_secret: "unused"
       umzh-role-check:
         required_role: "${PARTY}"
-      serverless-post-function:
-        phase: access
-        functions:
-          - |
-            return function(conf, ctx)
-              local http = require("resty.http")
-
-              local httpc = http.new()
-              local tr, err = httpc:request_uri(
-                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
-                { method = "POST",
-                  body = "grant_type=client_credentials"
-                     .. "&client_id="     .. (os.getenv("CLIENT_ID")     or "")
-                     .. "&client_secret=" .. (os.getenv("CLIENT_SECRET") or ""),
-                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
-              if not tr or tr.status ~= 200 then return ngx.exit(502) end
-
-              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
-              if not m2m then return ngx.exit(502) end
-              ngx.req.set_header("Authorization", "Bearer " .. m2m)
-            end
+      umzh-m2m-token:
+        include_fhir_context: false
       proxy-rewrite:
         uri: /fhir/Task
 
   # ─── Action: fan-out local + remote Task lists ───────────────────────
+  # umzh-m2m-token is intentionally NOT used here: this route needs both
+  # the original user token (for the local HAPI call) and an M2M token
+  # (for the partner external call) simultaneously. The serverless function
+  # calls _M.acquire() directly and preserves the user token in user_auth.
   - id: actions-all-tasks
     uri: /api/actions/all-tasks
     methods: [GET]
@@ -177,22 +120,17 @@ routes:
         functions:
           - |
             return function(conf, ctx)
-              local http  = require("resty.http")
-              local httpc = http.new()
-
-              -- M2M token (no consent scope — Task is workflow)
-              local tr, err = httpc:request_uri(
-                "http://keycloak:8080/realms/umzh-connect/protocol/openid-connect/token",
-                { method = "POST",
-                  body = "grant_type=client_credentials"
-                     .. "&client_id="     .. (os.getenv("CLIENT_ID")     or "")
-                     .. "&client_secret=" .. (os.getenv("CLIENT_SECRET") or ""),
-                  headers = { ["Content-Type"] = "application/x-www-form-urlencoded" } })
-              if not tr or tr.status ~= 200 then return ngx.exit(502) end
-              local m2m = tr.body:match('"access_token"%s*:%s*"([^"]+)"')
-              if not m2m then return ngx.exit(502) end
+              local http       = require("resty.http")
+              local m2m_plugin = require("apisix.plugins.umzh-m2m-token")
+              local httpc      = http.new()
 
               local user_auth = ngx.req.get_headers()["Authorization"]
+
+              local m2m, err = m2m_plugin.acquire()
+              if not m2m then
+                ngx.log(ngx.ERR, "[all-tasks] M2M token failed: ", err)
+                return ngx.exit(502)
+              end
 
               local lr, _ = httpc:request_uri(
                 "http://nginx-proxy:${NGINX_OWN_PORT}/fhir/${PARTY}/Task",
@@ -202,9 +140,8 @@ routes:
                 "http://apisix-${PARTNER}-external:9080/fhir/Task",
                 { headers = { Authorization = "Bearer " .. m2m } })
 
-              local local_body = (lr and lr.body) or "{}"
-              local_body = local_body:gsub("${PARTNER_EXTERNAL_URL}/fhir/", "${OWN_URL}/proxy/fhir/")
-
+              local local_body  = (lr and lr.body) or "{}"
+              local_body  = local_body:gsub("${PARTNER_EXTERNAL_URL}/fhir/", "${OWN_URL}/proxy/fhir/")
               local remote_body = (rr and rr.body) or "{}"
               remote_body = remote_body:gsub("${PARTNER_EXTERNAL_URL}/fhir/", "${OWN_URL}/proxy/fhir/")
 

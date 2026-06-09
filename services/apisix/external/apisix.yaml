@@ -15,6 +15,23 @@ routes:
               return ngx.exit(200)
             end
 
+  # ─── Public JWKS endpoint — NO auth, NO OPA ──────────────────────────
+  # The external gateway is the hospital's public face: partner hospitals'
+  # IdPs hit it to verify our private_key_jwt client assertions. We carve
+  # one unauthenticated path out of the otherwise auth-gated surface so the
+  # JWKS lives at the same origin as the FHIR API (the SMART Backend
+  # Services discovery shape — jwks_uri co-located with the FHIR base).
+  #
+  # The actual file is served by nginx-proxy from services/keys/; we just
+  # proxy to it so the public URL is http://localhost:808{1,3}/jwks.json.
+  # That way the external gateway container itself never needs to mount
+  # the keys directory.
+  - id: ext-jwks
+    uri: /jwks.json
+    methods: [GET]
+    priority: 100
+    upstream_id: jwks-${PARTY}
+
   # ─── Task list — JWT only, no OPA (workflow resource) ────────────────
   - id: ext-task-list
     uri: /fhir/Task
@@ -123,6 +140,13 @@ upstreams:
   - id: hapi-${PARTY}
     nodes:
       "nginx-proxy:${NGINX_OWN_PORT}": 1
+    type: roundrobin
+
+  # Internal-only static-file server (nginx-proxy server block on port 85/86)
+  # holding the party's JWK Set from services/keys/${PARTY}-l2.jwks.json.
+  - id: jwks-${PARTY}
+    nodes:
+      "nginx-proxy:${JWKS_NGINX_PORT}": 1
     type: roundrobin
 
 global_rules:

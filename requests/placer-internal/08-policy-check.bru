@@ -23,9 +23,8 @@ body:json {
       "resource_type": "Patient",
       "resource_id": "PetraMeier",
       "token": {
-        "party_id": "hospitalp",
-        "smart_scopes": "system/Patient.r system/Task.cru",
-        "scope": "openid consent:ConsentOrthopedicReferral"
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalP",
+        "scope": "system/Patient.r system/Task.cru"
       },
       "consent_id": "",
       "consent": null

@@ -12,7 +12,7 @@
 # Rule 4 enforces cross-party reads:
 #   1. Resolve fhirContext reference → ServiceRequest/<id>
 #   2. Search Consent?data=ServiceRequest/<id>&status=active
-#   3. Verify provision.actor[].reference.reference == token.party_id (exact)
+#   3. Verify provision.actor[].reference.reference == token.organization_reference (exact)
 #      and provision.period.end has not passed
 #   4. Fetch the ServiceRequest and compute its resource graph
 #   5. Permit if the requested resource is in the graph
@@ -41,9 +41,9 @@ http_status := 403 if { not allow }
 #   "resource_type": "Patient",
 #   "resource_id": "123",
 #   "token": {
-#     "party_id":     "http://localhost:8084/fhir/Organization/HospitalF",
-#     "smart_scopes": "system/Patient.r system/Task.cru ...",
-#     "fhir_context": [{"reference": "ServiceRequest/sr-123"}]
+#     "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
+#     "scope":                  "system/Patient.r system/Task.cru ...",
+#     "fhir_context":           [{"reference": "ServiceRequest/sr-123"}]
 #   },
 #   "fhir_base": "http://nginx-proxy:81/fhir/placer"
 # }
@@ -170,9 +170,9 @@ consent_grants(sr_ref) if {
 	some entry in resp.body.entry
 	consent := entry.resource
 	consent.status == "active"
-	# Exact match: party_id must equal the actor's full Registry URL
+	# Exact match: organization_reference must equal the actor's full Registry URL
 	some actor in consent.provision.actor
-	actor.reference.reference == input.token.party_id
+	actor.reference.reference == input.token.organization_reference
 	consent_not_expired(consent)
 }
 
@@ -232,7 +232,7 @@ resource_in_graph(_) if {
 # Helper: Check if token carries the required SMART on FHIR scope
 # ==========================================================================
 has_smart_scope(resource, action) if {
-	some scope in split(input.token.smart_scopes, " ")
+	some scope in split(input.token.scope, " ")
 	parts := split(scope, "/")
 	count(parts) == 2
 	ra := split(parts[1], ".")
@@ -258,12 +258,12 @@ method_to_action(method) := action if {
 # Decision response (full context, useful for debugging)
 # ==========================================================================
 decision := {
-	"allow":         allow,
-	"party_id":      input.token.party_id,
-	"resource_type": input.resource_type,
-	"method":        input.method,
-	"fhir_context":  input.token.fhir_context,
-	"reason":        reason,
+	"allow":                  allow,
+	"organization_reference": input.token.organization_reference,
+	"resource_type":          input.resource_type,
+	"method":                 input.method,
+	"fhir_context":           input.token.fhir_context,
+	"reason":                 reason,
 }
 
 reason := "Task operations are owner-based, no consent needed" if {

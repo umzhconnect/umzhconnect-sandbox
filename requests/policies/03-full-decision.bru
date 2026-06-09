@@ -22,9 +22,8 @@ body:json {
       "resource_type": "Condition",
       "resource_id": "SuspectedACLRupture",
       "token": {
-        "party_id": "hospitalf",
-        "smart_scopes": "system/Patient.r system/Condition.r system/ServiceRequest.r",
-        "scope": "openid smart-clinical-read consent:ConsentOrthopedicReferral"
+        "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
+        "scope": "system/Patient.r system/Condition.r system/ServiceRequest.r"
       },
       "consent_id": "",
       "consent": null,
@@ -35,15 +34,15 @@ body:json {
 
 docs {
   Queries the decision rule which returns a structured object with allow flag,
-  evaluated party_id, resource_type, resolved consent_id and a human-readable
+  evaluated organization_reference, resource_type, resolved consent_id and a human-readable
   reason. Useful for debugging policy decisions.
 
   Endpoint: POST /v1/data/umzh/authz/decision
   Returns:
   {
     "result": {
-      "allow":         true,
-      "party_id":      "hospitalf",
+      "allow":                  true,
+      "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
       "resource_type": "Condition",
       "method":        "GET",
       "consent_id":    "ConsentOrthopedicReferral",
