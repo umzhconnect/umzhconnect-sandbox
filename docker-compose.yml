@@ -250,6 +250,7 @@ services:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
+      - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
     ports:
       - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
     depends_on:
@@ -330,6 +331,7 @@ services:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
+      - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
     ports:
       - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
     depends_on:

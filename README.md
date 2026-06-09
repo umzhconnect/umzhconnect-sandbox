@@ -838,13 +838,10 @@ Every M2M token (L1 and L2) includes the following hardcoded claims — identica
 
 #### Client Scopes
 
+SMART `system/<Resource>.<perms>` scopes (Task.cru, Patient.r, ServiceRequest.r/.rs, Condition.r, Observation.r, …) are assigned as **default** scopes per M2M client and bundled into every issued token. They are the substrate read by OPA's `has_smart_scope` check (`services/opa/policies/main.rego`).
+
 | Scope Name | Type | Description |
 |------------|------|-------------|
-| `smart-patient-read` | Static | Adds `system/Patient.r` to token |
-| `smart-task-write` | Static | SMART Task create/update permission |
-| `smart-servicerequest-read` | Static | SMART ServiceRequest read |
-| `smart-clinical-read` | Static | Conditions, medications, allergies, etc. |
-| `smart-questionnaire-write` | Static | QuestionnaireResponse create/update |
 | **`consent`** | **Dynamic** | **Parameterised consent scope (see below)** |
 
 ---
