@@ -35,7 +35,7 @@ services:
       - keycloak_m2_cache:/root/.m2
     working_dir: /app
     command: >
-      sh -c "mvn -B package -DskipTests -q &&
+      sh -c "mvn -B ${MAVEN_FLAGS:-} package -DskipTests -q &&
              cp target/umzh-fhir-context-mapper-*.jar /providers/ &&
              echo 'FhirContextMapper JAR installed.'"
     networks:
