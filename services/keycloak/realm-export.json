@@ -32,58 +32,7 @@
   "scopeMappings": [],
   "clientScopes": [
     {
-      "name": "smart-patient-read",
-      "description": "SMART on FHIR: Read patient data",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true",
-        "consent.screen.text": "Read patient demographic data"
-      },
-      "protocolMappers": []
-    },
-    {
-      "name": "smart-task-write",
-      "description": "SMART on FHIR: Create/update tasks",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true",
-        "consent.screen.text": "Create and update task resources"
-      }
-    },
-    {
-      "name": "smart-servicerequest-read",
-      "description": "SMART on FHIR: Read service requests",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true",
-        "consent.screen.text": "Read service request data"
-      }
-    },
-    {
-      "name": "smart-clinical-read",
-      "description": "SMART on FHIR: Read clinical resources (conditions, medications, allergies, etc.)",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true",
-        "consent.screen.text": "Read clinical data (conditions, medications, allergies)"
-      }
-    },
-    {
-      "name": "smart-questionnaire-write",
-      "description": "SMART on FHIR: Create/update questionnaire responses",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "true",
-        "consent.screen.text": "Create and update questionnaire responses"
-      }
-    },
-    {
-      "name": "system/Task.cru",
+      "name": "system/Task.crus",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true"
@@ -240,13 +189,7 @@
         "http://localhost:8080"
       ],
       "defaultClientScopes": [],
-      "optionalClientScopes": [
-        "smart-patient-read",
-        "smart-task-write",
-        "smart-servicerequest-read",
-        "smart-clinical-read",
-        "smart-questionnaire-write"
-      ],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "realm-roles",
@@ -279,7 +222,7 @@
         "http://localhost:3000"
       ],
       "defaultClientScopes": [
-        "system/Task.cru",
+        "system/Task.crus",
         "system/ServiceRequest.rs",
         "system/Patient.r",
         "system/Condition.r",
@@ -293,12 +236,7 @@
         "system/QuestionnaireResponse.cru",
         "system/ImagingStudy.r"
       ],
-      "optionalClientScopes": [
-        "smart-task-write",
-        "smart-servicerequest-read",
-        "smart-clinical-read",
-        "smart-questionnaire-write"
-      ],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -367,7 +305,7 @@
         "http://localhost:3000"
       ],
       "defaultClientScopes": [
-        "system/Task.cru",
+        "system/Task.crus",
         "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
@@ -384,13 +322,7 @@
         "system/Practitioner.r",
         "system/PractitionerRole.r"
       ],
-      "optionalClientScopes": [
-        "smart-task-write",
-        "smart-servicerequest-read",
-        "smart-clinical-read",
-        "smart-patient-read",
-        "smart-questionnaire-write"
-      ],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -462,7 +394,7 @@
         "http://localhost:3000"
       ],
       "defaultClientScopes": [
-        "system/Task.cru",
+        "system/Task.crus",
         "system/ServiceRequest.rs",
         "system/Patient.r",
         "system/Condition.r",
@@ -476,12 +408,7 @@
         "system/QuestionnaireResponse.cru",
         "system/ImagingStudy.r"
       ],
-      "optionalClientScopes": [
-        "smart-task-write",
-        "smart-servicerequest-read",
-        "smart-clinical-read",
-        "smart-questionnaire-write"
-      ],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -553,7 +480,7 @@
         "http://localhost:3000"
       ],
       "defaultClientScopes": [
-        "system/Task.cru",
+        "system/Task.crus",
         "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
@@ -570,13 +497,7 @@
         "system/Practitioner.r",
         "system/PractitionerRole.r"
       ],
-      "optionalClientScopes": [
-        "smart-task-write",
-        "smart-servicerequest-read",
-        "smart-clinical-read",
-        "smart-patient-read",
-        "smart-questionnaire-write"
-      ],
+      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",

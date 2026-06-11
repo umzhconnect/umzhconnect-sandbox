@@ -103,7 +103,10 @@ fetch_l2_token() {
 
     body="grant_type=client_credentials&client_id=${l2_cid}"
     body="${body}&client_assertion_type=${CLIENT_ASSERTION_TYPE}&client_assertion=${assertion}"
-    body="${body}&scope=$(echo "$l2_scope" | sed 's/ /+/g')"
+    # Skip scope param when empty so Keycloak applies the client's defaults
+    # only. M2M flows don't take `openid` — the access token's `system/*`
+    # scopes come from defaultClientScopes regardless.
+    [ -n "$l2_scope" ] && body="${body}&scope=$(echo "$l2_scope" | sed 's/ /+/g')"
     [ -n "$auth_details" ] && body="${body}&authorization_details=$(url_encode "$auth_details")"
 
     fetch_token "$body"
@@ -111,39 +114,34 @@ fetch_l2_token() {
 
 case "$CLIENT_TYPE" in
   placer)
-    SCOPE="smart-task-write smart-servicerequest-read smart-clinical-read smart-questionnaire-write"
-    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&scope=$(echo "$SCOPE" | sed 's/ /+/g')"
+    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025"
     ;;
   fulfiller)
-    SCOPE="smart-task-write smart-servicerequest-read smart-clinical-read smart-patient-read smart-questionnaire-write"
-    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&scope=$(echo "$SCOPE" | sed 's/ /+/g')"
+    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025"
     ;;
   fulfiller-context)
     # RFC 9396 authorization_details token for cross-party reads
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
-    SCOPE="smart-task-write smart-servicerequest-read smart-clinical-read smart-patient-read"
     AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
-    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&scope=$(echo "$SCOPE" | sed 's/ /+/g')&authorization_details=${AUTH_DETAILS_ENC}"
+    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
     ;;
   placer-user)
-    fetch_token "grant_type=password&client_id=web-app&username=placer-user&password=placer123&scope=openid+smart-patient-read+smart-task-write+smart-servicerequest-read+smart-clinical-read"
+    # User flow — openid IS appropriate here (authenticates a user; an ID token is meaningful)
+    fetch_token "grant_type=password&client_id=web-app&username=placer-user&password=placer123&scope=openid"
     ;;
   fulfiller-user)
-    fetch_token "grant_type=password&client_id=web-app&username=fulfiller-user&password=fulfiller123&scope=openid+smart-patient-read+smart-task-write+smart-servicerequest-read+smart-clinical-read"
+    fetch_token "grant_type=password&client_id=web-app&username=fulfiller-user&password=fulfiller123&scope=openid"
     ;;
   placer-l2)
-    fetch_l2_token placer-client-l2 placer-l2 \
-      "smart-task-write smart-servicerequest-read smart-clinical-read smart-questionnaire-write"
+    fetch_l2_token placer-client-l2 placer-l2 ""
     ;;
   fulfiller-l2)
-    fetch_l2_token fulfiller-client-l2 fulfiller-l2 \
-      "smart-task-write smart-servicerequest-read smart-clinical-read smart-patient-read smart-questionnaire-write"
+    fetch_l2_token fulfiller-client-l2 fulfiller-l2 ""
     ;;
   fulfiller-l2-context)
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
-    fetch_l2_token fulfiller-client-l2 fulfiller-l2 \
-      "smart-task-write smart-servicerequest-read smart-clinical-read smart-patient-read" \
+    fetch_l2_token fulfiller-client-l2 fulfiller-l2 "" \
       '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     ;;
   *)

@@ -12,7 +12,6 @@ POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
 grant_type: client_credentials
 client_id: placer-client
 client_secret: placer-secret-2025
-scope: smart-task-write smart-servicerequest-read smart-clinical-read
 HTTP 200
 [Captures]
 placer_cc_token: jsonpath "$.access_token"
@@ -29,7 +28,6 @@ POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
 grant_type: client_credentials
 client_id: fulfiller-client
 client_secret: fulfiller-secret-2025
-scope: smart-task-write smart-servicerequest-read smart-clinical-read smart-patient-read
 HTTP 200
 [Captures]
 fulfiller_cc_token: jsonpath "$.access_token"
@@ -45,7 +43,6 @@ POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
 grant_type: client_credentials
 client_id: fulfiller-client
 client_secret: fulfiller-secret-2025
-scope: smart-patient-read smart-servicerequest-read
 authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralOrthopedicSurgery"}]
 HTTP 200
 [Captures]
@@ -65,6 +62,40 @@ jsonpath "$.active" == true
 jsonpath "$.extensions.umzhconnect.organization_reference" contains "/fhir/Organization/HospitalF"
 
 
+# --- M2M with explicit system/* scope request ---
+#
+# Demonstrates the SMART Backend Services pattern: a client narrows or
+# declares intent by requesting a specific system/<Resource>.<perms> scope
+# at token time. The granted scope set is the union of the client's
+# defaultClientScopes and any explicitly-requested scopes the client is
+# entitled to. The introspection below confirms system/Patient.r lands in
+# the access token's `scope` claim — the same string OPA's has_smart_scope
+# parses.
+
+POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
+[FormParams]
+grant_type: client_credentials
+client_id: placer-client
+client_secret: placer-secret-2025
+scope: system/Patient.r
+HTTP 200
+[Captures]
+placer_scoped_token: jsonpath "$.access_token"
+[Asserts]
+jsonpath "$.access_token" exists
+jsonpath "$.scope" contains "system/Patient.r"
+
+POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token/introspect
+[FormParams]
+token: {{placer_scoped_token}}
+client_id: placer-client
+client_secret: placer-secret-2025
+HTTP 200
+[Asserts]
+jsonpath "$.active" == true
+jsonpath "$.scope" contains "system/Patient.r"
+
+
 # --- Password grant: placer-user ---
 
 POST {{keycloak_url}}/realms/umzh-connect/protocol/openid-connect/token
@@ -73,7 +104,7 @@ grant_type: password
 client_id: web-app
 username: placer-user
 password: placer123
-scope: openid smart-patient-read smart-task-write
+scope: openid
 HTTP 200
 [Asserts]
 jsonpath "$.access_token" exists
@@ -88,7 +119,7 @@ grant_type: password
 client_id: web-app
 username: fulfiller-user
 password: fulfiller123
-scope: openid smart-patient-read smart-task-write
+scope: openid
 HTTP 200
 [Asserts]
 jsonpath "$.access_token" exists

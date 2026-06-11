@@ -42,7 +42,7 @@ http_status := 403 if { not allow }
 #   "resource_id": "123",
 #   "token": {
 #     "organization_reference": "http://localhost:8084/fhir/Organization/HospitalF",
-#     "scope":                  "system/Patient.r system/Task.cru ...",
+#     "scope":                  "system/Patient.r system/Task.crus ...",
 #     "fhir_context":           [{"reference": "ServiceRequest/sr-123"}]
 #   },
 #   "fhir_base": "http://nginx-proxy:81/fhir/placer"
@@ -50,10 +50,39 @@ http_status := 403 if { not allow }
 # ---------------------------------------------------------------------------
 
 # ==========================================================================
-# Rule 1: Allow Task operations (owner-based, no consent needed)
+# Rule 1a: Task search — require system/Task.s
+# ------------------------------------------------------------------------
+# The gateway also injects ?requester=<organization_reference> via the
+# umzh-task-requester-inject plugin so HAPI returns only Tasks where the
+# caller is the named requester. The scope check here gates *whether* the
+# search may run; the requester filter scopes *what it returns*.
 # ==========================================================================
 allow if {
 	input.resource_type == "Task"
+	input.method == "GET"
+	input.resource_id == ""
+	has_smart_scope("Task", "s")
+}
+
+# ==========================================================================
+# Rule 1b: Task read by id — require system/Task.r AND the fetched Task's
+# requester field must equal the calling party's organization_reference
+# ==========================================================================
+allow if {
+	input.resource_type == "Task"
+	input.method == "GET"
+	input.resource_id != ""
+	has_smart_scope("Task", "r")
+	task := fetched_task(input.resource_id)
+	task.requester.reference == input.token.organization_reference
+}
+
+# ==========================================================================
+# Rule 1c: Task create / update / delete — scope check only, no requester gate
+# ==========================================================================
+allow if {
+	input.resource_type == "Task"
+	input.method != "GET"
 	has_smart_scope("Task", method_to_action(input.method))
 }
 
@@ -179,6 +208,21 @@ consent_grants(sr_ref) if {
 # ==========================================================================
 # ServiceRequest graph — derive resource scope from a fhirContext reference
 # ==========================================================================
+
+# Fetch a Task by id from this party's partition.  Not cached: Task state
+# (and in principle Task.requester) can change; the requester check must
+# read the current value.
+fetched_task(task_id) := task if {
+	url := concat("/", [input.fhir_base, "Task", task_id])
+	resp := http.send({
+		"method":            "GET",
+		"url":               url,
+		"headers":           {"Accept": "application/fhir+json"},
+		"force_json_decode": true,
+	})
+	resp.status_code == 200
+	task := resp.body
+}
 
 # Fetch the ServiceRequest named by <sr_ref>.  Cached: a ServiceRequest is
 # immutable for the lifetime of the workflow it anchors.

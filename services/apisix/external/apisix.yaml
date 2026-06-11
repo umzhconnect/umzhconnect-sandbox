@@ -32,7 +32,11 @@ routes:
     priority: 100
     upstream_id: jwks-${PARTY}
 
-  # ─── Task list — JWT only, no OPA (workflow resource) ────────────────
+  # ─── Task list — JWT + scope (system/Task.s) + server-side requester filter ─
+  # Scope-gated to require .s, and the umzh-task-requester-inject plugin appends
+  # ?requester=<organization_reference> from the caller's token so HAPI only
+  # returns Tasks where the caller is the named requester. The caller cannot
+  # override this filter — args.requester is set after the request is parsed.
   - id: ext-task-list
     uri: /fhir/Task
     methods: [GET]
@@ -47,6 +51,10 @@ routes:
         set_userinfo_header: false
         client_id: "unused"
         client_secret: "unused"
+      opa:
+        host: "http://opa-${PARTY}:8181"
+        policy: "umzh/authz/apisix"
+      umzh-task-requester-inject: {}
       proxy-rewrite:
         uri: /fhir/${PARTY}/Task
 

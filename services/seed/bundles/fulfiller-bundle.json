@@ -37,7 +37,7 @@
           "reference": "__PLACER_EXTERNAL_URL__/fhir/Patient/PetraMeier"
         },
         "requester": {
-          "reference": "__PLACER_EXTERNAL_URL__/fhir/PractitionerRole/HansMusterRole"
+          "reference": "__REGISTRY_URL__/fhir/Organization/HospitalP"
         },
         "owner": {
           "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
@@ -62,6 +62,36 @@
       "request": {
         "method": "PUT",
         "url": "Task/TaskOrthopedicReferral"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:task-internal-lab",
+      "resource": {
+        "resourceType": "Task",
+        "id": "TaskInternalLabReview",
+        "status": "requested",
+        "intent": "order",
+        "authoredOn": "2026-01-08T09:00:00+01:00",
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "385763009",
+              "display": "Internal review"
+            }
+          ],
+          "text": "Internal lab QC review — fulfiller-only workflow"
+        },
+        "requester": {
+          "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
+        },
+        "owner": {
+          "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Task/TaskInternalLabReview"
       }
     }
   ]

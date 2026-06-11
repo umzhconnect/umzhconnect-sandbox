@@ -113,11 +113,13 @@ const CredentialsPage: React.FC = () => {
       let data: Record<string, unknown>;
 
       if (activeLevel === 'l1') {
+        // M2M flow — no `openid` scope. There's no user to attest to and no
+        // meaningful ID token in client_credentials. The token's system/*
+        // scopes come from the client's defaultClientScopes in Keycloak.
         const body = new URLSearchParams({
           grant_type:    'client_credentials',
           client_id:     cfg.l1.clientId,
           client_secret: cfg.l1.clientSecret,
-          scope:         'openid',
         });
         if (ref) body.set('authorization_details',
           JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }]));
@@ -151,12 +153,12 @@ const CredentialsPage: React.FC = () => {
         const assertion = await buildClientAssertion(cfg.l2.clientId, KEYCLOAK_TOKEN_URL, cryptoKey, cfg.l2.kid);
         setAssertionData(assertion);
 
+        // Same as L1: M2M, no `openid` scope.
         const body = new URLSearchParams({
           grant_type:            'client_credentials',
           client_id:             cfg.l2.clientId,
           client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
           client_assertion:      assertion.jwt,
-          scope:                 'openid',
         });
         if (ref) body.set('authorization_details',
           JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }]));
