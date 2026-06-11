@@ -187,15 +187,15 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
-      "rootUrl": "${WEB_APP_PUBLIC_URL:http://localhost:3000}",
+      "rootUrl": "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}",
       "baseUrl": "/",
       "redirectUris": [
-        "http://localhost:3000/*",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}/*"
+        "http://localhost:${WEB_APP_PORT}/*",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}/*"
       ],
       "webOrigins": [
-        "http://localhost:3000",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
+        "http://localhost:${WEB_APP_PORT}",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}"
       ],
       "defaultClientScopes": [],
       "optionalClientScopes": [],
@@ -228,8 +228,8 @@
       "secret": "${PLACER_CLIENT_SECRET:placer-secret-2025}",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
+        "http://localhost:${WEB_APP_PORT}",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -313,8 +313,8 @@
       "secret": "${FULFILLER_CLIENT_SECRET:fulfiller-secret-2025}",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
+        "http://localhost:${WEB_APP_PORT}",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -403,8 +403,8 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
+        "http://localhost:${WEB_APP_PORT}",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -491,8 +491,8 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000",
-        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
+        "http://localhost:${WEB_APP_PORT}",
+        "${WEB_APP_PUBLIC_URL:http://localhost:${WEB_APP_PORT}}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
