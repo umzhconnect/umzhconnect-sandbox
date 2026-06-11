@@ -47,6 +47,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.1
     container_name: umzh-keycloak
+    entrypoint: ["/opt/keycloak/entrypoint.sh"]
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
@@ -61,9 +62,11 @@ services:
       KC_HOSTNAME_STRICT: 'false'
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
+      WEB_APP_PORT: ${WEB_APP_PORT}
     volumes:
-      - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+      - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json.template:ro
       - ./services/keycloak/providers:/opt/keycloak/providers
+      - ./services/keycloak/docker-entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
     ports:
       - '${KEYCLOAK_PORT}:8080'
     depends_on:
@@ -388,7 +391,7 @@ services:
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro
     ports:
-      - '9001:9001'
+      - '${RESEED_API_PORT}:9001'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -404,6 +407,8 @@ services:
       context: ./web-app
       dockerfile: Dockerfile
     container_name: umzh-web-app
+    environment:
+      VITE_RESEED_API_URL: "http://localhost:${RESEED_API_PORT}"
     ports:
       - '${WEB_APP_PORT}:80'
     volumes:
