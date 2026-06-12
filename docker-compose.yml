@@ -47,7 +47,6 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.1
     container_name: umzh-keycloak
-    entrypoint: ["/bin/sh", "/opt/keycloak/entrypoint.sh"]
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
@@ -62,12 +61,12 @@ services:
       KC_HOSTNAME_STRICT: 'false'
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
+      # Substituted by Keycloak's built-in placeholder resolution during
+      # realm import (${WEB_APP_PORT} references in realm-export.json)
       WEB_APP_PORT: ${WEB_APP_PORT}
     volumes:
-      - ./services/keycloak/realm-export.json:/tmp/realm-template.json:ro
+      - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - ./services/keycloak/providers:/opt/keycloak/providers
-      - ./services/keycloak/docker-entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
-      - keycloak_import:/opt/keycloak/data/import
     ports:
       - '${KEYCLOAK_PORT}:8080'
     depends_on:
@@ -430,7 +429,6 @@ services:
 volumes:
   postgres_data:
   keycloak_m2_cache:
-  keycloak_import:
 
 networks:
   umzh-net:
