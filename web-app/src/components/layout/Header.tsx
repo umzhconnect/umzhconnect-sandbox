@@ -14,7 +14,8 @@ const Header: React.FC = () => {
     if (reseedStatus === 'loading') return;
     setReseedStatus('loading');
     try {
-      const res = await fetch('http://localhost:9001/reseed', { method: 'POST' });
+      const reseedUrl = (window as Record<string, any>).__ENV__?.VITE_RESEED_API_URL || 'http://localhost:9001';
+      const res = await fetch(`${reseedUrl}/reseed`, { method: 'POST' });
       const json = await res.json();
       setReseedStatus(json.success ? 'success' : 'error');
     } catch {
