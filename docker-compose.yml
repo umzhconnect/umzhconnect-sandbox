@@ -64,9 +64,10 @@ services:
       KC_PROXY_HEADERS: xforwarded
       WEB_APP_PORT: ${WEB_APP_PORT}
     volumes:
-      - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json.template:ro
+      - ./services/keycloak/realm-export.json:/tmp/realm-template.json:ro
       - ./services/keycloak/providers:/opt/keycloak/providers
       - ./services/keycloak/docker-entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
+      - keycloak_import:/opt/keycloak/data/import
     ports:
       - '${KEYCLOAK_PORT}:8080'
     depends_on:
@@ -429,6 +430,7 @@ services:
 volumes:
   postgres_data:
   keycloak_m2_cache:
+  keycloak_import:
 
 networks:
   umzh-net:
