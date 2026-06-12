@@ -49,7 +49,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.1
     container_name: umzh-keycloak
-    entrypoint: ["/opt/keycloak/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/opt/keycloak/entrypoint.sh"]
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
