@@ -42,22 +42,6 @@
         "owner": {
           "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
         },
-        "input": [
-          {
-            "type": {
-              "coding": [
-                {
-                  "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
-                  "code": "IRCP",
-                  "display": "information recipient"
-                }
-              ]
-            },
-            "valueReference": {
-              "reference": "__PLACER_EXTERNAL_URL__/fhir/Consent/ConsentOrthopedicReferral"
-            }
-          }
-        ],
         "output": [
           {
             "type": {
@@ -145,6 +129,37 @@
       "request": {
         "method": "PUT",
         "url": "Appointment/AppointmentOrthopedicConsultation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:appointment-fulfiller-internal",
+      "resource": {
+        "resourceType": "Appointment",
+        "id": "AppointmentFulfillerInternal",
+        "status": "fulfilled",
+        "description": "Fulfiller-internal appointment for an UNRELATED patient. Not referenced by any Task; the Placer must never be able to read it. Security-test canary for finding 6 (Task-graph tampering) — see tests/hurl/xfail-issue6-task-graph-tampering.hurl.",
+        "start": "2026-02-02T14:00:00+01:00",
+        "end": "2026-02-02T14:30:00+01:00",
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "SBJ",
+                    "display": "subject"
+                  }
+                ]
+              }
+            ],
+            "status": "accepted"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Appointment/AppointmentFulfillerInternal"
       }
     },
     {

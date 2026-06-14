@@ -37,6 +37,10 @@ local schema = {
     allow_params   = { type = "array", items = { type = "string" }, default = {} },
     -- Permitted `_include` values, verbatim (e.g. "ServiceRequest:patient").
     allow_includes = { type = "array", items = { type = "string" }, default = {} },
+    -- FHIR JSON-Patch field allowlist (PATCH routes): every op's `path` (and
+    -- `from`, for move/copy) must address one of these top-level elements.
+    -- Empty ⇒ not enforced (non-PATCH routes leave this unset).
+    patchable_fields = { type = "array", items = { type = "string" }, default = {} },
   },
   -- Reject unknown keys at config-load time. Without this a typo fails open in
   -- one case: misspelling `require` (e.g. `requires`) would silently drop the
@@ -132,6 +136,32 @@ function _M.access(conf, ctx)
   for _, req in ipairs(conf["require"] or {}) do
     if args[req] == nil then
       return reject("required", "missing required search parameter: " .. req)
+    end
+  end
+
+  -- PATCH body field allowlist (FHIR JSON-Patch). Only enforced when configured.
+  -- Each op's target `path` (and `from`, for move/copy) must address a permitted
+  -- top-level element; anything else → 400 (IG: "other paths SHALL be rejected").
+  if conf.patchable_fields and #conf.patchable_fields > 0 then
+    local allow_fields = to_set(conf.patchable_fields)
+    ngx.req.read_body()
+    local raw = ngx.req.get_body_data()
+    local ops = raw and core.json.decode(raw)
+    if type(ops) ~= "table" or ops[1] == nil then
+      return reject("invalid", "PATCH body must be a non-empty JSON-Patch array")
+    end
+    for _, op in ipairs(ops) do
+      if type(op.path) ~= "string" then
+        return reject("invalid", "JSON-Patch op missing path")
+      end
+      local targets = { op.path }
+      if op.from ~= nil then targets[#targets + 1] = op.from end
+      for _, p in ipairs(targets) do
+        local root = type(p) == "string" and p:match("^/([^/]+)")
+        if not root or not allow_fields[root] then
+          return reject("not-supported", "field not patchable: " .. tostring(p))
+        end
+      end
     end
   end
 end

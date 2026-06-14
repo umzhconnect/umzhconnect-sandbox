@@ -88,12 +88,28 @@ allow if {
 }
 
 # ==========================================================================
-# Rule 1c: Task create / update / delete — scope check only, no requester gate
+# Rule 1c: Task create (POST) — scope check only. The caller creates a Task
+# owned by the partner (owner != caller), so ownership cannot be required here.
 # ==========================================================================
 allow if {
 	input.resource_type == "Task"
-	input.method != "GET"
-	has_smart_scope("Task", method_to_action(input.method))
+	input.method == "POST"
+	has_smart_scope("Task", "c")
+}
+
+# ==========================================================================
+# Rule 1d: Task update (PATCH) — scope AND caller must be the Task owner.
+# PATCH is the only update method exposed on Task (PUT/DELETE have no route →
+# default-deny). The data consumer (requester) must NOT mutate the Task: Rule 4b
+# and the Task _include path derive read authorization from Task.input/output, so
+# owner-only writes keep that graph trustworthy. Missing owner → fail-closed.
+# ==========================================================================
+allow if {
+	input.resource_type == "Task"
+	input.method == "PATCH"
+	has_smart_scope("Task", "u")
+	task := fetched_task(input.resource_id)
+	task.owner.reference == input.token.organization_reference
 }
 
 # ==========================================================================

@@ -137,7 +137,10 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
     TOTAL=$((TOTAL + 1))
 
     echo "--- Running: $test_name ---"
-    if hurl --test --color \
+    # --continue-on-error: run all entries in a file even after a failed assert,
+    # so test-first specs (currently-failing security cases) still execute their
+    # cleanup entries and so every failing assertion is reported in one pass.
+    if hurl --test --color --continue-on-error \
         --variable "keycloak_url=$KEYCLOAK_URL" \
         --variable "placer_url=$APISIX_PLACER_URL" \
         --variable "placer_ext_url=$APISIX_PLACER_EXT_URL" \

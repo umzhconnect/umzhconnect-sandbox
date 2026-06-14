@@ -87,7 +87,7 @@ HAPI embeds `http://localhost:8090/...` in self-links (internal Docker address).
 APISIX policy enforcement uses the built-in `opa` plugin plus three custom Lua plugins (`services/apisix/plugins/`):
 - `umzh-role-check` — enforces realm role on internal gateway routes
 - `umzh-m2m-token` — acquires M2M tokens from Keycloak (L1 `client_secret` or L2 `private_key_jwt`) and injects them as `Authorization` headers
-- `umzh-capability-guard` — deny-by-default allowlist of query params and `_include` values per route on external gateways, derived from the IG CapabilityStatement
+- `umzh-capability-guard` — deny-by-default allowlist of query params, `_include` values, and (on PATCH routes) JSON-Patch `patchable_fields` per route on external gateways, derived from the IG CapabilityStatement
 
 OPA policies are in `services/opa/policies/`.
 

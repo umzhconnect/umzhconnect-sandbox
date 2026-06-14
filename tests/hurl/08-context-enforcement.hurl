@@ -90,6 +90,17 @@ Authorization: Bearer {{fulfiller_context_tumorboard_token}}
 HTTP 403
 
 
+# ---------------------------------------------------------------------------
+# NEGATIVE TEST — Plain M2M token carries no fhirContext claim
+# Same resource as the positive test above; denied because fhir_context_sr_refs
+# and fhir_context_task_refs are both empty → Rules 4 and 4b fail closed.
+# ---------------------------------------------------------------------------
+
+GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
+Authorization: Bearer {{fulfiller_token}}
+HTTP 403
+
+
 # ===========================================================================
 # SEARCH / EXPANSION — context scoping must hold for searches, not just reads-by-id
 # ---------------------------------------------------------------------------
@@ -462,3 +473,100 @@ Authorization: Bearer {{placer_task_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.id" == "AppointmentOrthopedicConsultation"
+
+
+# ===========================================================================
+# TASK-GRAPH TAMPERING — a Task reader must not be able to inject the graph it
+# reads from. The cross-party read graph is Task.output (Rule 4b and the Task
+# _include path), and Task writes are owner-only, so the placer (the requester,
+# not the owner) cannot inject it.
+#
+# Fixture: AppointmentFulfillerInternal — a fulfiller-internal appointment for an
+# unrelated patient (seeded in fulfiller-bundle.json), referenced by no Task; the
+# Placer must never be able to read it. The suite runs hurl with
+# --continue-on-error so the cleanup entry still restores TaskOrthopedicReferral
+# even when a check fails, and so every check is reported in one run.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# CONTROL — the canary is not reachable without tampering (invariant). Confirms
+# the reads below are governed by the Task graph, not pre-existing access.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentFulfillerInternal
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# TAMPER — the Placer (requester, not owner of TaskOrthopedicReferral) tries to
+# inject an out-of-band output edge. The capability-guard rejects it: /output is
+# not an IG-patchable field (400). Status left unasserted; the property under
+# test is the READ/SEARCH below.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {
+    "op": "add",
+    "path": "/output/-",
+    "value": {
+      "type": { "coding": [ { "system": "http://snomed.info/sct", "code": "11429006" } ] },
+      "valueReference": { "reference": "Appointment/AppointmentFulfillerInternal" }
+    }
+  }
+]
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 1 — Rule 4b graph tampering: the canary must not be readable via the
+# Task-rooted graph (the inject above was rejected, so it is not in the graph).
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentFulfillerInternal
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 2 — _include graph tampering: the Task search _include must not surface
+# the injected edge.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.entry[*].resource.id" not includes "AppointmentFulfillerInternal"
+
+
+# ---------------------------------------------------------------------------
+# CLEANUP — remove any injected edge, restoring the seeded Task. Status
+# unasserted: a no-op (400) when the TAMPER PATCH was rejected.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "remove", "path": "/output/1"}
+]
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 3 — unauthorized Task write: the Placer is neither owner nor requester
+# of TaskInternalLabReview (both = HospitalF). Uses an IG-patchable field
+# (businessStatus) so the capability-guard passes and the OPA owner check
+# (Rule 1d) is what denies the write.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskInternalLabReview
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "add", "path": "/businessStatus", "value": {"text": "review"}}
+]
+HTTP 403

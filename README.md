@@ -291,7 +291,7 @@ Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent
 | `/fhir/ServiceRequest` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` + `opa` |
 | `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` + `opa` |
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
-| `/fhir/Task/{id}` | PATCH | — | `nginx-proxy:83` | — |
+| `/fhir/Task/{id}` | PATCH | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` (patchable fields) + `opa` |
 
 #### Category 3 — Internal Proxy API (internal gateways only)
 
@@ -478,12 +478,13 @@ umzh-m2m-token:
 **File:** `services/apisix/plugins/umzh-capability-guard.lua`  
 **Priority:** 2400 (after `openid-connect` at 2599, before `opa` at 2001)
 
-Deny-by-default allowlist for FHIR query parameters and `_include` values on external gateway routes, enforcing the static API contract from the IG CapabilityStatement at the edge. A request passes only if every query key is explicitly permitted:
+Deny-by-default allowlist for FHIR query parameters, `_include` values, and JSON-Patch fields on external gateway routes, enforcing the static API contract from the IG CapabilityStatement at the edge. A request passes only if:
 
 - every name in `require` is present (e.g. `_id` for ServiceRequest search)
 - `_id` (when allowed) is single-valued — no comma-OR, no repeats
 - `_include` values are in `allow_includes` — rejects `*`, `:iterate`, and any non-enumerated include
-- every other key's base name is in `allow_params` — no `:modifier`, no `.chain`
+- every other query key's base name is in `allow_params` — no `:modifier`, no `.chain`
+- on PATCH routes: every JSON-Patch op's `path` (and `from`) root is in `patchable_fields`
 
 Violations return **400 + OperationOutcome** (FHIR `handling=strict` behaviour). `_revinclude`, `_has`, `_filter`, `_query`, modifiers, chained params, and generic control params (`_format`, `_count`, …) are all blocked by not being in the allowlist.
 
@@ -494,6 +495,7 @@ umzh-capability-guard:
   allow_includes:
     - "ServiceRequest:patient"
     - "ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo"
+  patchable_fields: ["input", "owner", "focus", "businessStatus"]  # PATCH only
 ```
 
 Used on all external gateway FHIR routes. Registered in the external gateways' `config.yaml` and volume-mounted into both external containers. The allowlists are sourced from the IG [CapabilityStatement](https://build.fhir.org/ig/umzhconnect/umzhconnect-ig/CapabilityStatement-ChUmzhConnectCapabilityStatement.html).
