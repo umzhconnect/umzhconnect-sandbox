@@ -56,11 +56,17 @@ http_status := 403 if { not allow }
 # umzh-task-requester-inject plugin so HAPI returns only Tasks where the
 # caller is the named requester. The scope check here gates *whether* the
 # search may run; the requester filter scopes *what it returns*.
+#
+# organization_reference must be non-empty: the requester filter is the ONLY
+# thing scoping a Task search to the caller, and umzh-task-requester-inject
+# silently no-ops when the value is absent — which would let HAPI return every
+# Task in the partition. Fail closed rather than rely on that downstream filter.
 # ==========================================================================
 allow if {
 	input.resource_type == "Task"
 	input.method == "GET"
 	input.resource_id == ""
+	input.token.organization_reference != ""
 	has_smart_scope("Task", "s")
 }
 
@@ -263,13 +269,6 @@ resource_in_graph(sr_ref) if {
 	some ref in service_request_graph(sr_ref)
 	# endswith handles both relative ("Patient/X") and absolute URL references
 	endswith(ref, resource_ref)
-}
-
-# Search operations with no specific resource_id pass the scope check.
-# The gateway always supplies a concrete _id on the external endpoint, so
-# this branch is unreachable from there but preserved for direct OPA calls.
-resource_in_graph(_) if {
-	input.resource_id == ""
 }
 
 # ==========================================================================
