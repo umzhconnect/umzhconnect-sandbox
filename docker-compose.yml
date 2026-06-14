@@ -91,7 +91,7 @@ services:
   #   /fhir/fulfiller -> HospitalF partition
   # ===========================================================================
   hapi-fhir:
-    image: hapiproject/hapi:v7.4.0
+    image: hapiproject/hapi:v8.10.0-1
     container_name: umzh-hapi-fhir
     environment:
       SPRING_CONFIG_LOCATION: file:///app/config/application.yaml

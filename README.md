@@ -117,7 +117,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 |---------|-------|-----------|---------|
 | `postgres` | `postgres:16-alpine` | 5431 | Shared DB (HAPI FHIR + Keycloak) |
 | `keycloak` | `quay.io/keycloak/keycloak:25.0` | 8180 | OAuth2 / OIDC / SMART on FHIR |
-| `hapi-fhir` | `hapiproject/hapi:v7.4.0` | 8090 | FHIR R4 server (URL-partitioned) |
+| `hapi-fhir` | `hapiproject/hapi:v8.10.0-1` | 8090 | FHIR R4 server (URL-partitioned) |
 | `nginx-proxy` | `nginx:alpine` | 8084 | Self-link rewriting proxy (ports 80–83); port 84 = public registry gateway |
 | `opa-placer` | `openpolicyagent/opa:0.70.0` | 8181 | Policy engine for HospitalP |
 | `opa-fulfiller` | `openpolicyagent/opa:0.70.0` | 8182 | Policy engine for HospitalF |
@@ -176,7 +176,7 @@ Both gateways share the **same Keycloak realm** and the **same HAPI FHIR instanc
 
 ### FHIR Server — URL-based Partitioning
 
-A single HAPI FHIR v7.4 instance provides three logical partitions via URL-based multi-tenancy:
+A single HAPI FHIR v8.10 instance provides three logical partitions via URL-based multi-tenancy:
 
 | Partition | Base URL | Tenant | Auth |
 |-----------|----------|--------|------|

@@ -1,7 +1,8 @@
 spring:
   main:
-    # Required for HAPI FHIR v7.x — known circular dependency in SearchParamRegistry
-    allow-circular-references: true
+    allow-circular-references: true  # known circular dependency in SearchParamRegistry
+  flyway:
+    enabled: false
   datasource:
     url: jdbc:postgresql://postgres:5432/hapi_fhir
     username: umzh
@@ -48,6 +49,8 @@ hapi:
     # Paging
     default_page_size: 20
     max_page_size: 200
+    # Disable search result reuse — stale cached results survive expunge+recreate.
+    reuse_cached_search_results_millis: -1
     # Validation
     validation:
       requests_enabled: false
@@ -58,3 +61,12 @@ hapi:
     subscription:
       resthook_enabled: false
       websocket_enabled: false
+    # Implementation Guide — registers custom SearchParameters (Task/SR _includes)
+    # and the CapabilityStatement.
+    implementationguides:
+      ch-umzh-connect:
+        name: ch.fhir.ig.ch-umzh-connect
+        packageUrl: https://build.fhir.org/ig/umzhconnect/umzhconnect-ig/package.tgz
+        version: 1.0.0-ballot
+        installMode: STORE_AND_INSTALL
+        reloadExisting: true

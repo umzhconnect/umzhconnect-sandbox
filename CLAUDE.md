@@ -49,7 +49,7 @@ This is a reference implementation of a two-party healthcare order workflow (Pla
 | Service | Technology | Purpose |
 |---------|-----------|---------|
 | `web-app` | React 18 + TypeScript + Vite | Dual-role SPA (switch Placer/Fulfiller in UI) |
-| `hapi-fhir` | HAPI FHIR v7.4.0 | Single FHIR server with URL-based multi-tenancy |
+| `hapi-fhir` | HAPI FHIR v8.10.0 | Single FHIR server with URL-based multi-tenancy |
 | `keycloak` | Keycloak 25.0 | OAuth2/OIDC authorization server |
 | `apisix-placer-internal` / `apisix-fulfiller-internal` | APISIX 3.9.0 | Internal gateways (ports 8080/8082) for own web-app |
 | `apisix-placer-external` / `apisix-fulfiller-external` | APISIX 3.9.0 | External gateways (ports 8081/8083) for cross-party access |
