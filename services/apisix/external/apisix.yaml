@@ -51,6 +51,12 @@ routes:
         set_userinfo_header: false
         client_id: "unused"
         client_secret: "unused"
+      umzh-capability-guard:
+        allow_params: ["owner", "requester", "status", "_id"]
+        allow_includes:
+          - "Task:ch-umzhconnectig-task-inputreference"
+          - "Task:ch-umzhconnectig-task-outputreference"
+          - "Task:ch-umzhconnectig-task-outputcanonical"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"
@@ -94,7 +100,7 @@ routes:
       proxy-rewrite:
         regex_uri: ["^/fhir/Task/(.+)$", "/fhir/${PARTY}/Task/$1"]
 
-  # ─── FHIR read by ID — OPA consent gate ──────────────────────────────
+  # ─── FHIR read by ID — capability-guard (no params) + OPA consent gate ─
   - id: ext-fhir-read
     uri: /fhir/*
     methods: [GET]
@@ -113,21 +119,24 @@ routes:
         set_userinfo_header: false
         client_id: "unused"
         client_secret: "unused"
+      umzh-capability-guard:
+        allow_params: []
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"
       proxy-rewrite:
         regex_uri: ["^/fhir/(.*)$", "/fhir/${PARTY}/$1"]
 
-  # ─── FHIR search — OPA consent gate, mandatory _id ───────────────────
-  - id: ext-fhir-search
-    uri: /fhir/*
+  # ─── ServiceRequest search — capability-guard (_id required, enumerated
+  #     includes) + OPA consent gate. Only ServiceRequest is searchable
+  #     cross-party here; Task search is handled by ext-task-list above.
+  #     Clinical leaf types and QuestionnaireResponse have no search route, so
+  #     a search on them falls through to default-deny (404). QR search is
+  #     intentionally deferred until its OPA context-gating rule lands.
+  - id: ext-sr-search
+    uri: /fhir/ServiceRequest
     methods: [GET]
-    vars:
-      - - "uri"
-        - "~~"
-        - "^/fhir/[^/]+/?$"
-    priority: 1
+    priority: 10
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
@@ -138,6 +147,15 @@ routes:
         set_userinfo_header: false
         client_id: "unused"
         client_secret: "unused"
+      umzh-capability-guard:
+        require: ["_id"]
+        allow_params: ["_id"]
+        allow_includes:
+          - "ServiceRequest:patient"
+          - "ServiceRequest:subject"
+          - "ServiceRequest:ch-umzhconnectig-servicerequest-reasonreference"
+          - "ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo"
+          - "ServiceRequest:ch-umzhconnectig-servicerequest-insurance"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"

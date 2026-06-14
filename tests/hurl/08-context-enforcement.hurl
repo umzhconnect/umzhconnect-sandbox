@@ -4,10 +4,12 @@
 # Validates that the placer-external gateway enforces context-graph membership
 # using the fhirContext claim from a RFC 9396 authorization_details token.
 #
-# Enforcement chain:
-#   1. openid-connect — validates JWT, enforces bearer token presence
-#   2. opa plugin     — calls OPA; 403 on deny, passes through on allow
-#   3. upstream       — HAPI FHIR serves the resource (only reached when allowed)
+# Enforcement chain (external gateway):
+#   1. routing          — only declared method×resourceType reachable (else 404)
+#   2. openid-connect   — validates JWT, enforces bearer token presence
+#   3. capability-guard — query param / _include allowlist (else 400)
+#   4. opa plugin       — calls OPA; 403 on deny, passes through on allow
+#   5. upstream         — HAPI FHIR serves the resource (only reached when allowed)
 #
 # OPA resolves the Consent by searching
 #   GET /Consent?data=ServiceRequest/<id>&status=active
