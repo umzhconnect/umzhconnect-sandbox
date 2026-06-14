@@ -75,6 +75,14 @@ FULFILLER_L2_CONTEXT_TUMOR_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller-l2-conte
 [ -z "$FULFILLER_L2_CONTEXT_TUMOR_TOKEN" ] && echo "  FATAL: could not acquire fulfiller L2 tumorboard context token" && exit 1
 echo "  fulfiller M2M L2+tumor    OK"
 
+PLACER_TASK_CONTEXT_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-context TaskOrthopedicReferral)
+[ -z "$PLACER_TASK_CONTEXT_TOKEN" ] && echo "  FATAL: could not acquire placer task context token" && exit 1
+echo "  placer M2M + task ctx     OK"
+
+PLACER_L2_TASK_CONTEXT_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-l2-context TaskOrthopedicReferral)
+[ -z "$PLACER_L2_TASK_CONTEXT_TOKEN" ] && echo "  FATAL: could not acquire placer L2 task context token" && exit 1
+echo "  placer M2M L2+task ctx    OK"
+
 echo "=== All tokens acquired ==="
 
 # Bind effective M2M tokens — L2 tokens shadow L1 when -l2 is passed,
@@ -84,11 +92,13 @@ if [ "$USE_L2" = "true" ]; then
   EFFECTIVE_FULFILLER_TOKEN="$FULFILLER_L2_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TOKEN="$FULFILLER_L2_CONTEXT_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TUMOR_TOKEN="$FULFILLER_L2_CONTEXT_TUMOR_TOKEN"
+  EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN="$PLACER_L2_TASK_CONTEXT_TOKEN"
 else
   EFFECTIVE_PLACER_TOKEN="$PLACER_TOKEN"
   EFFECTIVE_FULFILLER_TOKEN="$FULFILLER_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TOKEN="$FULFILLER_CONTEXT_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TUMOR_TOKEN="$FULFILLER_CONTEXT_TUMOR_TOKEN"
+  EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN="$PLACER_TASK_CONTEXT_TOKEN"
 fi
 
 # -------------------------------------------------------------------
@@ -147,6 +157,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "placer_l2_token=$PLACER_L2_TOKEN" \
         --variable "fulfiller_l2_token=$FULFILLER_L2_TOKEN" \
         --variable "fulfiller_l2_context_token=$FULFILLER_L2_CONTEXT_TOKEN" \
+        --variable "placer_task_context_token=$EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN" \
         --variable "consent_end=$CONSENT_END" \
         --report-junit "$REPORT_DIR/${test_name}.xml" \
         "$hurl_file"; then

@@ -270,7 +270,11 @@ const WorkflowWizard: React.FC = () => {
       description: 'Fetch the linked ServiceRequest from the Placer via the proxy gateway.',
     },
     {
-      title: 'Step 3: Update Status',
+      title: 'Step 3: Create Consent',
+      description: 'Grant the Placer access to read Task output resources via the Task-rooted context graph.',
+    },
+    {
+      title: 'Step 4: Update Status',
       description: 'Set the Task status to in-progress to acknowledge processing.',
     },
   ];
@@ -460,8 +464,8 @@ const WorkflowWizard: React.FC = () => {
 
           const searchUrl =
             `${typeBase}?_id=${encodeURIComponent(id)}` +
-            `&_include=ServiceRequest:subject:Patient` +
-            `&_include=ServiceRequest:requester:Practitioner`;
+            `&_include=ServiceRequest:subject` +
+            `&_include=ServiceRequest:requester`;
 
           const data = await client.fetchAbsolute<FhirResource>(searchUrl);
 
@@ -477,6 +481,52 @@ const WorkflowWizard: React.FC = () => {
         }
 
       } else if (step === 2) {
+        // Create Consent: grant the placer access to read Task output resources
+        // via the Task-rooted context graph (OPA Rule 4b).
+        // provision.actor = Task.requester (the placer's registry URL)
+        // provision.data  = Task/<id>  — OPA finds this via Consent?data=Task/<id>
+        const task = results['step-0'] as Task | undefined;
+        if (!task?.id) {
+          addLog({ type: 'error', message: 'No Task available from step 1.' });
+          return;
+        }
+        setCreateModal({
+          open: true,
+          type: 'Consent',
+          draft: {
+            status: 'active',
+            patient: task.for ?? { reference: 'Patient/unknown' },
+            dateTime: new Date().toISOString(),
+            provision: {
+              type: 'permit',
+              period: {
+                start: new Date().toISOString().split('T')[0],
+                end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split('T')[0],
+              },
+              ...(task.requester?.reference && {
+                actor: [
+                  {
+                    role: {
+                      coding: [
+                        {
+                          system: 'http://terminology.hl7.org/CodeSystem/v3-ParticipationType',
+                          code: 'IRCP',
+                          display: 'information recipient',
+                        },
+                      ],
+                    },
+                    reference: { reference: task.requester.reference },
+                  },
+                ],
+              }),
+              data: [{ meaning: 'related', reference: { reference: `Task/${task.id}` } }],
+            },
+          },
+        });
+
+      } else if (step === 3) {
         // Open update modal for the selected Task, pre-set to in-progress
         const task = results['step-0'] as Task | undefined;
         if (!task?.id) {

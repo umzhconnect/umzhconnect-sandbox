@@ -9,13 +9,17 @@
 # is no longer named by the token; instead OPA locates it by searching
 # `Consent?data=<fhirContext-ref>&status=active` and verifies the actor.
 #
-# Rule 4 enforces cross-party reads:
+# Two workflow-root types are supported (Rule 4 / Rule 4b):
+#
+# Rule 4 — ServiceRequest-rooted context (fulfiller reading from placer):
 #   1. Resolve fhirContext reference → ServiceRequest/<id>
-#   2. Search Consent?data=ServiceRequest/<id>&status=active
-#   3. Verify provision.actor[].reference.reference == token.organization_reference (exact)
-#      and provision.period.end has not passed
-#   4. Fetch the ServiceRequest and compute its resource graph
+#   2. Search Consent?data=ServiceRequest/<id>&status=active in this partition
+#   3. Verify provision.actor == token.organization_reference (exact) + not expired
+#   4. Fetch the ServiceRequest and compute its forward-reference graph
 #   5. Permit if the requested resource is in the graph
+#
+# Rule 4b — Task-rooted context (placer reading Task output from fulfiller):
+#   Same steps, but root is Task/<id> and the graph walks Task.output[].valueReference
 # =============================================================================
 
 package umzh.authz
@@ -127,6 +131,24 @@ allow if {
 }
 
 # ==========================================================================
+# Rule 4b: Allow read of resources within the fhirContext Task graph
+# ------------------------------------------------------------------------
+# Mirrors Rule 4 for Task-rooted contexts. The placer carries a context
+# token whose fhirContext root is Task/<id> and reads resources listed in
+# Task.output[].valueReference. Consent is looked up as
+# Consent?data=Task/<id>&status=active in this partition (the fulfiller's),
+# naming the placer as actor.
+# ==========================================================================
+allow if {
+	input.method == "GET"
+	input.resource_type != "Task"
+	has_smart_scope(input.resource_type, "r")
+	some task_ref in fhir_context_task_refs
+	consent_grants(task_ref)
+	resource_in_task_graph(task_ref)
+}
+
+# ==========================================================================
 # Rule 5: Allow metadata endpoint always
 # ==========================================================================
 allow if {
@@ -152,6 +174,13 @@ allow if {
 fhir_context_sr_refs contains ref if {
 	some ctx in input.token.fhir_context
 	startswith(ctx.reference, "ServiceRequest/")
+	ref := ctx.reference
+}
+
+# All Task references carried by the fhirContext claim (Task-rooted contexts).
+fhir_context_task_refs contains ref if {
+	some ctx in input.token.fhir_context
+	startswith(ctx.reference, "Task/")
 	ref := ctx.reference
 }
 
@@ -272,6 +301,32 @@ resource_in_graph(sr_ref) if {
 }
 
 # ==========================================================================
+# Task graph — derive resource scope from a Task fhirContext reference
+# ==========================================================================
+
+# The set of resource references reachable from Task <task_ref>: the Task
+# itself plus everything its input[].valueReference and output[].valueReference
+# fields point to.
+task_graph(task_ref) := graph if {
+	task_id := split(task_ref, "/")[1]
+	task := fetched_task(task_id)
+	graph := (
+		{task_ref} |
+		{ref | some item in task.input;  ref := item.valueReference.reference} |
+		{ref | some item in task.output; ref := item.valueReference.reference}
+	)
+}
+
+# ==========================================================================
+# Helper: the requested resource lies within Task <task_ref>'s graph
+# ==========================================================================
+resource_in_task_graph(task_ref) if {
+	resource_ref := concat("/", [input.resource_type, input.resource_id])
+	some ref in task_graph(task_ref)
+	endswith(ref, resource_ref)
+}
+
+# ==========================================================================
 # Helper: Check if token carries the required SMART on FHIR scope
 # ==========================================================================
 has_smart_scope(resource, action) if {
@@ -324,6 +379,12 @@ reason := "Resource access granted via valid consent" if {
 	allow
 	some sr_ref in fhir_context_sr_refs
 	consent_grants(sr_ref)
+}
+
+reason := "Resource access granted via Task context graph and valid consent" if {
+	allow
+	some task_ref in fhir_context_task_refs
+	consent_grants(task_ref)
 }
 
 reason := "Access denied: insufficient scope, missing or invalid consent, or resource not in context graph" if {

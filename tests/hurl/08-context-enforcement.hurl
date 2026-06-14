@@ -289,3 +289,176 @@ Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.id" == "SuspectedACLRupture"
+
+
+# ===========================================================================
+# TASK-ROOTED CONTEXT — Placer reads Task output resources at the fulfiller
+# ---------------------------------------------------------------------------
+# Mirror of the SR-rooted tests above, but with the workflow root being a Task
+# and the direction reversed: placer (HospitalP) reads from the fulfiller-
+# external gateway using a context token whose fhirContext identifier is
+# Task/TaskOrthopedicReferral.
+#
+# Per IG guidance-interactions.html: "Placer reads forward-referenced output
+# resources with the Task ID as the context resource."
+#
+# The Consent (ConsentTaskOrthopedicReferral) lives in the FULFILLER partition
+# because OPA at opa-fulfiller searches against fhir_base=/fhir/fulfiller.
+# It names Task/TaskOrthopedicReferral as provision.data and HospitalP as actor.
+#
+# Task.output → Appointment/AppointmentOrthopedicConsultation (the graph edge
+# under test). The Appointment read hits the existing ext-fhir-read wildcard
+# route; no new route is needed.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Setup — Refresh Task-rooted Consent end date
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
+]
+HTTP 200
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Placer reads Task output resource at fulfiller-external
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType" == "Appointment"
+jsonpath "$.id"           == "AppointmentOrthopedicConsultation"
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Placer reads the Task itself (Rule 1b: placer is Task.requester)
+# Independent of the graph check; confirms the two access paths coexist.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType" == "Task"
+jsonpath "$.id"           == "TaskOrthopedicReferral"
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Task search with output _include returns Task + Appointment in
+# one round-trip. Authorization basis: Rule 1a (requester filter injected by
+# umzh-task-requester-inject); the included Appointment rides on the Task
+# search grant, not a separate graph check.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType"             == "Bundle"
+jsonpath "$.total"                    == 1
+jsonpath "$.entry"                    count == 2
+jsonpath "$.entry[*].resource.id"     includes "TaskOrthopedicReferral"
+jsonpath "$.entry[*].resource.id"     includes "AppointmentOrthopedicConsultation"
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — No context: plain placer M2M token carries no fhirContext → 403
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Wrong party: fulfiller token is not the named actor in
+# ConsentTaskOrthopedicReferral (actor = HospitalP only) → 403
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{fulfiller_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Resource not in graph: TaskInternalLabReview has requester=
+# HospitalF, so the placer is neither owner nor requester → denied by Rule 1b
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task/TaskInternalLabReview
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Appointment search is not a declared interaction at the external
+# gateway (no search route for Appointment) → 404
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment?_id=AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 404
+
+
+# ---------------------------------------------------------------------------
+# REVOCATION — Inactive Consent → denied
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/status", "value": "inactive"}
+]
+HTTP 200
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/status", "value": "active"}
+]
+HTTP 200
+
+
+# ---------------------------------------------------------------------------
+# EXPIRY — Expired provision.period.end → denied even if status=active
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "2020-01-01"}
+]
+HTTP 200
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
+]
+HTTP 200
+
+# Confirm access is restored after expiry fix
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.id" == "AppointmentOrthopedicConsultation"
