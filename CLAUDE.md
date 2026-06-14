@@ -84,9 +84,10 @@ HAPI embeds `http://localhost:8090/...` in self-links (internal Docker address).
 3. SMART on FHIR system scopes in M2M tokens
 4. Cross-party requests carry two JWTs (validated at each hop)
 
-APISIX policy enforcement uses the built-in `opa` plugin plus two custom Lua plugins (`services/apisix/plugins/`):
+APISIX policy enforcement uses the built-in `opa` plugin plus three custom Lua plugins (`services/apisix/plugins/`):
 - `umzh-role-check` — enforces realm role on internal gateway routes
 - `umzh-m2m-token` — acquires M2M tokens from Keycloak (L1 `client_secret` or L2 `private_key_jwt`) and injects them as `Authorization` headers
+- `umzh-capability-guard` — deny-by-default allowlist of query params and `_include` values per route on external gateways, derived from the IG CapabilityStatement
 
 OPA policies are in `services/opa/policies/`.
 

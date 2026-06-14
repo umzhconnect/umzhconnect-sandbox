@@ -153,6 +153,7 @@ routes:
         allow_includes:
           - "ServiceRequest:patient"
           - "ServiceRequest:subject"
+          - "ServiceRequest:requester"
           - "ServiceRequest:ch-umzhconnectig-servicerequest-reasonreference"
           - "ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo"
           - "ServiceRequest:ch-umzhconnectig-servicerequest-insurance"
