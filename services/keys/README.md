@@ -52,15 +52,16 @@ POST /token  client_assertion=<JWT>           ──►  Keycloak
 
 ## Regenerating
 
-If you ever want to rotate the demo keys:
+If you ever want to rotate the demo keys, run `rotate-l2-keys.sh` from this
+directory (or from the repo root as `services/keys/rotate-l2-keys.sh`). It
+generates a fresh RSA-2048 private key **and** rewrites the matching
+`*.jwks.json` in one step, so the two can never drift apart:
 
 ```sh
-cd services/keys
-openssl genrsa -out placer-l2.key 2048
-openssl genrsa -out fulfiller-l2.key 2048
-python3 ../../scripts/derive-jwks.py placer-l2 fulfiller-l2   # not committed; see below
+services/keys/rotate-l2-keys.sh placer-l2 fulfiller-l2
 ```
 
-The JWKS derivation is straightforward — see the inline Python in `seed.sh`'s
-git history (commit that introduced this directory) or use the snippet in
-`docs/security-concept.md`.
+The script sets each JWK's `kid` to the key basename (`placer-l2`,
+`fulfiller-l2`) — the same value the signers emit in the JWT header, which is
+how Keycloak selects the right key during `private_key_jwt` verification.
+
