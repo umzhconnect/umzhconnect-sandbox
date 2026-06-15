@@ -459,6 +459,9 @@ services:
       context: ./web-app
       dockerfile: Dockerfile
     container_name: umzh-web-app
+    # Consumed at container start by env.sh, which writes them into
+    # /usr/share/nginx/html/env-config.js (window.__ENV__) so the SPA picks up
+    # .env changes without a rebuild.
     environment:
       - VITE_KEYCLOAK_URL
       - VITE_KEYCLOAK_REALM

@@ -1,18 +1,30 @@
-declare global {
-  interface Window {
-    __ENV__?: Record<string, string>;
-  }
-}
+// =============================================================================
+// Runtime-first environment resolution
+// =============================================================================
+// Resolution order for each key:
+//   1. window.__ENV__  — written by env.sh at container start (runtime config,
+//      changeable via .env without a rebuild; see web-app/env.sh)
+//   2. import.meta.env — Vite build-time vars (used in local `npm run dev`)
+//   3. the supplied fallback default
+// =============================================================================
 
-function env(key: string, fallback: string): string {
-  return window.__ENV__?.[key] || import.meta.env[key] || fallback;
-}
+export type EnvKey =
+  | 'VITE_API_BASE_URL'
+  | 'VITE_KEYCLOAK_URL'
+  | 'VITE_KEYCLOAK_REALM'
+  | 'VITE_KEYCLOAK_CLIENT_ID'
+  | 'VITE_PLACER_URL'
+  | 'VITE_PLACER_EXTERNAL_URL'
+  | 'VITE_FULFILLER_URL'
+  | 'VITE_FULFILLER_EXTERNAL_URL'
+  | 'VITE_REGISTRY_URL'
+  | 'VITE_RESEED_API_URL';
 
-export const VITE_KEYCLOAK_URL        = env('VITE_KEYCLOAK_URL',        'http://localhost:8180');
-export const VITE_KEYCLOAK_REALM      = env('VITE_KEYCLOAK_REALM',      'umzh-connect');
-export const VITE_KEYCLOAK_CLIENT_ID  = env('VITE_KEYCLOAK_CLIENT_ID',  'web-app');
-export const VITE_PLACER_URL          = env('VITE_PLACER_URL',          'http://localhost:8080');
-export const VITE_PLACER_EXTERNAL_URL = env('VITE_PLACER_EXTERNAL_URL', 'http://localhost:8081');
-export const VITE_FULFILLER_URL       = env('VITE_FULFILLER_URL',       'http://localhost:8082');
-export const VITE_FULFILLER_EXTERNAL_URL = env('VITE_FULFILLER_EXTERNAL_URL', 'http://localhost:8083');
-export const VITE_REGISTRY_URL        = env('VITE_REGISTRY_URL',        'http://localhost:8084');
+const runtimeEnv =
+  (window as unknown as { __ENV__?: Partial<Record<EnvKey, string>> }).__ENV__ ?? {};
+
+const buildEnv = import.meta.env as unknown as Partial<Record<EnvKey, string>>;
+
+export function env(key: EnvKey, fallback = ''): string {
+  return runtimeEnv[key] || buildEnv[key] || fallback;
+}
