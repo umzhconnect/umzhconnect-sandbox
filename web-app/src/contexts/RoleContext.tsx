@@ -1,17 +1,17 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { PartyRole } from '../types/fhir';
-import { env } from '../config/env';
+import { env, serviceUrl } from '../config/env';
 
-// APISIX gateway base URLs (browser calls these directly via CORS).
-// Resolved at runtime via window.__ENV__ (injected by env.sh in the Docker
-// image), falling back to build-time VITE_* vars, then these defaults.
-const PLACER_URL             = env('VITE_PLACER_URL',             'http://localhost:8080');
-const PLACER_EXTERNAL_URL    = env('VITE_PLACER_EXTERNAL_URL',    'http://localhost:8081');
-const FULFILLER_URL          = env('VITE_FULFILLER_URL',          'http://localhost:8082');
-const FULFILLER_EXTERNAL_URL = env('VITE_FULFILLER_EXTERNAL_URL', 'http://localhost:8083');
-const REGISTRY_URL           = env('VITE_REGISTRY_URL',           'http://localhost:8084');
-const KEYCLOAK_URL           = env('VITE_KEYCLOAK_URL',           'http://localhost:8180');
-const KEYCLOAK_REALM         = env('VITE_KEYCLOAK_REALM',         'umzh-connect');
+// Built from the host the app was served from + the port configured in .env,
+// so the same build works over localhost and the server's hostname. An
+// explicit VITE_*_URL override wins (see config/env.ts).
+const PLACER_URL             = serviceUrl('VITE_PLACER_URL',             'APISIX_PLACER_PORT',             8080);
+const PLACER_EXTERNAL_URL    = serviceUrl('VITE_PLACER_EXTERNAL_URL',    'APISIX_PLACER_EXTERNAL_PORT',    8081);
+const FULFILLER_URL          = serviceUrl('VITE_FULFILLER_URL',          'APISIX_FULFILLER_PORT',          8082);
+const FULFILLER_EXTERNAL_URL = serviceUrl('VITE_FULFILLER_EXTERNAL_URL', 'APISIX_FULFILLER_EXTERNAL_PORT', 8083);
+const REGISTRY_URL           = serviceUrl('VITE_REGISTRY_URL',           'REGISTRY_PORT',                  8084);
+const KEYCLOAK_URL           = serviceUrl('VITE_KEYCLOAK_URL',           'KEYCLOAK_PORT',                  8180);
+const KEYCLOAK_REALM         = env('VITE_KEYCLOAK_REALM',                'umzh-connect');
 
 // Keycloak token endpoint (published/frontend URL — also the assertion `aud`).
 const KEYCLOAK_TOKEN_URL = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`;
