@@ -17,7 +17,7 @@
 POST {{placer_url}}/api/actions/create-task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalF"}}
+{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{org_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
 # FHIR returns 201 Created for new resources
 HTTP 201
 [Captures]
@@ -34,7 +34,7 @@ jsonpath "$.status" == "requested"
 POST {{fulfiller_ext_url}}/fhir/Task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Direct external create test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalF"}}
+{"resourceType":"Task","status":"requested","intent":"order","description":"Direct external create test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{org_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
 HTTP 201
 [Captures]
 ext_created_task_id: jsonpath "$.id"
@@ -104,10 +104,10 @@ HTTP 404
 PATCH {{fulfiller_url}}/fhir/Task/{{created_task_id}}
 Authorization: Bearer {{fulfiller_token}}
 Content-Type: application/json-patch+json
-[{"op":"replace","path":"/owner","value":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"}}]
+[{"op":"replace","path":"/owner","value":{"reference":"{{org_url}}/fhir/Organization/HospitalP"}}]
 HTTP 200
 [Asserts]
-jsonpath "$.owner.reference" == "{{registry_url}}/fhir/Organization/HospitalP"
+jsonpath "$.owner.reference" == "{{org_url}}/fhir/Organization/HospitalP"
 
 
 # Placer (now the owner) PATCHes an IG-patchable field via external gateway → 200.
@@ -127,10 +127,10 @@ jsonpath "$.businessStatus.text" == "in-progress"
 PATCH {{fulfiller_url}}/fhir/Task/{{created_task_id}}
 Authorization: Bearer {{fulfiller_token}}
 Content-Type: application/json-patch+json
-[{"op":"replace","path":"/owner","value":{"reference":"{{registry_url}}/fhir/Organization/HospitalF"}}]
+[{"op":"replace","path":"/owner","value":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}]
 HTTP 200
 [Asserts]
-jsonpath "$.owner.reference" == "{{registry_url}}/fhir/Organization/HospitalF"
+jsonpath "$.owner.reference" == "{{org_url}}/fhir/Organization/HospitalF"
 
 
 # --- Step 6: Placer reads all-tasks (merges local + remote) ---
