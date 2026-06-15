@@ -64,7 +64,7 @@ routes:
       proxy-rewrite:
         uri: /fhir/${PARTY}/Task
 
-  # ─── Task create — JWT only, no OPA ──────────────────────────────────
+  # ─── Task create — JWT + OPA (Rule 1c: realm role + system/Task.c scope) ─
   - id: ext-task-create
     uri: /fhir/Task
     methods: [POST]
@@ -79,6 +79,9 @@ routes:
         set_userinfo_header: false
         client_id: "unused"
         client_secret: "unused"
+      opa:
+        host: "http://opa-${PARTY}:8181"
+        policy: "umzh/authz/apisix"
       proxy-rewrite:
         uri: /fhir/${PARTY}/Task
 
