@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UMZH Connect Sandbox</title>
+    <!-- Runtime config: in the Docker image env.sh overwrites this file at
+         container start (see web-app/env.sh) so ports/URLs can be changed via
+         .env without rebuilding. Must load before the app bundle. -->
+    <script src="/env-config.js"></script>
   </head>
   <body class="bg-gray-50 text-gray-900 antialiased">
     <div id="root"></div>

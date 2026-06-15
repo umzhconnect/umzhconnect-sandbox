@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { PartyRole } from '../types/fhir';
+import { env } from '../config/env';
 
 // APISIX gateway base URLs (browser calls these directly via CORS).
-// Override at build time via VITE_* env vars, or at runtime via window.__ENV__
-// (injected by env.sh in the Docker image).
-const PLACER_URL             = import.meta.env.VITE_PLACER_URL             || 'http://localhost:8080';
-const PLACER_EXTERNAL_URL    = import.meta.env.VITE_PLACER_EXTERNAL_URL    || 'http://localhost:8081';
-const FULFILLER_URL          = import.meta.env.VITE_FULFILLER_URL          || 'http://localhost:8082';
-const FULFILLER_EXTERNAL_URL = import.meta.env.VITE_FULFILLER_EXTERNAL_URL || 'http://localhost:8083';
-const REGISTRY_URL           = import.meta.env.VITE_REGISTRY_URL           || 'http://localhost:8084';
+// Resolved at runtime via window.__ENV__ (injected by env.sh in the Docker
+// image), falling back to build-time VITE_* vars, then these defaults.
+const PLACER_URL             = env('VITE_PLACER_URL',             'http://localhost:8080');
+const PLACER_EXTERNAL_URL    = env('VITE_PLACER_EXTERNAL_URL',    'http://localhost:8081');
+const FULFILLER_URL          = env('VITE_FULFILLER_URL',          'http://localhost:8082');
+const FULFILLER_EXTERNAL_URL = env('VITE_FULFILLER_EXTERNAL_URL', 'http://localhost:8083');
+const REGISTRY_URL           = env('VITE_REGISTRY_URL',           'http://localhost:8084');
 
 interface RoleContextType {
   activeRole: PartyRole;
