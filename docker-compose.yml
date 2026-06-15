@@ -57,13 +57,17 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
-      KC_HOSTNAME: 'http://localhost:8180'
+      # Canonical public URL — defines the token issuer. Must match the host
+      # the browser uses (and what the API gateways validate against). With
+      # BACKCHANNEL_DYNAMIC the JWKS/token endpoints stay on the internal
+      # keycloak:8080 address, so gateway validation still works.
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8180}
       KC_HOSTNAME_STRICT: 'false'
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
-      # Substituted by Keycloak's built-in placeholder resolution during
-      # realm import (${WEB_APP_PORT} references in realm-export.json)
-      WEB_APP_PORT: ${WEB_APP_PORT}
+      # Substituted by Keycloak's built-in placeholder resolution during realm
+      # import (${WEB_APP_PUBLIC_URL} references in realm-export.json)
+      WEB_APP_PUBLIC_URL: ${WEB_APP_PUBLIC_URL}
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - ./services/keycloak/providers:/opt/keycloak/providers
@@ -409,18 +413,30 @@ services:
     container_name: umzh-web-app
     # Consumed at container start by env.sh, which writes them into
     # /usr/share/nginx/html/env-config.js (window.__ENV__) so the SPA picks up
-    # .env changes without a rebuild.
+    # .env changes without a rebuild. The SPA builds browser URLs from the page
+    # host + these ports; the VITE_*_URL overrides are optional (reverse proxy).
     environment:
       VITE_API_BASE_URL: "${VITE_API_BASE_URL}"
-      VITE_KEYCLOAK_URL: "${VITE_KEYCLOAK_URL}"
       VITE_KEYCLOAK_REALM: "${VITE_KEYCLOAK_REALM}"
       VITE_KEYCLOAK_CLIENT_ID: "${VITE_KEYCLOAK_CLIENT_ID}"
-      VITE_PLACER_URL: "${VITE_PLACER_URL}"
-      VITE_PLACER_EXTERNAL_URL: "${VITE_PLACER_EXTERNAL_URL}"
-      VITE_FULFILLER_URL: "${VITE_FULFILLER_URL}"
-      VITE_FULFILLER_EXTERNAL_URL: "${VITE_FULFILLER_EXTERNAL_URL}"
-      VITE_REGISTRY_URL: "${VITE_REGISTRY_URL}"
-      VITE_RESEED_API_URL: "http://localhost:${RESEED_API_PORT}"
+      APISIX_PLACER_PORT: "${APISIX_PLACER_PORT}"
+      APISIX_PLACER_EXTERNAL_PORT: "${APISIX_PLACER_EXTERNAL_PORT}"
+      APISIX_FULFILLER_PORT: "${APISIX_FULFILLER_PORT}"
+      APISIX_FULFILLER_EXTERNAL_PORT: "${APISIX_FULFILLER_EXTERNAL_PORT}"
+      REGISTRY_PORT: "${REGISTRY_PORT}"
+      KEYCLOAK_PORT: "${KEYCLOAK_PORT}"
+      HAPI_FHIR_PORT: "${HAPI_FHIR_PORT}"
+      OPA_PLACER_PORT: "${OPA_PLACER_PORT}"
+      OPA_FULFILLER_PORT: "${OPA_FULFILLER_PORT}"
+      WEB_APP_PORT: "${WEB_APP_PORT}"
+      RESEED_API_PORT: "${RESEED_API_PORT}"
+      VITE_KEYCLOAK_URL: "${VITE_KEYCLOAK_URL:-}"
+      VITE_PLACER_URL: "${VITE_PLACER_URL:-}"
+      VITE_PLACER_EXTERNAL_URL: "${VITE_PLACER_EXTERNAL_URL:-}"
+      VITE_FULFILLER_URL: "${VITE_FULFILLER_URL:-}"
+      VITE_FULFILLER_EXTERNAL_URL: "${VITE_FULFILLER_EXTERNAL_URL:-}"
+      VITE_REGISTRY_URL: "${VITE_REGISTRY_URL:-}"
+      VITE_RESEED_API_URL: "${VITE_RESEED_API_URL:-}"
     ports:
       - '${WEB_APP_PORT}:80'
     volumes:

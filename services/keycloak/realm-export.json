@@ -179,14 +179,13 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
-      "rootUrl": "http://localhost:${WEB_APP_PORT}",
+      "rootUrl": "${WEB_APP_PUBLIC_URL}",
       "baseUrl": "/",
       "redirectUris": [
-        "http://localhost:${WEB_APP_PORT}/*"
+        "${WEB_APP_PUBLIC_URL}/*"
       ],
       "webOrigins": [
-        "http://localhost:${WEB_APP_PORT}",
-        "http://localhost:8080"
+        "+"
       ],
       "defaultClientScopes": [],
       "optionalClientScopes": [],
@@ -219,7 +218,7 @@
       "secret": "placer-secret-2025",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:${WEB_APP_PORT}"
+        "${WEB_APP_PUBLIC_URL}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -302,7 +301,7 @@
       "secret": "fulfiller-secret-2025",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:${WEB_APP_PORT}"
+        "${WEB_APP_PUBLIC_URL}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -391,7 +390,7 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:${WEB_APP_PORT}"
+        "${WEB_APP_PUBLIC_URL}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -477,7 +476,7 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:${WEB_APP_PORT}"
+        "${WEB_APP_PUBLIC_URL}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
