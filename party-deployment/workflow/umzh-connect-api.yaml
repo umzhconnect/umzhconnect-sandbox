@@ -1,0 +1,698 @@
+openapi: 3.0.0
+info:
+  title: UMZH Connect — External Gateway API
+  version: 1.0.0
+  x-exchange-asset-id: umzh-connect-api
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  description: |
+    UMZH Connect External Gateway API specification. This API is implemented by
+    each party to expose FHIR resources to the other party in a controlled manner.
+    The API includes endpoints for workflow resources (Task, ServiceRequest) and
+    context-gated access to clinical resources. Access is secured via OAuth2 client
+    credentials and Bearer JWTs with specific claims for context enforcement.
+servers:
+  - url: https://partyA.org
+    description: Party A external gateway
+tags:
+  - name: Tasks
+    description: |
+      Workflow Task resources. Requires a valid
+      Bearer JWT. Both parties interact with Tasks to manage referral workflows.
+  - name: Service Requests
+    description: |
+      Workflow ServiceRequest resources. Requires a valid
+      Bearer JWT. Both parties interact with ServiceRequests to manage referral workflows.
+  - name: Clinical Resources
+    description: |
+      Context-enforced reads of clinical FHIR resources from the partner's
+      partition. JWT must carry a `fhirContext` custom claim.
+paths:
+  /fhir/Task:
+    get:
+      tags:
+        - Tasks
+      operationId: listTasks
+      summary: Search Tasks
+      description: |
+        Search for Tasks. Implicitly scoped to Tasks where the calling identity is
+        `Task.owner` or `Task.requester` — the server SHALL enforce this filter
+        regardless of the parameters supplied by the client. A client cannot widen
+        the result set by omitting `owner`/`requester` parameters. Task is **not**
+        `fhirContext`-gated; it is the entry-point resource on the Fulfiller.
+      security:
+        - OAuth2ClientCredentials: []
+        - bearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/search_status'
+        - $ref: '#/components/parameters/search_count'
+        - $ref: '#/components/parameters/search_optional_id'
+        - $ref: '#/components/parameters/search_include_task'
+      responses:
+        '200':
+          description: FHIR Bundle of Task resources
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirBundle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Tasks
+      operationId: createTask
+      summary: Create Task
+      description: |
+        Create a Task. Used by the Placer to raise a coordination Task
+        on the Fulfiller.
+      security:
+        - bearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/fhir+json:
+            schema:
+              $ref: '#/components/schemas/FhirTask'
+            example:
+              resourceType: Task
+              status: requested
+              intent: order
+              description: Please evaluate patient for ACL reconstruction surgery
+              focus:
+                reference: http://localhost:8080/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery
+              for:
+                reference: http://localhost:8080/fhir/placer/Patient/PetraMeier
+              requester:
+                reference: http://localhost:8080/fhir/placer/Organization/placer-HospitalP
+              owner:
+                reference: Organization/fulfiller-HospitalF
+      responses:
+        '200':
+          description: |
+            Task created.
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /fhir/Task/{id}:
+    get:
+      tags:
+        - Tasks
+      operationId: readTask
+      summary: Read Task by ID
+      description: |
+        Read a Task by logical id. Allowed if the calling identity is `Task.owner`
+        or `Task.requester`.
+      security:
+        - OAuth2ClientCredentials: []
+        - contextBearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/path_resource_id'
+      responses:
+        '200':
+          description: The requested FHIR Task
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirResource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Tasks
+      operationId: patchTask
+      summary: Patch Task
+      description: |
+        JSON Patch (`application/json-patch+json`) update of a Task. Only `Task.input`,
+        `Task.owner`, `Task.focus`, and `Task.businessStatus` may be patched —
+        other paths SHALL be rejected.
+      security:
+        - bearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/path_resource_id'
+      requestBody:
+        required: true
+        content:
+          application/json-patch+json:
+            schema:
+              $ref: '#/components/schemas/JsonPatchDocument'
+      responses:
+        '200':
+          description: Updated Task
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /fhir/ServiceRequest:
+    get:
+      tags:
+        - Clinical Resources
+      operationId: searchServiceRequest
+      summary: Search ServiceRequest by ID (context-gated)
+      description: |
+        Search for ServiceRequests. Returns only ServiceRequests reachable from
+        the token's `fhirContext` claim — in practice, the single ServiceRequest
+        named by the token. `_id` is mandatory; `_include` is supported to
+        materialise the workflow graph in one round-trip, and each included
+        resource is itself subject to the `fhirContext` graph check.
+      security:
+        - OAuth2ClientCredentials: []
+        - contextBearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/search_required_id'
+        - $ref: '#/components/parameters/search_include_servicerequest'
+        - $ref: '#/components/parameters/search_count'
+      responses:
+        '200':
+          description: FHIR Bundle containing the matching ServiceRequest (and any _include resources)
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirBundle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /fhir/ServiceRequest/{id}:
+    get:
+      tags:
+        - Clinical Resources
+      operationId: readServiceRequest
+      summary: Read ServiceRequest by ID (context-gated)
+      description: |
+        Read a ServiceRequest by logical id. Returns the resource only if
+        `{id}` matches the token's `fhirContext` claim.
+      security:
+        - OAuth2ClientCredentials: []
+        - contextBearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/path_resource_id'
+      responses:
+        '200':
+          description: The requested ServiceRequest resource
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirResource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /fhir/{resource}/{id}:
+    get:
+      tags:
+        - Clinical Resources
+      operationId: readResource
+      summary: Read clinical/directory resource by ID (context-gated)
+      description: |
+        Returns the {type} resource by logical id. The resource is returned
+        only if it is reachable from the workflow root named in the token's
+        `fhirContext` claim. Requests for resources outside the context graph
+        are rejected with `403 Forbidden`.
+      security:
+        - OAuth2ClientCredentials: []
+        - contextBearerJwt: []
+      parameters:
+        - $ref: '#/components/parameters/path_resource'
+        - $ref: '#/components/parameters/path_resource_id'
+      responses:
+        '200':
+          description: The requested FHIR resource
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/FhirResource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+components:
+  securitySchemes:
+    OAuth2ClientCredentials:
+      type: oauth2
+      description: OAuth2 client_credentials flow for system-to-system access.
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.umzhconnect.ch/oauth2/token
+          scopes:
+            system/ServiceRequest.rs: Read & search ServiceRequest resources
+            system/Patient.r: Read Patient resources
+            system/Condition.r: Read Condition resources
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Bearer JWT for context-enforced access.
+      x-jwt-claims:
+        type: object
+        required:
+          - iss
+          - sub
+          - aud
+          - exp
+          - scope
+        properties:
+          iss:
+            type: string
+            format: uri
+            description: Issuer of the token
+          sub:
+            type: string
+            description: Client or system identity
+          aud:
+            type: string
+            format: uri
+            description: Audience (FHIR server)
+          exp:
+            type: integer
+            description: Expiration timestamp (Unix epoch)
+          scope:
+            type: string
+            description: Space-delimited SMART-style scopes
+          extensions:
+            type: object
+            properties:
+              umzhconnect:
+                type: object
+                properties:
+                  organization_reference:
+                    type: string
+                    format: uri
+                    description: Organization reference for fulfiller
+    contextBearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Bearer JWT for context-enforced access.
+      x-jwt-claims:
+        type: object
+        required:
+          - iss
+          - sub
+          - aud
+          - exp
+          - scope
+        properties:
+          iss:
+            type: string
+            format: uri
+            description: Issuer of the token
+          sub:
+            type: string
+            description: Client or system identity
+          aud:
+            type: string
+            format: uri
+            description: Audience (FHIR server)
+          exp:
+            type: integer
+            description: Expiration timestamp (Unix epoch)
+          scope:
+            type: string
+            description: Space-delimited SMART-style scopes
+          extensions:
+            type: object
+            properties:
+              umzhconnect:
+                type: object
+                properties:
+                  organization_reference:
+                    type: string
+                    format: uri
+                    description: Organization reference for fulfiller
+          fhirContext:
+            type: array
+            description: FHIR contextual references
+            items:
+              type: object
+              required:
+                - reference
+              properties:
+                reference:
+                  type: string
+                  description: FHIR reference (e.g., ServiceRequest/sr-123)
+  parameters:
+    search_status:
+      name: _status
+      in: query
+      required: false
+      description: Filter by Task status (FHIR search parameter)
+      schema:
+        type: string
+        enum:
+          - requested
+          - accepted
+          - in-progress
+          - completed
+          - cancelled
+          - on-hold
+          - failed
+          - ready
+          - received
+          - rejected
+    search_count:
+      name: _count
+      in: query
+      required: false
+      description: Maximum number of results
+      schema:
+        type: integer
+        minimum: 1
+    search_optional_id:
+      name: _id
+      in: query
+      required: false
+      description: |
+        FHIR logical ID of the resource to fetch.
+      schema:
+        type: string
+        maxLength: 64
+      example: PetraMeier
+    search_include_task:
+      name: _include
+      in: query
+      required: false
+      description: |
+        Include related resources in the Bundle response (standard FHIR `_include`
+        parameter). Supported values for Task searches:
+
+        - `Task:ch-umzhconnectig-task-inputreference` — resources referenced in Task input
+        - `Task:ch-umzhconnectig-task-outputreference` — resources referenced in Task output
+        - `Task:ch-umzhconnectig-task-outputcanonical` — canonical resources referenced in Task output
+      schema:
+        type: string
+        enum:
+          - Task:ch-umzhconnectig-task-inputreference
+          - Task:ch-umzhconnectig-task-outputreference
+          - Task:ch-umzhconnectig-task-outputcanonical
+    path_resource_id:
+      name: id
+      in: path
+      required: true
+      description: |
+        FHIR logical ID of the resource.
+      schema:
+        type: string
+        maxLength: 64
+      example: PetraMeier
+    search_required_id:
+      name: _id
+      in: query
+      required: true
+      description: |
+        FHIR logical ID of the resource to fetch.
+      schema:
+        type: string
+        maxLength: 64
+      example: PetraMeier
+    search_include_servicerequest:
+      name: _include
+      in: query
+      required: false
+      description: |
+        Include related resources in the Bundle response (standard FHIR `_include`
+        parameter). Supported values for ServiceRequest searches:
+
+        - `ServiceRequest:patient` — the Patient the request is for
+        - `ServiceRequest:subject` — the subject of the request
+        - `ServiceRequest:ch-umzhconnectig-servicerequest-reasonreference` — linked reason references
+        - `ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo` — supporting information references
+        - `ServiceRequest:ch-umzhconnectig-servicerequest-insurance` — referenced coverage/insurance resources
+      schema:
+        type: string
+        enum:
+          - ServiceRequest:patient
+          - ServiceRequest:subject
+          - ServiceRequest:ch-umzhconnectig-servicerequest-reasonreference
+          - ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo
+          - ServiceRequest:ch-umzhconnectig-servicerequest-insurance
+    path_resource:
+      name: resource
+      in: path
+      required: true
+      description: |
+        FHIR resource type. Validated by the gateway against the set of allowed
+        resource types before forwarded.
+      schema:
+        type: string
+        enum:
+          - AllergyIntolerance
+          - Appointment
+          - Condition
+          - Coverage
+          - DiagnosticReport
+          - DocumentReference
+          - ImagingStudy
+          - Immunization
+          - Medication
+          - MedicationStatement
+          - Observation
+          - Organization
+          - Patient
+          - Practitioner
+          - PractitionerRole
+          - Procedure
+  schemas:
+    FhirMeta:
+      type: object
+      description: FHIR resource metadata
+      properties:
+        versionId:
+          type: string
+        lastUpdated:
+          type: string
+          format: date-time
+        profile:
+          type: array
+          items:
+            type: string
+            format: uri
+      additionalProperties: true
+    FhirResource:
+      type: object
+      description: |
+        A FHIR R4 resource. The concrete structure depends on `resourceType`.
+        See https://hl7.org/fhir/R4/resourcelist.html for full schemas.
+      required:
+        - resourceType
+        - id
+      properties:
+        resourceType:
+          type: string
+          description: FHIR resource type name
+          example: Patient
+        id:
+          type: string
+          description: FHIR logical ID
+          example: PetraMeier
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+      additionalProperties: true
+    FhirBundle:
+      type: object
+      description: FHIR R4 Bundle
+      required:
+        - resourceType
+        - type
+      properties:
+        resourceType:
+          type: string
+          enum:
+            - Bundle
+        id:
+          type: string
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+        type:
+          type: string
+          enum:
+            - searchset
+            - collection
+            - transaction-response
+            - history
+        total:
+          type: integer
+          description: Total number of matching resources (searchset only)
+        entry:
+          type: array
+          items:
+            type: object
+            properties:
+              fullUrl:
+                type: string
+                format: uri
+              resource:
+                $ref: '#/components/schemas/FhirResource'
+              search:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum:
+                      - match
+                      - include
+                      - outcome
+      additionalProperties: true
+    FhirReference:
+      type: object
+      description: FHIR Reference — relative or absolute URL
+      properties:
+        reference:
+          type: string
+          description: |
+            Relative (`ResourceType/id`) or absolute URL. Cross-partition
+            references must be absolute (e.g.
+            `http://localhost:8090/fhir/placer/Patient/PetraMeier`).
+          example: Patient/PetraMeier
+        display:
+          type: string
+          description: Human-readable label
+      additionalProperties: true
+    FhirTask:
+      type: object
+      description: FHIR R4 Task resource (referral workflow)
+      required:
+        - resourceType
+        - status
+        - intent
+      properties:
+        resourceType:
+          type: string
+          enum:
+            - Task
+        id:
+          type: string
+          example: task-1234
+        meta:
+          $ref: '#/components/schemas/FhirMeta'
+        status:
+          type: string
+          enum:
+            - requested
+            - accepted
+            - in-progress
+            - completed
+            - cancelled
+            - on-hold
+            - failed
+            - ready
+            - received
+            - rejected
+        intent:
+          type: string
+          enum:
+            - order
+            - plan
+            - proposal
+            - filler-order
+            - instance-order
+            - option
+            - original-order
+            - reflex-order
+        description:
+          type: string
+          example: Please evaluate patient for ACL reconstruction surgery
+        focus:
+          $ref: '#/components/schemas/FhirReference'
+          description: ServiceRequest this Task is fulfilling
+        for:
+          $ref: '#/components/schemas/FhirReference'
+          description: Patient the Task is for
+        requester:
+          $ref: '#/components/schemas/FhirReference'
+          description: Organization that requested the Task
+        owner:
+          $ref: '#/components/schemas/FhirReference'
+          description: Organization responsible for fulfilling the Task
+      additionalProperties: true
+    JsonPatchDocument:
+      type: array
+      description: |
+        JSON Patch document (RFC 6902) — an ordered list of operations to apply
+        to the target FHIR resource.
+      items:
+        type: object
+        required:
+          - op
+          - path
+        properties:
+          op:
+            type: string
+            enum:
+              - add
+              - remove
+              - replace
+              - move
+              - copy
+              - test
+          path:
+            type: string
+            description: JSON Pointer (RFC 6901) to the target location.
+            example: /status
+          value:
+            description: |
+              New value for `add`, `replace`, or `test`. Omitted for `remove`,
+              `move`, `copy`.
+          from:
+            type: string
+            description: Source JSON Pointer for `move` and `copy`.
+      example:
+        - op: replace
+          path: /status
+          value: completed
+  responses:
+    Unauthorized:
+      description: Missing, expired, or invalid Bearer token. 401 response code.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Unauthorized
+    AccessDenied:
+      description: Access Denied (Forbidden). Response Code 403.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: access denied
+    InternalServerError:
+      description: Internal Server Error response 500.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: internal server error

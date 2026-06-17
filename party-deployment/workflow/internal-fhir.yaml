@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: Internal FHIR Partition API
+  description: >-
+    Minimal OpenAPI description of the operations the fulfiller's workflow
+    engine performs against its own FHIR partition — reading the triggering
+    Task and importing the converted Bundle. No authentication is required
+    because these calls are internal (workflow engine → HAPI on the Docker
+    network). The actual base URL is supplied at workflow runtime via the
+    Arazzo x-serverUrl extension (see simple-referral-reception.arazzo.yaml
+    inputs), defaulting to http://localhost:8090/fhir/fulfiller.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8090/fhir/fulfiller
+    description: HAPI FHIR fulfiller partition (overridden by Arazzo x-serverUrl)
+paths:
+  /Task/{id}:
+    get:
+      operationId: readLocalTask
+      summary: Read a Task by logical id from the local FHIR partition
+      description: >-
+        Fetches the Task that triggered the workflow. The response is used to
+        extract Task.basedOn[0].reference (the placer ServiceRequest URL).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: FHIR logical id of the Task
+          example: TaskOrthopedicReferral
+      responses:
+        '200':
+          description: The requested Task resource
+          content:
+            application/fhir+json:
+              schema:
+                type: object
+                required: [resourceType, id, status, intent]
+                properties:
+                  resourceType:
+                    type: string
+                    enum: [Task]
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  intent:
+                    type: string
+                  basedOn:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reference:
+                          type: string
+                          description: Absolute URL of the placer ServiceRequest
+                additionalProperties: true
+        '404':
+          description: Task not found
+
+  /Bundle:
+    post:
+      operationId: importBundle
+      summary: Import a converted eToC FHIR Bundle into the local partition
+      description: >-
+        Accepts a FHIR transaction Bundle (converted from the placer's data to
+        the local eToC profile) and processes it. Returns 200/201 on success
+        with a Location header pointing at the imported resource.
+      requestBody:
+        required: true
+        content:
+          application/fhir+json:
+            schema:
+              type: object
+              required: [resourceType, type]
+              properties:
+                resourceType:
+                  type: string
+                  enum: [Bundle]
+                type:
+                  type: string
+                  enum: [transaction]
+                entry:
+                  type: array
+                  items:
+                    type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Bundle processed successfully
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the primary imported resource
+          content:
+            application/fhir+json:
+              schema:
+                type: object
+                additionalProperties: true
+        '201':
+          description: Bundle created (alternative success code from some FHIR servers)
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: Invalid Bundle or eToC profile validation failure
+        '422':
+          description: Unprocessable entity (FHIR semantics error)

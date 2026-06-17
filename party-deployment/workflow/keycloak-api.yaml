@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: Keycloak OIDC Token Endpoint
+  description: >-
+    Minimal OpenAPI description of Keycloak's OAuth2 token endpoint — just enough
+    for Arazzo sourceDescriptions to reference the operation by operationId.
+    The actual base URL is supplied at workflow runtime via the Arazzo
+    x-serverUrl extension (see simple-referral-reception.arazzo.yaml inputs).
+  version: 1.0.0
+servers:
+  - url: http://localhost:8180
+    description: Keycloak sandbox (overridden by Arazzo x-serverUrl at runtime)
+paths:
+  /realms/umzh-connect/protocol/openid-connect/token:
+    post:
+      operationId: getToken
+      summary: OAuth2 client_credentials token request
+      description: >-
+        Issues an access token for a confidential machine client. Supports
+        both L1 (client_secret) and L2 (private_key_jwt / RS256 client
+        assertion). Pass authorization_details (RFC 9396) to bind a
+        fhirContext to the issued token.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [client_credentials]
+                client_id:
+                  type: string
+                  example: fulfiller-client-l2
+                client_assertion_type:
+                  type: string
+                  enum:
+                    - urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+                  description: Required for L2 (private_key_jwt).
+                client_assertion:
+                  type: string
+                  description: >-
+                    RS256-signed JWT assertion (iss=sub=client_id,
+                    aud=token endpoint URL, exp=now+60s, unique jti).
+                    Required for L2.
+                client_secret:
+                  type: string
+                  description: Required for L1 (client_secret).
+                authorization_details:
+                  type: string
+                  description: >-
+                    RFC 9396 JSON array. Used to embed a fhirContext reference
+                    into the issued token.
+                  example: '[{"type":"umzh-connect-context","identifier":"ServiceRequest/ReferralOrthopedicSurgery"}]'
+      responses:
+        '200':
+          description: Token issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in]
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                    enum: [Bearer]
+                  expires_in:
+                    type: integer
+                    description: Token lifetime in seconds
+        '400':
+          description: Invalid request (bad grant_type, missing fields)
+        '401':
+          description: Client authentication failed

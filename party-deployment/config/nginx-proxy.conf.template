@@ -1,0 +1,54 @@
+# =============================================================================
+# nginx-proxy (single party) — rendered from this template by config-init via
+# envsubst. Two server blocks rewrite HAPI's raw partition self-links to the
+# party's own gateway base URLs:
+#
+#   Port 80  — internal gateway  → ${OWN_INTERNAL_URL}/fhir/
+#   Port 81  — external gateway  → ${OWN_EXTERNAL_URL}/fhir/
+#
+# HAPI emits self-links of the form http://localhost:8090/fhir/${PARTY}/...
+# (server_address in services/hapi-fhir/application.yaml).
+# =============================================================================
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    proxy_buffering         on;
+    proxy_buffer_size       128k;
+    proxy_buffers           16 128k;
+    proxy_busy_buffers_size 256k;
+
+    # ── Port 80 — internal gateway upstream ──────────────────────────────────
+    server {
+        listen 80;
+        location / {
+            proxy_pass        http://hapi-fhir:8080;
+            proxy_set_header  Host            $host;
+            proxy_set_header  X-Real-IP       $remote_addr;
+            proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header  Accept-Encoding "";
+
+            sub_filter_once  off;
+            sub_filter_types *;
+            sub_filter "http://localhost:8090/fhir/${PARTY}/" "${OWN_INTERNAL_URL}/fhir/";
+        }
+    }
+
+    # ── Port 81 — external gateway upstream ──────────────────────────────────
+    server {
+        listen 81;
+        location / {
+            proxy_pass        http://hapi-fhir:8080;
+            proxy_set_header  Host            $host;
+            proxy_set_header  X-Real-IP       $remote_addr;
+            proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header  Accept-Encoding "";
+
+            sub_filter_once  off;
+            sub_filter_types *;
+            sub_filter "http://localhost:8090/fhir/${PARTY}/" "${OWN_EXTERNAL_URL}/fhir/";
+        }
+    }
+}

@@ -1,0 +1,285 @@
+# =============================================================================
+# party-deployment — everything ONE hospital runs to join the UMZH Connect
+# ecosystem. Shared infrastructure (auth server, mCSD registry, the partner
+# itself) is external and configured via .env — never deployed here.
+#
+# Logic/config is referenced from ../services (single source of truth); only
+# this party's env-specific data (nginx self-link rewrite, OPA fhir_base /
+# required_role, the Kestra flow URLs, the seed) is rendered from .env by the
+# one-shot `config-init` service.
+#
+#   cp .env.example .env  &&  edit  &&  docker compose up -d --build
+# =============================================================================
+
+services:
+  # ── One-shot: render env-specific config into the shared `rendered` volume ──
+  config-init:
+    image: alpine:3.19
+    container_name: party-config-init
+    environment:
+      PARTY: ${PARTY}
+      OWN_INTERNAL_URL: ${OWN_INTERNAL_URL}
+      OWN_EXTERNAL_URL: ${OWN_EXTERNAL_URL}
+      PARTNER_REALM_ROLE: ${PARTNER_REALM_ROLE}
+      PARTNER_EXTERNAL_URL: ${PARTNER_EXTERNAL_URL}
+      L2_CLIENT_ID: ${L2_CLIENT_ID}
+      # AUTH_TOKEN_URL = reachable POST target; AUTH_AUDIENCE = advertised issuer
+      # (what the assertion `aud` must equal). Equal in a single-URL deployment.
+      AUTH_TOKEN_URL: ${AUTH_SERVER_URL}/realms/${AUTH_SERVER_REALM}/protocol/openid-connect/token
+      AUTH_AUDIENCE: ${AUTH_SERVER_PUBLIC_URL}/realms/${AUTH_SERVER_REALM}/protocol/openid-connect/token
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache gettext >/dev/null && sh /templates/render-config.sh"]
+    volumes:
+      - ./config:/templates:ro
+      - ./flows:/flows-src:ro
+      - party_rendered:/rendered
+    networks:
+      - party-net
+
+  # ── PostgreSQL — backend for HAPI FHIR + Kestra ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: party-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - party_postgres_data:/var/lib/postgresql/data
+      - ./config/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - '${POSTGRES_PORT}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - party-net
+
+  # ── HAPI FHIR — this party's clinical data store ────────────────────────────
+  hapi-fhir:
+    image: hapiproject/hapi:v7.4.0
+    container_name: party-hapi-fhir
+    environment:
+      SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
+    volumes:
+      - ../services/hapi-fhir/application.yaml:/app/config/application.yaml:ro
+    ports:
+      - '${HAPI_PORT}:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - party-net
+
+  # ── nginx-proxy — HAPI self-link rewriting for both gateways ────────────────
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: party-nginx-proxy
+    command: ["nginx", "-c", "/rendered/nginx.conf", "-g", "daemon off;"]
+    volumes:
+      - party_rendered:/rendered:ro
+    depends_on:
+      config-init:
+        condition: service_completed_successfully
+      hapi-fhir:
+        condition: service_started
+    networks:
+      - party-net
+
+  # ── OPA — consent / fhirContext policy engine ───────────────────────────────
+  opa:
+    image: openpolicyagent/opa:0.70.0
+    platform: linux/amd64
+    container_name: party-opa
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /policies
+      - /rendered/opa-config.json
+    volumes:
+      - ../services/opa/policies:/policies:ro
+      - party_rendered:/rendered:ro
+    ports:
+      - '${OPA_PORT}:8181'
+    depends_on:
+      config-init:
+        condition: service_completed_successfully
+    networks:
+      party-net:
+        # APISIX templates reference this upstream as opa-${PARTY}.
+        aliases:
+          - opa-${PARTY}
+
+  # ── Key Custodian — holds this party's L2 key; signs assertions + serves JWKS ─
+  key-custodian:
+    build:
+      context: ../services/key-custodian
+      dockerfile: Dockerfile
+    container_name: party-key-custodian
+    environment:
+      PARTY: ${PARTY}
+      CLIENT_ID: ${L2_CLIENT_ID}
+      KID: ${L2_KID}
+      # Default assertion audience = the auth server's advertised issuer endpoint.
+      KEYCLOAK_AUDIENCE: ${AUTH_SERVER_PUBLIC_URL}/realms/${AUTH_SERVER_REALM}/protocol/openid-connect/token
+    volumes:
+      - ../services/keys/${PARTY}-l2.key:/keys/private.key:ro
+      - ../services/keys/${PARTY}-l2.jwks.json:/keys/jwks.json:ro
+    ports:
+      - '${KEY_CUSTODIAN_PORT}:8000'
+    networks:
+      party-net:
+        # APISIX external template references this upstream as key-custodian-${PARTY}.
+        aliases:
+          - key-custodian-${PARTY}
+
+  # ── Internal gateway — serves only this party's own partition ───────────────
+  apisix-internal:
+    image: apache/apisix:3.9.0-debian
+    container_name: party-apisix-internal
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTY: ${PARTY}
+      NGINX_OWN_PORT: "80"
+      KEYCLOAK_DISCOVERY_URL: ${AUTH_SERVER_URL}/realms/${AUTH_SERVER_REALM}/.well-known/openid-configuration
+    volumes:
+      - ../services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ../services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
+      - ../services/apisix/entrypoint.sh:/entrypoint.sh:ro
+      - ../services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
+    ports:
+      - '${INTERNAL_GATEWAY_PORT}:9080'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+      nginx-proxy:
+        condition: service_started
+      opa:
+        condition: service_started
+    networks:
+      - party-net
+
+  # ── External gateway — the party's public face for partners + JWKS ──────────
+  apisix-external:
+    image: apache/apisix:3.9.0-debian
+    container_name: party-apisix-external
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      PARTY: ${PARTY}
+      NGINX_OWN_PORT: "81"
+      KEYCLOAK_DISCOVERY_URL: ${AUTH_SERVER_URL}/realms/${AUTH_SERVER_REALM}/.well-known/openid-configuration
+    volumes:
+      - ../services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ../services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
+      - ../services/apisix/entrypoint.sh:/entrypoint.sh:ro
+      - ../services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
+    ports:
+      - '${EXTERNAL_GATEWAY_PORT}:9080'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      nginx-proxy:
+        condition: service_started
+      opa:
+        condition: service_started
+      key-custodian:
+        condition: service_started
+    networks:
+      - party-net
+
+  # ── Kestra — workflow engine ────────────────────────────────────────────────
+  kestra:
+    image: kestra/kestra:v0.20.8
+    container_name: party-kestra
+    user: root
+    command: ["server", "standalone"]
+    environment:
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:postgresql://postgres:5432/kestra
+            driverClassName: org.postgresql.Driver
+            username: ${POSTGRES_USER}
+            password: ${POSTGRES_PASSWORD}
+        kestra:
+          repository:
+            type: postgres
+          queue:
+            type: postgres
+          storage:
+            type: local
+            local:
+              base-path: "/app/storage"
+          server:
+            basic-auth:
+              enabled: false
+          url: "http://localhost:${KESTRA_PORT}/"
+    ports:
+      - '${KESTRA_PORT}:8080'
+    volumes:
+      - party_kestra_storage:/app/storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hapi-fhir:
+        condition: service_started
+      key-custodian:
+        condition: service_started
+    networks:
+      - party-net
+
+  # ── One-shot: import the rendered flow into Kestra ──────────────────────────
+  kestra-flow-loader:
+    build:
+      context: ./kestra-flow-loader
+      dockerfile: Dockerfile
+    container_name: party-kestra-flow-loader
+    environment:
+      KESTRA_API: "http://kestra:8080/api/v1"
+      FLOWS_DIR: "/rendered/flows"
+      KESTRA_FLOW_POLICY: "enforce"
+    volumes:
+      - party_rendered:/rendered:ro
+    depends_on:
+      kestra:
+        condition: service_started
+      config-init:
+        condition: service_completed_successfully
+    networks:
+      - party-net
+
+  # ── One-shot: create the party partition + load its own seed bundle ─────────
+  seed:
+    image: alpine:3.19
+    container_name: party-seed
+    environment:
+      PARTY: ${PARTY}
+      OWN_EXTERNAL_URL: ${OWN_EXTERNAL_URL}
+      PARTNER_EXTERNAL_URL: ${PARTNER_EXTERNAL_URL}
+      REGISTRY_URL: ${REGISTRY_URL}
+      FHIR_BASE: http://hapi-fhir:8080/fhir
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache curl >/dev/null && sh /seed/seed-party.sh"]
+    volumes:
+      - ./seed/seed-party.sh:/seed/seed-party.sh:ro
+      - ../services/seed/bundles:/bundles:ro
+    depends_on:
+      hapi-fhir:
+        condition: service_started
+    networks:
+      - party-net
+
+volumes:
+  party_postgres_data:
+  party_kestra_storage:
+  party_rendered:
+
+networks:
+  party-net:
+    driver: bridge

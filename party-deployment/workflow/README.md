@@ -12,10 +12,9 @@ In this case the referrer/placer posts a task to the fulfillers API with a refer
 
 * Triggering of workflow through task creation. Trigger mechanismn possible through FHIR subscription to task
 * Read task from local FHIR store
-  - extract security context (consentId) from task 'meta' property
-  - extract service request url from 'basedOn' property
-* Get access token using client credentials flow with 'private_key_jwt' hardening. consentId is provided as custom param/scope
-* Get service request resource from placer API using access token, _id & _include param in order to include referenced resources
+  - extract the service request url from the 'basedOn' property
+* Get access token using client credentials flow with 'private_key_jwt' hardening. The service request reference is supplied as RFC 9396 `authorization_details`, so the issued token carries it as the `fhirContext` the placer's gateway checks.
+* Get service request resource directly from the placer's external gateway using the access token, _id & _include param in order to include referenced resources
 * Convert the received previously received servie request and associated ressources to the format of the local target system and POST to the import API, in our case this is the eToC FHIR profile
 
 ### Arazzo specification
@@ -30,9 +29,9 @@ The diagram below models the fulfiller-side workflow as a BPMN 2.0 process. It i
 flowchart LR
     start(["⏱ Task created<br/>(FHIR Subscription)"]):::event
     t1["Read Task<br/>from local FHIR store"]:::task
-    t2["Extract consentId<br/>& serviceRequestUrl"]:::task
-    t3["Get access token<br/>(client_credentials +<br/>private_key_jwt,<br/>scope=consent:&lt;id&gt;)"]:::task
-    t4["GET ServiceRequest<br/>from placer via proxy<br/>(_id, _include)"]:::task
+    t2["Extract<br/>serviceRequestUrl"]:::task
+    t3["Get access token<br/>(client_credentials +<br/>private_key_jwt,<br/>authorization_details = fhirContext)"]:::task
+    t4["GET ServiceRequest<br/>from placer external gateway<br/>(_id, _include)"]:::task
     t5["Convert to eToC<br/>FHIR profile"]:::task
     t6["POST to local<br/>import API"]:::task
     done(["✅ Referral imported"]):::event
@@ -66,17 +65,17 @@ flowchart LR
       <bpmn:outgoing>Flow_2</bpmn:outgoing>
     </bpmn:serviceTask>
 
-    <bpmn:task id="Task_ExtractContext" name="Extract consentId &amp; serviceRequestUrl">
+    <bpmn:task id="Task_ExtractContext" name="Extract serviceRequestUrl from Task.basedOn">
       <bpmn:incoming>Flow_2</bpmn:incoming>
       <bpmn:outgoing>Flow_3</bpmn:outgoing>
     </bpmn:task>
 
-    <bpmn:serviceTask id="Task_GetAccessToken" name="Get access token (client_credentials + private_key_jwt, scope=consent:&lt;id&gt;)">
+    <bpmn:serviceTask id="Task_GetAccessToken" name="Get access token (client_credentials + private_key_jwt, authorization_details = fhirContext)">
       <bpmn:incoming>Flow_3</bpmn:incoming>
       <bpmn:outgoing>Flow_4</bpmn:outgoing>
     </bpmn:serviceTask>
 
-    <bpmn:serviceTask id="Task_GetServiceRequest" name="GET ServiceRequest from placer via proxy (_id, _include)">
+    <bpmn:serviceTask id="Task_GetServiceRequest" name="GET ServiceRequest from placer external gateway (_id, _include)">
       <bpmn:incoming>Flow_4</bpmn:incoming>
       <bpmn:outgoing>Flow_5</bpmn:outgoing>
     </bpmn:serviceTask>

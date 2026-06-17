@@ -1,0 +1,97 @@
+id: referral-reception
+namespace: umzh.party
+description: |
+  Single-party referral reception flow (rendered from a template by config-init).
+  Mirrors workflow/simple-referral-reception.arazzo.yaml, but every URL is
+  parameterised for this deployment:
+    * own FHIR partition      → http://hapi-fhir:8080/fhir/${PARTY}
+    * own key custodian       → http://key-custodian:8000/sign
+    * shared auth server      → ${AUTH_TOKEN_URL}
+    * partner external gateway→ ${PARTNER_EXTERNAL_URL}
+
+  Runs entirely on the unmodified kestra/kestra image (HTTP Request + stdlib
+  Python; outputs via the ::{"outputs":...}:: stdout marker).
+
+labels:
+  use-case: referral-reception
+  party: "${PARTY}"
+
+inputs:
+  - id: taskId
+    type: STRING
+    defaults: TaskOrthopedicReferral
+    description: Logical id of the Task that triggered the workflow.
+
+variables:
+  internalFhirUrl: "http://hapi-fhir:8080/fhir/${PARTY}"
+  custodianSignUrl: "http://key-custodian:8000/sign"
+  authTokenUrl: "${AUTH_TOKEN_URL}"        # reachable token endpoint (POST target)
+  authAudience: "${AUTH_AUDIENCE}"          # advertised issuer (assertion aud)
+  partnerExternalUrl: "${PARTNER_EXTERNAL_URL}"
+  clientId: "${L2_CLIENT_ID}"
+
+tasks:
+  - id: readTask
+    type: io.kestra.plugin.core.http.Request
+    description: Read Task/{id} from this party's own FHIR partition.
+    uri: "{{ vars.internalFhirUrl }}/Task/{{ inputs.taskId }}"
+    method: GET
+    headers:
+      Accept: application/fhir+json
+
+  - id: signAssertion
+    type: io.kestra.plugin.core.http.Request
+    description: Ask the local key custodian to sign a private_key_jwt assertion.
+    uri: "{{ vars.custodianSignUrl }}"
+    method: POST
+    contentType: application/json
+    body: '{"audience":"{{ vars.authAudience }}"}'
+
+  - id: getAccessToken
+    type: io.kestra.plugin.core.http.Request
+    description: >-
+      Exchange the assertion at the shared auth server, binding the referenced
+      ServiceRequest as fhirContext (RFC 9396 authorization_details).
+    uri: "{{ vars.authTokenUrl }}"
+    method: POST
+    contentType: application/x-www-form-urlencoded
+    body: "grant_type=client_credentials&client_id={{ vars.clientId }}&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion={{ json(outputs.signAssertion.body).assertion }}&authorization_details={{ ('[{\"type\":\"umzh-connect-context\",\"identifier\":\"ServiceRequest/' ~ (json(outputs.readTask.body).basedOn[0].reference | split('/') | last) ~ '\"}]') | urlencode }}"
+
+  - id: getServiceRequest
+    type: io.kestra.plugin.core.http.Request
+    description: Context-scoped read of the ServiceRequest (+graph) from the partner.
+    uri: "{{ vars.partnerExternalUrl }}/fhir/ServiceRequest?_id={{ json(outputs.readTask.body).basedOn[0].reference | split('/') | last }}&_include=ServiceRequest:subject"
+    method: GET
+    headers:
+      Accept: application/fhir+json
+      Authorization: "Bearer {{ json(outputs.getAccessToken.body).access_token }}"
+
+  - id: transformToEtoc
+    type: io.kestra.plugin.scripts.python.Script
+    description: Placeholder eToC conversion (searchset → collection Bundle).
+    taskRunner:
+      type: io.kestra.plugin.core.runner.Process
+    inputFiles:
+      serviceRequest.json: "{{ outputs.getServiceRequest.body }}"
+    script: |
+      import json
+      with open("serviceRequest.json") as fh:
+          search = json.load(fh)
+      out = {
+          "resourceType": "Bundle",
+          "type": "collection",
+          "entry": [
+              {"resource": e["resource"]}
+              for e in search.get("entry", [])
+              if "resource" in e
+          ],
+      }
+      print('::{"outputs":' + json.dumps({"bundle": json.dumps(out)}) + '}::')
+
+  - id: importToLocalSystem
+    type: io.kestra.plugin.core.http.Request
+    description: Import the converted Bundle into this party's own partition.
+    uri: "{{ vars.internalFhirUrl }}/Bundle"
+    method: POST
+    contentType: application/fhir+json
+    body: "{{ outputs.transformToEtoc.vars.bundle }}"
