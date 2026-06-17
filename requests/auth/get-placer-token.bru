@@ -14,9 +14,15 @@ body:form-urlencoded {
   grant_type: client_credentials
   client_id: placer-client
   client_secret: placer-secret-2025
-  scope: openid consent:{{consentId}}
 }
 
 script:post-response {
   bru.setVar("placerToken", res.getBody().access_token);
+}
+
+docs {
+  M2M token for HospitalP. Plain client_credentials — no `openid` (there is no
+  user) and no consent scope (cross-party clinical reads carry the fhirContext
+  via RFC 9396 authorization_details instead; see "Get Fulfiller Context Token").
+  Good enough on its own for Task list/create, which are not fhirContext-gated.
 }

@@ -16,9 +16,10 @@ headers {
 }
 
 docs {
-  Simulates the Placer calling the Fulfiller's external gateway directly.
-  JWT is validated by krakend-fulfiller-external. Claims extensions.umzhconnect.organization_reference
-  and scope are propagated as X-* headers to the backend.
+  The Placer lists Tasks on the Fulfiller's external gateway directly. JWT is
+  validated by apisix-fulfiller-external. Task search is not fhirContext-gated,
+  but the umzh-task-requester-inject plugin scopes the result to Tasks whose
+  requester is the caller (HospitalP) — a plain token is sufficient.
 
   Run "Get Placer Token" first.
 }

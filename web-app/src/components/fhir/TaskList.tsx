@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllTasks } from '../../hooks/useFhirSearch';
-import { useFhirClient } from '../../hooks/useFhirClient';
+import { useFhirClient, useCrossPartyFetch } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import type { Task, FhirResource } from '../../types/fhir';
@@ -18,6 +18,7 @@ const TaskList: React.FC = () => {
   const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
+  const crossPartyFetch = useCrossPartyFetch();
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState('');
@@ -85,30 +86,22 @@ const TaskList: React.FC = () => {
     setSrModalData(null);
 
     try {
-      // Parse "…/ServiceRequest/SomeId" — split at last slash to get type base + id
+      // Parse "…/ServiceRequest/SomeId" — split at last slash to get type base + id.
+      // The reference points at the partner's external gateway (absolute URL), so
+      // we call it directly with an M2M token whose fhirContext is this SR.
       const lastSlash = ref.lastIndexOf('/');
       const id = ref.substring(lastSlash + 1);
-      const typeBase = ref.substring(0, lastSlash); // e.g. "http://…/proxy/fhir/ServiceRequest"
+      const typeBase = ref.substring(0, lastSlash); // e.g. "http://localhost:8083/fhir/ServiceRequest"
 
       // Build an _id search with included resources so we get Patient + Practitioner in one call.
-      // X-Consent-Id is forwarded as a custom header to the internal proxy gateway.
-      // The gateway's /api/actions/scoped-token mechanism uses it in the M2M client credentials
-      // flow (scope=consent:<id>) when authenticating to the partner external gateway.
-      // The user's authorization code token is not involved in the consent binding.
       const searchUrl =
         `${typeBase}?_id=${encodeURIComponent(id)}` +
         `&_include=ServiceRequest:subject` +
         `&_include=ServiceRequest:requester`;
 
-      // Extract consent ID from task meta.security (system: 'urn:umzh:consent:id', code: <id>)
-      const consentId = selectedTask?.meta?.security
-        ?.find((s) => s.system === 'urn:umzh:consent:id')
-        ?.code;
-
-      const data = await client.fetchAbsolute<FhirResource>(
-        searchUrl,
-        consentId ? { 'X-Consent-Id': consentId } : undefined
-      );
+      // Mint an M2M token bound to this ServiceRequest as fhirContext, then read
+      // directly from the partner external gateway (OPA validates the context).
+      const data = await crossPartyFetch<FhirResource>(searchUrl, `ServiceRequest/${id}`);
 
       setSrModalData(data);
     } catch (err) {

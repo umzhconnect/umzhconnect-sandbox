@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
-import { useFhirClient } from '../../hooks/useFhirClient';
+import { useFhirClient, useCrossPartyFetch } from '../../hooks/useFhirClient';
 import { useAllTasks, useRegistrySearch } from '../../hooks/useFhirSearch';
 import type { Bundle, Endpoint, FhirResource, Organization, ServiceRequest, Task } from '../../types/fhir';
 import JsonViewer from '../common/JsonViewer';
@@ -207,6 +207,7 @@ const WorkflowWizard: React.FC = () => {
   const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
+  const crossPartyFetch = useCrossPartyFetch();
   const queryClient = useQueryClient();
 
   const { data: registryBundle } = useRegistrySearch<FhirResource>(
@@ -460,14 +461,15 @@ const WorkflowWizard: React.FC = () => {
 
           const lastSlash = ref.lastIndexOf('/');
           const id = ref.substring(lastSlash + 1);
-          const typeBase = ref.substring(0, lastSlash); // e.g. "http://…/proxy/fhir/ServiceRequest"
+          const typeBase = ref.substring(0, lastSlash); // e.g. "http://localhost:8081/fhir/ServiceRequest"
 
           const searchUrl =
             `${typeBase}?_id=${encodeURIComponent(id)}` +
             `&_include=ServiceRequest:subject` +
             `&_include=ServiceRequest:requester`;
 
-          const data = await client.fetchAbsolute<FhirResource>(searchUrl);
+          // Direct cross-party read: M2M token bound to this SR as fhirContext.
+          const data = await crossPartyFetch<FhirResource>(searchUrl, `ServiceRequest/${id}`);
 
           setPendingResult(data);
           setViewModal({ open: true, title: 'Step 2 — ServiceRequest Content (read-only)' });

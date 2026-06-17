@@ -1,0 +1,31 @@
+meta {
+  name: Get Fulfiller Context Token
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{keycloakUrl}}/realms/umzh-connect/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  client_id: fulfiller-client
+  client_secret: fulfiller-secret-2025
+  authorization_details: [{"type":"umzh-connect-context","identifier":"ServiceRequest/{{serviceRequestId}}"}]
+}
+
+script:post-response {
+  bru.setVar("fulfillerContextToken", res.getBody().access_token);
+}
+
+docs {
+  M2M token for HospitalF bound to a single ServiceRequest as fhirContext
+  (RFC 9396 authorization_details). The placer's external gateway OPA gate
+  permits reads of that ServiceRequest and the resources in its graph
+  (Patient, Condition, …) only when the token carries this context.
+
+  Set {{serviceRequestId}} in the environment (default ReferralOrthopedicSurgery).
+}

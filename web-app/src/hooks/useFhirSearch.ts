@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useFhirClient, useProxyClient, useRegistryClient } from './useFhirClient';
+import { useFhirClient, useRegistryClient, usePartnerClient } from './useFhirClient';
 import type { Bundle, FhirResource } from '../types/fhir';
 import { useRole } from '../contexts/RoleContext';
 
@@ -7,6 +7,8 @@ export interface AllTasksResponse {
   local: Bundle;
   remote: Bundle;
 }
+
+const EMPTY_BUNDLE: Bundle = { resourceType: 'Bundle', type: 'searchset', entry: [] };
 
 /**
  * Hook to search FHIR resources on the active party's server.
@@ -62,49 +64,33 @@ export function useFhirRead<T extends FhirResource>(
 }
 
 /**
- * Hook to fetch a resource from the partner's server (via proxy).
- */
-export function useProxyRead<T extends FhirResource>(
-  resourceType: string,
-  id: string | undefined,
-  enabled = true
-) {
-  const client = useProxyClient();
-  const { activeRole } = useRole();
-
-  return useQuery<T>({
-    queryKey: ['proxy', activeRole, resourceType, id],
-    queryFn: () => client.read<T>(resourceType, id!),
-    enabled: enabled && !!id,
-  });
-}
-
-/**
- * Hook to fetch a resource by absolute URL (cross-organization).
- */
-export function useFhirAbsolute<T extends FhirResource>(
-  absoluteUrl: string | undefined,
-  enabled = true
-) {
-  const client = useFhirClient();
-
-  return useQuery<T>({
-    queryKey: ['fhir-absolute', absoluteUrl],
-    queryFn: () => client.fetchAbsolute<T>(absoluteUrl!),
-    enabled: enabled && !!absoluteUrl,
-  });
-}
-
-/**
- * Hook to fetch all tasks from both the local partition and the partner's
- * external endpoint, returning them grouped as { local, remote }.
+ * Hook to fetch all tasks, grouped as { local, remote }.
+ *
+ * The fan-out is now done client-side (no internal-gateway action endpoint):
+ *   * local  — this party's own partition, via the internal gateway (user token)
+ *   * remote — the partner's external gateway /fhir/Task, with an in-browser
+ *              M2M token (Task list is not fhirContext-gated, so no fhirContext).
+ * Registry role has no partner; remote resolves to an empty bundle.
  */
 export function useAllTasks(params?: Record<string, string>) {
   const client = useFhirClient();
+  const getPartnerClient = usePartnerClient();
   const { activeRole } = useRole();
 
   return useQuery<AllTasksResponse>({
     queryKey: ['all-tasks', activeRole, params],
-    queryFn: () => client.fetchAction<AllTasksResponse>('/api/actions/all-tasks', params),
+    queryFn: async () => {
+      const localPromise = client.search('Task', params).catch(() => EMPTY_BUNDLE);
+
+      const remotePromise =
+        activeRole === 'registry'
+          ? Promise.resolve(EMPTY_BUNDLE)
+          : getPartnerClient()
+              .then((partner) => partner.search('Task', params))
+              .catch(() => EMPTY_BUNDLE);
+
+      const [local, remote] = await Promise.all([localPromise, remotePromise]);
+      return { local, remote };
+    },
   });
 }

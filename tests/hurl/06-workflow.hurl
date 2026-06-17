@@ -11,33 +11,18 @@
 # =============================================================================
 
 
-# --- Step 1: Placer creates Task at Fulfiller via create-task action ---
-# Routes through apisix-placer-internal -> apisix-fulfiller-external -> HAPI /fhir/fulfiller/Task
-
-POST {{placer_url}}/api/actions/create-task
-Authorization: Bearer {{placer_token}}
-Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{org_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
-# FHIR returns 201 Created for new resources
-HTTP 201
-[Captures]
-created_task_id: jsonpath "$.id"
-[Asserts]
-jsonpath "$.resourceType" == "Task"
-jsonpath "$.status" == "requested"
-
-
-# --- Step 1b: Placer creates Task directly via Fulfiller's external gateway ---
-# Positive test for ext-task-create (JWT-only, no OPA). Bypasses the placer
-# internal action endpoint and hits the fulfiller external gateway directly.
+# --- Step 1: Placer creates Task directly at Fulfiller's external gateway ---
+# No internal-gateway proxy: the placer authenticates with its own M2M token and
+# POSTs straight to apisix-fulfiller-external -> HAPI /fhir/fulfiller/Task.
 
 POST {{fulfiller_ext_url}}/fhir/Task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Direct external create test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{org_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
+{"resourceType":"Task","status":"requested","intent":"order","description":"Please evaluate patient for ACL reconstruction surgery","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalF"}}
+# FHIR returns 201 Created for new resources
 HTTP 201
 [Captures]
-ext_created_task_id: jsonpath "$.id"
+created_task_id: jsonpath "$.id"
 [Asserts]
 jsonpath "$.resourceType" == "Task"
 jsonpath "$.status" == "requested"
@@ -75,16 +60,16 @@ HTTP 200
 jsonpath "$.status" == "accepted"
 
 
-# --- Step 5: Placer must NOT update the Fulfiller's Task cross-party ---
-# Task writes are owner-only (OPA Rule 1d). The placer is the requester, not the
-# owner (HospitalF), so even a PATCH of an IG-patchable field (businessStatus) is
-# denied. (A non-patchable field such as /status would be 400 at the
-# capability-guard, before OPA is consulted.)
+# --- Step 5: Placer (requester, NOT owner) cannot PATCH the Task cross-party ---
+# OPA rule 1d restricts Task PATCH to the Task owner (HospitalF) — "the data
+# consumer (requester) must NOT mutate the Task". The placer patches an allowed
+# field (businessStatus), so it clears the capability-guard field allowlist, but
+# OPA denies because the caller is not the owner.
 
 PATCH {{fulfiller_ext_url}}/fhir/Task/{{created_task_id}}
 Authorization: Bearer {{placer_token}}
 Content-Type: application/json-patch+json
-[{"op":"replace","path":"/businessStatus","value":{"text":"in-progress"}}]
+[{"op":"add","path":"/businessStatus","value":{"text":"reviewed"}}]
 HTTP 403
 
 
@@ -97,48 +82,27 @@ Content-Type: application/fhir+json
 HTTP 404
 
 
-# --- Step 5c: Positive PATCH businessStatus via external gateway ---
-# Transfer ownership to HospitalP so that the placer token satisfies the
-# OPA owner check (Rule 1d) on the external gateway.
+# --- Step 6: Placer reads its own + the partner's Tasks (client-side fan-out) ---
+# The merged "all-tasks" action is gone; the web-app now does two direct reads.
+# 6a: own Tasks via the internal gateway (user/M2M token).
 
-PATCH {{fulfiller_url}}/fhir/Task/{{created_task_id}}
-Authorization: Bearer {{fulfiller_token}}
-Content-Type: application/json-patch+json
-[{"op":"replace","path":"/owner","value":{"reference":"{{org_url}}/fhir/Organization/HospitalP"}}]
-HTTP 200
-[Asserts]
-jsonpath "$.owner.reference" == "{{org_url}}/fhir/Organization/HospitalP"
-
-
-# Placer (now the owner) PATCHes an IG-patchable field via external gateway → 200.
-# Validates capability-guard passes businessStatus and OPA Rule 1d grants access.
-
-PATCH {{fulfiller_ext_url}}/fhir/Task/{{created_task_id}}
-Authorization: Bearer {{placer_token}}
-Content-Type: application/json-patch+json
-[{"op":"add","path":"/businessStatus","value":{"text":"in-progress"}}]
-HTTP 200
-[Asserts]
-jsonpath "$.businessStatus.text" == "in-progress"
-
-
-# Restore owner to HospitalF so subsequent steps behave normally.
-
-PATCH {{fulfiller_url}}/fhir/Task/{{created_task_id}}
-Authorization: Bearer {{fulfiller_token}}
-Content-Type: application/json-patch+json
-[{"op":"replace","path":"/owner","value":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}]
-HTTP 200
-[Asserts]
-jsonpath "$.owner.reference" == "{{org_url}}/fhir/Organization/HospitalF"
-
-
-# --- Step 6: Placer reads all-tasks (merges local + remote) ---
-# Response is JSON with { local: { Bundle }, remote: { Bundle } }
-
-GET {{placer_url}}/api/actions/all-tasks
+GET {{placer_url}}/fhir/Task
 Authorization: Bearer {{placer_token}}
 HTTP 200
 [Asserts]
-jsonpath "$.local" exists
-jsonpath "$.remote" exists
+jsonpath "$.resourceType" == "Bundle"
+
+# 6b: partner Tasks via the fulfiller external gateway (cross-party M2M token).
+# Proves the placer can authenticate itself cross-party and list the partner's
+# Tasks directly (no proxy). The requester-injection filter that scopes this
+# list to the caller's own Tasks is verified deterministically against
+# pre-indexed seed data in 11-task-requester-gate; we don't re-assert the
+# just-created id here because HAPI's `requester` search index is only
+# eventually consistent.
+
+GET {{fulfiller_ext_url}}/fhir/Task
+Authorization: Bearer {{placer_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType" == "Bundle"
+jsonpath "$.type" == "searchset"

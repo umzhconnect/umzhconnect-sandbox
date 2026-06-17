@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
+import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
+import type { AssertionParts } from '../services/l2-signing';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
@@ -22,71 +24,6 @@ const CLIENT_CONFIG = {
     label: 'HospitalF (Fulfiller)',
   },
 } as const;
-
-// ─── Web Crypto helpers ────────────────────────────────────────────────────────
-
-function base64url(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function base64urlStr(str: string): string {
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-async function importPrivateKey(pem: string): Promise<CryptoKey> {
-  const b64 = pem
-    .replace(/-----BEGIN (?:RSA )?PRIVATE KEY-----/, '')
-    .replace(/-----END (?:RSA )?PRIVATE KEY-----/, '')
-    .replace(/\s/g, '');
-  const der = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  return crypto.subtle.importKey(
-    'pkcs8', der,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['sign'],
-  );
-}
-
-interface AssertionParts {
-  header:  { typ: string; alg: string; kid?: string };
-  payload: { iss: string; sub: string; aud: string; exp: number; jti: string };
-  jwt:     string;
-}
-
-async function buildClientAssertion(
-  clientId: string,
-  audience: string,
-  key: CryptoKey,
-  kid?: string,
-): Promise<AssertionParts> {
-  // kid links this signed assertion to a specific JWK in the JWKS that
-  // Keycloak fetches from the client's jwks.url. With one key per client
-  // today it's not strictly required, but it's the linkage that makes
-  // overlap-window rotation work.
-  const headerObj  = kid
-    ? { typ: 'JWT', alg: 'RS256', kid }
-    : { typ: 'JWT', alg: 'RS256' };
-  const now        = Math.floor(Date.now() / 1000);
-  const payloadObj = {
-    iss: clientId,
-    sub: clientId,
-    aud: audience,
-    exp: now + 60,
-    jti: `${now}-${Math.random().toString(36).slice(2)}`,
-  };
-
-  const header  = base64urlStr(JSON.stringify(headerObj));
-  const payload = base64urlStr(JSON.stringify(payloadObj));
-  const sigInput  = `${header}.${payload}`;
-  const sigBuffer = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(sigInput),
-  );
-  return {
-    header:  headerObj,
-    payload: payloadObj,
-    jwt:     `${sigInput}.${base64url(sigBuffer)}`,
-  };
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

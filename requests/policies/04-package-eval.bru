@@ -34,9 +34,8 @@ body:json {
 
 docs {
   Queries the full package (umzh.authz) and returns all top-level rule values
-  in a single response. This is the endpoint used by the KrakenD sequential
-  proxy (opa_gate.lua) to retrieve the numeric http_status field, since
-  KrakenD's Lua data binding does not propagate JSON booleans.
+  in a single response, including the numeric http_status field alongside the
+  boolean allow decision.
 
   Endpoint: POST /v1/data/umzh/authz
   Returns:

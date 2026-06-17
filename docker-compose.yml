@@ -118,16 +118,59 @@ services:
     container_name: umzh-nginx-proxy
     volumes:
       - ./services/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
-      # Mount the committed demo keys read-only so the JWKS server blocks on
-      # ports 85/86 can serve placer-l2.jwks.json and fulfiller-l2.jwks.json.
-      # Those ports are internal-only — fronted publicly by the external
-      # APISIX gateways at /jwks.json on ports 8081/8083.
-      - ./services/keys:/keys:ro
     ports:
       - '${REGISTRY_PORT:-8084}:84'
     depends_on:
       hapi-fhir:
         condition: service_started
+    networks:
+      - umzh-net
+
+  # ===========================================================================
+  # Key Custodians — one per party. Same image; mount source + env differ.
+  #
+  # Each container holds exactly one party's L2 private key + JWK Set and
+  # exposes:
+  #   GET  /jwks.json   public JWK Set — fronted by the party's external APISIX
+  #   POST /sign        mints an RS256 private_key_jwt client assertion
+  #                     (DEMO ONLY — no auth; see services/key-custodian/README.md)
+  #
+  # Host ports allow tests/scripts/get-token.sh to mint assertions locally; in
+  # production the custodian would be internal-only behind mTLS.
+  # ===========================================================================
+  key-custodian-placer:
+    build:
+      context: ./services/key-custodian
+      dockerfile: Dockerfile
+    container_name: umzh-key-custodian-placer
+    environment:
+      PARTY: placer
+      CLIENT_ID: ${PLACER_L2_CLIENT_ID}
+      KID: placer-l2
+      KEYCLOAK_AUDIENCE: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
+    volumes:
+      - ./services/keys/placer-l2.key:/keys/private.key:ro
+      - ./services/keys/placer-l2.jwks.json:/keys/jwks.json:ro
+    ports:
+      - '${KEY_CUSTODIAN_PLACER_PORT}:8000'
+    networks:
+      - umzh-net
+
+  key-custodian-fulfiller:
+    build:
+      context: ./services/key-custodian
+      dockerfile: Dockerfile
+    container_name: umzh-key-custodian-fulfiller
+    environment:
+      PARTY: fulfiller
+      CLIENT_ID: ${FULFILLER_L2_CLIENT_ID}
+      KID: fulfiller-l2
+      KEYCLOAK_AUDIENCE: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
+    volumes:
+      - ./services/keys/fulfiller-l2.key:/keys/private.key:ro
+      - ./services/keys/fulfiller-l2.jwks.json:/keys/jwks.json:ro
+    ports:
+      - '${KEY_CUSTODIAN_FULFILLER_PORT}:8000'
     networks:
       - umzh-net
 
@@ -194,25 +237,16 @@ services:
     container_name: umzh-apisix-placer-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
+      # Internal gateway serves only this party's own partition. Cross-party
+      # access is no longer proxied here — the web-app authenticates cross-domain
+      # calls itself and talks to partner external gateways directly.
       PARTY: "placer"
-      PARTNER: "fulfiller"
       NGINX_OWN_PORT: "80"
-      PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_FULFILLER_EXTERNAL_PORT}"
-      OWN_URL: "http://localhost:${APISIX_PLACER_PORT}"
-      CLIENT_ID: "${PLACER_CLIENT_ID}"
-      CLIENT_SECRET: "${PLACER_CLIENT_SECRET}"
-      CLIENT_ID_L2: "${PLACER_L2_CLIENT_ID}"
-      CLIENT_KEY_PATH: "/keys/placer-l2.key"
-      CLIENT_KID: "placer-l2"
-      KEYCLOAK_TOKEN_ENDPOINT: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
-      - ./services/apisix/plugins/umzh-m2m-token.lua:/usr/local/apisix/apisix/plugins/umzh-m2m-token.lua:ro
-      # Bind-mount the committed demo private keys (see services/keys/README.md).
-      - ./services/keys:/keys:ro
     ports:
       - '${APISIX_PLACER_PORT}:9080'
     depends_on:
@@ -223,8 +257,6 @@ services:
       keycloak:
         condition: service_healthy
       opa-placer:
-        condition: service_started
-      apisix-fulfiller-external:
         condition: service_started
     healthcheck:
       test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
@@ -241,11 +273,6 @@ services:
     environment:
       PARTY: "placer"
       NGINX_OWN_PORT: "81"
-      # nginx-proxy server block (internal-only) that serves this party's
-      # JWK Set from services/keys/placer-l2.jwks.json. The external gateway
-      # exposes it publicly at /jwks.json, so Keycloak (and partner IdPs)
-      # see the JWKS at the same origin as the FHIR API.
-      JWKS_NGINX_PORT: "85"
     volumes:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
@@ -263,6 +290,9 @@ services:
         condition: service_healthy
       opa-placer:
         condition: service_started
+      # The /jwks.json route proxies to this party's key custodian.
+      key-custodian-placer:
+        condition: service_started
     healthcheck:
       test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
       interval: 10s
@@ -276,25 +306,16 @@ services:
     container_name: umzh-apisix-fulfiller-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
+      # Internal gateway serves only this party's own partition. Cross-party
+      # access is no longer proxied here — the web-app authenticates cross-domain
+      # calls itself and talks to partner external gateways directly.
       PARTY: "fulfiller"
-      PARTNER: "placer"
       NGINX_OWN_PORT: "82"
-      PARTNER_EXTERNAL_URL: "http://localhost:${APISIX_PLACER_EXTERNAL_PORT}"
-      OWN_URL: "http://localhost:${APISIX_FULFILLER_PORT}"
-      CLIENT_ID: "${FULFILLER_CLIENT_ID}"
-      CLIENT_SECRET: "${FULFILLER_CLIENT_SECRET}"
-      CLIENT_ID_L2: "${FULFILLER_L2_CLIENT_ID}"
-      CLIENT_KEY_PATH: "/keys/fulfiller-l2.key"
-      CLIENT_KID: "fulfiller-l2"
-      KEYCLOAK_TOKEN_ENDPOINT: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/apisix/internal/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
-      - ./services/apisix/plugins/umzh-m2m-token.lua:/usr/local/apisix/apisix/plugins/umzh-m2m-token.lua:ro
-      # Bind-mount the committed demo private keys (see services/keys/README.md).
-      - ./services/keys:/keys:ro
     ports:
       - '${APISIX_FULFILLER_PORT}:9080'
     depends_on:
@@ -305,8 +326,6 @@ services:
       keycloak:
         condition: service_healthy
       opa-fulfiller:
-        condition: service_started
-      apisix-placer-external:
         condition: service_started
     healthcheck:
       test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
@@ -323,11 +342,6 @@ services:
     environment:
       PARTY: "fulfiller"
       NGINX_OWN_PORT: "83"
-      # nginx-proxy server block (internal-only) that serves this party's
-      # JWK Set from services/keys/fulfiller-l2.jwks.json. The external
-      # gateway exposes it publicly at /jwks.json, so Keycloak (and partner
-      # IdPs) see the JWKS at the same origin as the FHIR API.
-      JWKS_NGINX_PORT: "86"
     volumes:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
@@ -344,6 +358,9 @@ services:
       keycloak:
         condition: service_healthy
       opa-fulfiller:
+        condition: service_started
+      # The /jwks.json route proxies to this party's key custodian.
+      key-custodian-fulfiller:
         condition: service_started
     healthcheck:
       test: ['CMD', '/bin/bash', '-c', "exec 3<>/dev/tcp/127.0.0.1/9080;echo -e 'GET /__health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3;grep -q '200' <&3"]
@@ -422,6 +439,11 @@ services:
         condition: service_completed_successfully
     networks:
       - umzh-net
+
+  # Workflow orchestration (Kestra) is a per-party concern and lives in
+  # party-deployment/ (the single-party deployment unit), not in this two-party
+  # sandbox. See party-deployment/ for the Kestra instance, flow, flow-loader,
+  # and the Arazzo/OpenAPI workflow specs.
 
 volumes:
   postgres_data:

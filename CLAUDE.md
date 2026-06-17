@@ -61,8 +61,16 @@ This is a reference implementation of a two-party healthcare order workflow (Pla
 ### Dual-Gateway Pattern
 
 Each hospital runs two APISIX gateways (standalone mode — YAML config, hot-reloaded):
-- **Internal gateway**: Used by the party's own web-app; routes to own FHIR partition and proxies cross-party requests to the partner's external gateway
+- **Internal gateway**: Used by the party's own web-app; serves only the party's own FHIR partition (JWT + realm-role). It does **not** proxy cross-party traffic.
 - **External gateway**: Exposed to the partner hospital; enforces OPA consent policies on every read
+
+Cross-party calls are made **directly by the web-app** to the partner's external
+gateway. The web-app signs its own L2 `private_key_jwt` assertion in-browser
+(Web Crypto, using the keys at `/l2-keys/`), exchanges it at Keycloak for an M2M
+token (with `authorization_details` = the ServiceRequest fhirContext when reading
+clinical data), and calls the partner external gateway with that bearer. There is
+no internal-gateway proxy, no `/proxy/*` routes, and no `/api/actions/*`
+orchestration endpoints.
 
 ### FHIR Multi-Tenancy
 
@@ -75,19 +83,19 @@ Organization resources live only in the registry partition. Both party partition
 
 ### URL Rewriting Chain
 
-HAPI embeds `http://localhost:8090/...` in self-links (internal Docker address). nginx-proxy rewrites these on ports 80–83 to the correct APISIX gateway URLs using `sub_filter`. Cross-party proxy responses are then rewritten by APISIX's `response-rewrite` plugin, translating partner external URLs back to the calling party's `/proxy/fhir/` path.
+HAPI embeds `http://localhost:8090/...` in self-links (internal Docker address). nginx-proxy rewrites these on ports 80–83 to the correct APISIX gateway URLs using `sub_filter`. Partner references in stored resources are absolute partner-external URLs and are left as-is, so the web-app calls them directly.
 
 ### Security Model
 
 1. JWT validation (RS256, Keycloak JWKS) at both internal and external gateways
-2. Consent-gated reads at external gateways via OPA sequential proxy
+2. fhirContext-gated reads at external gateways via OPA sequential proxy
 3. SMART on FHIR system scopes in M2M tokens
-4. Cross-party requests carry two JWTs (validated at each hop)
+4. Cross-party requests carry an M2M JWT minted by the calling web-app (or workflow engine), validated at the partner's external gateway
 
 APISIX policy enforcement uses the built-in `opa` plugin plus three custom Lua plugins (`services/apisix/plugins/`):
 - `umzh-role-check` — enforces realm role on internal gateway routes
-- `umzh-m2m-token` — acquires M2M tokens from Keycloak (L1 `client_secret` or L2 `private_key_jwt`) and injects them as `Authorization` headers
-- `umzh-capability-guard` — deny-by-default allowlist of query params, `_include` values, and (on PATCH routes) JSON-Patch `patchable_fields` per route on external gateways, derived from the IG CapabilityStatement
+- `umzh-task-requester-inject` — injects `requester=<organization_reference>` on the external gateway's Task search, so a caller only sees Tasks it requested
+- `umzh-capability-guard` — deny-by-default allowlist of query params, `_include` values, and (on PATCH routes) JSON-Patch `patchable_fields` per external-gateway route, derived from the IG CapabilityStatement
 
 OPA policies are in `services/opa/policies/`.
 
@@ -122,4 +130,3 @@ Keycloak admin: `admin/admin` at http://localhost:8180/admin
 ### Test Suite
 
 Tests are Hurl plain-text HTTP files in `tests/hurl/`. Files prefixed `0N-` run in order. The test runner (`tests/scripts/run-tests.sh`) waits for services, acquires Keycloak tokens (both L1 and L2), and executes each file, writing JUnit XML to `tests/reports/`. Pass `-l2` to run all tests using L2 tokens instead of L1.
-

@@ -16,6 +16,7 @@ type LogCallback = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 export async function createReferralWorkflow(
   placerClient: FhirClient,
   partnerExternalBaseUrl: string,
+  partnerM2mToken: string,
   serviceRequest: ServiceRequest,
   consent: Consent,
   task: Task,
@@ -40,12 +41,13 @@ export async function createReferralWorkflow(
   });
   const createdConsent = await placerClient.create(consent);
 
-  // Step 3: Create Task at Fulfiller (external API via proxy)
+  // Step 3: Create Task at Fulfiller — direct call to the partner's external
+  // gateway, authenticated with an M2M token the caller minted in-browser.
   onLog?.({
     type: 'info',
     message: 'Step 3: Creating Task at Fulfiller (cross-organization)...',
   });
-  const fulfillerClient = new FhirClient(partnerExternalBaseUrl, undefined, onLog);
+  const fulfillerClient = new FhirClient(partnerExternalBaseUrl, partnerM2mToken, onLog);
   const createdTask = await fulfillerClient.create(task);
 
   onLog?.({

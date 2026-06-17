@@ -14,9 +14,14 @@ body:form-urlencoded {
   grant_type: client_credentials
   client_id: fulfiller-client
   client_secret: fulfiller-secret-2025
-  scope: openid consent:{{consentId}}
 }
 
 script:post-response {
   bru.setVar("fulfillerToken", res.getBody().access_token);
+}
+
+docs {
+  M2M token for HospitalF. Plain client_credentials. Use this for Task list/create
+  against the partner external gateway; for cross-party clinical reads use
+  "Get Fulfiller Context Token" (carries a fhirContext the OPA gate checks).
 }
