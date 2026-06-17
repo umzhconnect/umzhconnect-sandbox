@@ -126,6 +126,14 @@ case "$CLIENT_TYPE" in
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
     fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
     ;;
+  placer-context)
+    # RFC 9396 authorization_details token — placer reading Task output resources
+    # at the fulfiller-external gateway. The identifier is a Task/<id>.
+    TASK="${SR_ID:-TaskOrthopedicReferral}"
+    AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
+    AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
+    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
+    ;;
   placer-user)
     # User flow — openid IS appropriate here (authenticates a user; an ID token is meaningful)
     fetch_token "grant_type=password&client_id=web-app&username=placer-user&password=placer123&scope=openid"
@@ -144,8 +152,13 @@ case "$CLIENT_TYPE" in
     fetch_l2_token fulfiller-client-l2 fulfiller-l2 "" \
       '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     ;;
+  placer-l2-context)
+    TASK="${SR_ID:-TaskOrthopedicReferral}"
+    fetch_l2_token placer-client-l2 placer-l2 "" \
+      '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
+    ;;
   *)
-    echo "Usage: get-token.sh <placer|fulfiller|fulfiller-context|placer-user|fulfiller-user|placer-l2|fulfiller-l2|fulfiller-l2-context> [sr_id]" >&2
+    echo "Usage: get-token.sh <placer|fulfiller|fulfiller-context|placer-context|placer-user|fulfiller-user|placer-l2|fulfiller-l2|fulfiller-l2-context|placer-l2-context> [resource_id]" >&2
     exit 1
     ;;
 esac

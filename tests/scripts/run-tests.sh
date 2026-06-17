@@ -75,6 +75,14 @@ FULFILLER_L2_CONTEXT_TUMOR_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller-l2-conte
 [ -z "$FULFILLER_L2_CONTEXT_TUMOR_TOKEN" ] && echo "  FATAL: could not acquire fulfiller L2 tumorboard context token" && exit 1
 echo "  fulfiller M2M L2+tumor    OK"
 
+PLACER_TASK_CONTEXT_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-context TaskOrthopedicReferral)
+[ -z "$PLACER_TASK_CONTEXT_TOKEN" ] && echo "  FATAL: could not acquire placer task context token" && exit 1
+echo "  placer M2M + task ctx     OK"
+
+PLACER_L2_TASK_CONTEXT_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-l2-context TaskOrthopedicReferral)
+[ -z "$PLACER_L2_TASK_CONTEXT_TOKEN" ] && echo "  FATAL: could not acquire placer L2 task context token" && exit 1
+echo "  placer M2M L2+task ctx    OK"
+
 echo "=== All tokens acquired ==="
 
 # Bind effective M2M tokens — L2 tokens shadow L1 when -l2 is passed,
@@ -84,11 +92,13 @@ if [ "$USE_L2" = "true" ]; then
   EFFECTIVE_FULFILLER_TOKEN="$FULFILLER_L2_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TOKEN="$FULFILLER_L2_CONTEXT_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TUMOR_TOKEN="$FULFILLER_L2_CONTEXT_TUMOR_TOKEN"
+  EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN="$PLACER_L2_TASK_CONTEXT_TOKEN"
 else
   EFFECTIVE_PLACER_TOKEN="$PLACER_TOKEN"
   EFFECTIVE_FULFILLER_TOKEN="$FULFILLER_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TOKEN="$FULFILLER_CONTEXT_TOKEN"
   EFFECTIVE_FULFILLER_CONTEXT_TUMOR_TOKEN="$FULFILLER_CONTEXT_TUMOR_TOKEN"
+  EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN="$PLACER_TASK_CONTEXT_TOKEN"
 fi
 
 # -------------------------------------------------------------------
@@ -102,6 +112,9 @@ APISIX_FULFILLER_URL="${APISIX_FULFILLER_URL:-http://localhost:8082}"
 APISIX_FULFILLER_EXT_URL="${APISIX_FULFILLER_EXT_URL:-http://localhost:8083}"
 HAPI_FHIR_URL="${HAPI_FHIR_URL:-http://localhost:8090}"
 REGISTRY_URL="${REGISTRY_URL:-http://localhost:8084}"
+# Canonical URL for Organization FHIR references — matches seed data and KC token claim.
+# In Docker ORG_CANONICAL_URL differs from REGISTRY_URL (nginx-proxy:84 vs localhost:8084).
+ORG_CANONICAL_URL="${ORG_CANONICAL_URL:-http://localhost:8084}"
 OPA_PLACER_URL="${OPA_PLACER_URL:-http://localhost:8181}"
 OPA_FULFILLER_URL="${OPA_FULFILLER_URL:-http://localhost:8182}"
 RESEED_API_URL="${RESEED_API_URL:-http://localhost:9001}"
@@ -127,7 +140,10 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
     TOTAL=$((TOTAL + 1))
 
     echo "--- Running: $test_name ---"
-    if hurl --test --color \
+    # --continue-on-error: run all entries in a file even after a failed assert,
+    # so test-first specs (currently-failing security cases) still execute their
+    # cleanup entries and so every failing assertion is reported in one pass.
+    if hurl --test --color --continue-on-error \
         --variable "keycloak_url=$KEYCLOAK_URL" \
         --variable "placer_url=$APISIX_PLACER_URL" \
         --variable "placer_ext_url=$APISIX_PLACER_EXT_URL" \
@@ -135,6 +151,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "fulfiller_ext_url=$APISIX_FULFILLER_EXT_URL" \
         --variable "hapi_url=$HAPI_FHIR_URL" \
         --variable "registry_url=$REGISTRY_URL" \
+        --variable "org_url=$ORG_CANONICAL_URL" \
         --variable "opa_placer_url=$OPA_PLACER_URL" \
         --variable "opa_fulfiller_url=$OPA_FULFILLER_URL" \
         --variable "reseed_url=$RESEED_API_URL" \
@@ -147,6 +164,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "placer_l2_token=$PLACER_L2_TOKEN" \
         --variable "fulfiller_l2_token=$FULFILLER_L2_TOKEN" \
         --variable "fulfiller_l2_context_token=$FULFILLER_L2_CONTEXT_TOKEN" \
+        --variable "placer_task_context_token=$EFFECTIVE_PLACER_TASK_CONTEXT_TOKEN" \
         --variable "consent_end=$CONSENT_END" \
         --report-junit "$REPORT_DIR/${test_name}.xml" \
         "$hurl_file"; then

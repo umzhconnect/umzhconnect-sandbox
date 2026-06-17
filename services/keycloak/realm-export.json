@@ -166,6 +166,14 @@
         "include.in.token.scope": "true"
       },
       "protocolMappers": []
+    },
+    {
+      "name": "system/Appointment.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
     }
   ],
   "clients": [
@@ -234,7 +242,8 @@
         "system/Immunization.r",
         "system/DiagnosticReport.r",
         "system/QuestionnaireResponse.cru",
-        "system/ImagingStudy.r"
+        "system/ImagingStudy.r",
+        "system/Appointment.r"
       ],
       "optionalClientScopes": [],
       "protocolMappers": [
@@ -406,7 +415,8 @@
         "system/Immunization.r",
         "system/DiagnosticReport.r",
         "system/QuestionnaireResponse.cru",
-        "system/ImagingStudy.r"
+        "system/ImagingStudy.r",
+        "system/Appointment.r"
       ],
       "optionalClientScopes": [],
       "protocolMappers": [

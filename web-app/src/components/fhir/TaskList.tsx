@@ -97,8 +97,8 @@ const TaskList: React.FC = () => {
       // The user's authorization code token is not involved in the consent binding.
       const searchUrl =
         `${typeBase}?_id=${encodeURIComponent(id)}` +
-        `&_include=ServiceRequest:subject:Patient` +
-        `&_include=ServiceRequest:requester:Practitioner`;
+        `&_include=ServiceRequest:subject` +
+        `&_include=ServiceRequest:requester`;
 
       // Extract consent ID from task meta.security (system: 'urn:umzh:consent:id', code: <id>)
       const consentId = selectedTask?.meta?.security
@@ -336,9 +336,9 @@ const TaskList: React.FC = () => {
                   {selectedTask?.basedOn?.[0]?.reference}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Includes: <span className="font-mono">ServiceRequest:subject:Patient</span>
+                  Includes: <span className="font-mono">ServiceRequest:subject</span>
                   {' · '}
-                  <span className="font-mono">ServiceRequest:requester:Practitioner</span>
+                  <span className="font-mono">ServiceRequest:requester</span>
                 </p>
               </div>
               <button
