@@ -1,0 +1,45 @@
+# =============================================================================
+# Caddyfile — UMZH Connect Sandbox
+#
+# Place at /etc/caddy/Caddyfile (or pass with caddy run --config).
+# Caddy obtains and auto-renews Let's Encrypt certificates for every block.
+# All HTTP traffic is redirected to HTTPS automatically.
+# =============================================================================
+
+# Web app (SPA)
+sandbox.umzh-connect.ch {
+    reverse_proxy localhost:3000
+}
+
+# Keycloak authorization server
+auth.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8180 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+    }
+}
+
+# Public mCSD registry (no auth)
+register.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8084
+}
+
+# Placer hospital — external gateway (cross-party, used by fulfiller)
+placer.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8081
+}
+
+# Placer hospital — internal gateway (own-party FHIR, used by placer user)
+placer-int.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8080
+}
+
+# Fulfiller hospital — external gateway (cross-party, used by placer)
+fulfiller.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8083
+}
+
+# Fulfiller hospital — internal gateway (own-party FHIR, used by fulfiller user)
+fulfiller-int.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:8082
+}
