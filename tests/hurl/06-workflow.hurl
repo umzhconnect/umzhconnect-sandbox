@@ -73,7 +73,28 @@ Content-Type: application/json-patch+json
 HTTP 403
 
 
-# --- Step 5b: PUT on external gateway must be rejected — APISIX returns 404 (no matching route) ---
+# --- Step 5b: Placer (owner) CAN PATCH businessStatus via Fulfiller's external gateway ---
+# Creates a Task with owner=HospitalP so the placer token satisfies OPA Rule 1d.
+# Validates the positive path: capability-guard allows businessStatus AND OPA grants the owner.
+
+POST {{fulfiller_ext_url}}/fhir/Task
+Authorization: Bearer {{placer_token}}
+Content-Type: application/fhir+json
+{"resourceType":"Task","status":"requested","intent":"order","description":"Owner PATCH positive test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"}}
+HTTP 201
+[Captures]
+placer_owned_task_id: jsonpath "$.id"
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/{{placer_owned_task_id}}
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[{"op":"add","path":"/businessStatus","value":{"text":"reviewed"}}]
+HTTP 200
+[Asserts]
+jsonpath "$.businessStatus.text" == "reviewed"
+
+
+# --- Step 5c: PUT on external gateway must be rejected — APISIX returns 404 (no matching route) ---
 
 PUT {{fulfiller_ext_url}}/fhir/Task/{{created_task_id}}
 Authorization: Bearer {{placer_token}}
