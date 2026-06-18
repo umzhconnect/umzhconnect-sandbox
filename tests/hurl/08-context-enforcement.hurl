@@ -4,10 +4,12 @@
 # Validates that the placer-external gateway enforces context-graph membership
 # using the fhirContext claim from a RFC 9396 authorization_details token.
 #
-# Enforcement chain:
-#   1. openid-connect — validates JWT, enforces bearer token presence
-#   2. opa plugin     — calls OPA; 403 on deny, passes through on allow
-#   3. upstream       — HAPI FHIR serves the resource (only reached when allowed)
+# Enforcement chain (external gateway):
+#   1. routing          — only declared method×resourceType reachable (else 404)
+#   2. openid-connect   — validates JWT, enforces bearer token presence
+#   3. capability-guard — query param / _include allowlist (else 400)
+#   4. opa plugin       — calls OPA; 403 on deny, passes through on allow
+#   5. upstream         — HAPI FHIR serves the resource (only reached when allowed)
 #
 # OPA resolves the Consent by searching
 #   GET /Consent?data=ServiceRequest/<id>&status=active
@@ -89,6 +91,155 @@ HTTP 403
 
 
 # ---------------------------------------------------------------------------
+# NEGATIVE TEST — Plain M2M token carries no fhirContext claim
+# Same resource as the positive test above; denied because fhir_context_sr_refs
+# and fhir_context_task_refs are both empty → Rules 4 and 4b fail closed.
+# ---------------------------------------------------------------------------
+
+GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture
+Authorization: Bearer {{fulfiller_token}}
+HTTP 403
+
+
+# ===========================================================================
+# SEARCH / EXPANSION — context scoping must hold for searches, not just reads-by-id
+# ---------------------------------------------------------------------------
+# The negative tests above read a single out-of-graph resource by id. OPA only
+# sees a parsed (resource_type, _id), so it cannot by itself police a search or
+# an _include/_revinclude expansion — that contract is enforced ahead of OPA by
+# routing (404) and the capability-guard (400). The orthopedic Consent above is
+# still active for these, so the denials below are the contract layer, not consent.
+#
+# Per the IG CapabilityStatement, only ServiceRequest, Task, Questionnaire and
+# QuestionnaireResponse support `search-type`. The clinical leaf resources
+# (Patient, Condition, Coverage, ...) are READ-ONLY ("They cannot be searched
+# directly — they must be retrieved either by known ID or transitively through
+# `_include` from the workflow root"). ServiceRequest search additionally
+# requires `_id` ("Searches without `_id` are not supported").
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE CONTROL — a bounded search on a SEARCHABLE type (ServiceRequest is
+# the placer-side workflow root) with an in-context `_id` returns just that
+# resource. Legitimate graph-scoped search must keep working.
+# ---------------------------------------------------------------------------
+
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType"         == "Bundle"
+jsonpath "$.total"                == 1
+jsonpath "$.entry"                count == 1
+jsonpath "$.entry[0].resource.id" == "ReferralOrthopedicSurgery"
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 1a — Clinical leaf resources are READ-ONLY (no `search-type`), so the
+# search endpoint does not exist → 404 (no route, APISIX default-deny),
+# regardless of `_id`. The legitimate path is read-by-id
+# (GET /fhir/Condition/SuspectedACLRupture → 200, asserted earlier).
+# ---------------------------------------------------------------------------
+
+# A read-only clinical resource that IS readable by id (Condition/SuspectedACLRupture
+# → 200 above) must still be DENIED when requested via `_id` search — there is no
+# search route for the type, so it is refused before auth/consent are consulted.
+# (Using the in-graph id isolates the interaction check: an out-of-graph id like
+# SarcomaKnee would be denied anyway, masking whether search itself is refused.)
+GET {{placer_ext_url}}/fhir/Condition?_id=SuspectedACLRupture
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 404
+
+# Unbounded searches on read-only types → 404 (no route)
+GET {{placer_ext_url}}/fhir/Condition
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 404
+
+GET {{placer_ext_url}}/fhir/Patient
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 404
+
+GET {{placer_ext_url}}/fhir/Coverage
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 404
+
+# A read-by-id takes no query parameters; smuggling a search/expansion param onto
+# the read URL is rejected by the read route's (empty) capability-guard allow-list
+# → 400. Same resource reads 200 above.
+GET {{placer_ext_url}}/fhir/Condition/SuspectedACLRupture?_include=*
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 1b — Searchable type (ServiceRequest) must still be `_id`-bounded and
+# in-context.
+# ---------------------------------------------------------------------------
+
+# Unbounded ServiceRequest search (no `_id`) → 400 (capability-guard: `_id`
+# required, "searches without `_id` are not supported").
+GET {{placer_ext_url}}/fhir/ServiceRequest
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# Valid interaction & params, but OUT-OF-CONTEXT `_id` (a different referral)
+# → 403 (OPA consent/graph denial — authorization, not contract).
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralTumorboard
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 2 — Parameter / include allowlist (DEFAULT-DENY) on a searchable type.
+# Exercised on ServiceRequest (clinical types have no search route at all — see
+# Vector 1a). The capability-guard permits only `_id` plus the enumerated
+# graph-edge includes; everything else → 400, with no explicit blocklist.
+# ---------------------------------------------------------------------------
+
+# `_revinclude` is not in the CapabilityStatement at all → 400
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&_revinclude=*
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# `_include=*` wildcard — not enumerated → 400
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&_include=*
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# A valid FHIR include that is NOT in the enumerated set → 400 (deny-by-default,
+# not merely a blocklist of known-bad includes).
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&_include=ServiceRequest:encounter
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# A non-allowlisted ordinary search parameter → 400 (ServiceRequest allows only `_id`).
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&status=active
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# A reverse-chained `_has` parameter → 400 (not allow-listed; confirms the guard
+# rejects anything not explicitly permitted, not just expansion params).
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&_has:Observation:based-on:status=final
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 400
+
+# POSITIVE CONTROL — an enumerated graph-edge include is in-graph by
+# construction and must be ALLOWED, returning only the match plus the graph
+# member it names (here Patient/PetraMeier = ServiceRequest.subject). Guards
+# against an over-broad guard that blanket-denies all `_include`.
+GET {{placer_ext_url}}/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery&_include=ServiceRequest:patient
+Authorization: Bearer {{fulfiller_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType"         == "Bundle"
+jsonpath "$.total"                == 1
+jsonpath "$.entry"                count == 2
+jsonpath "$.entry[*].resource.id" includes "ReferralOrthopedicSurgery"
+jsonpath "$.entry[*].resource.id" includes "PetraMeier"
+
+
+# ---------------------------------------------------------------------------
 # REVOCATION TEST — Inactive Consent → denied with the same token
 # ---------------------------------------------------------------------------
 
@@ -149,3 +300,273 @@ Authorization: Bearer {{fulfiller_context_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.id" == "SuspectedACLRupture"
+
+
+# ===========================================================================
+# TASK-ROOTED CONTEXT — Placer reads Task output resources at the fulfiller
+# ---------------------------------------------------------------------------
+# Mirror of the SR-rooted tests above, but with the workflow root being a Task
+# and the direction reversed: placer (HospitalP) reads from the fulfiller-
+# external gateway using a context token whose fhirContext identifier is
+# Task/TaskOrthopedicReferral.
+#
+# Per IG guidance-interactions.html: "Placer reads forward-referenced output
+# resources with the Task ID as the context resource."
+#
+# The Consent (ConsentTaskOrthopedicReferral) lives in the FULFILLER partition
+# because OPA at opa-fulfiller searches against fhir_base=/fhir/fulfiller.
+# It names Task/TaskOrthopedicReferral as provision.data and HospitalP as actor.
+#
+# Task.output → Appointment/AppointmentOrthopedicConsultation (the graph edge
+# under test). The Appointment read hits the existing ext-fhir-read wildcard
+# route; no new route is needed.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Setup — Refresh Task-rooted Consent end date
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
+]
+HTTP 200
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Placer reads Task output resource at fulfiller-external
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType" == "Appointment"
+jsonpath "$.id"           == "AppointmentOrthopedicConsultation"
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Placer reads the Task itself (Rule 1b: placer is Task.requester)
+# Independent of the graph check; confirms the two access paths coexist.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType" == "Task"
+jsonpath "$.id"           == "TaskOrthopedicReferral"
+
+
+# ---------------------------------------------------------------------------
+# POSITIVE — Task search with output _include returns Task + Appointment in
+# one round-trip. Authorization basis: Rule 1a (requester filter injected by
+# umzh-task-requester-inject); the included Appointment rides on the Task
+# search grant, not a separate graph check.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.resourceType"             == "Bundle"
+jsonpath "$.total"                    == 1
+jsonpath "$.entry"                    count == 2
+jsonpath "$.entry[*].resource.id"     includes "TaskOrthopedicReferral"
+jsonpath "$.entry[*].resource.id"     includes "AppointmentOrthopedicConsultation"
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — No context: plain placer M2M token carries no fhirContext → 403
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Wrong party: fulfiller token is not the named actor in
+# ConsentTaskOrthopedicReferral (actor = HospitalP only) → 403
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{fulfiller_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Resource not in graph: TaskInternalLabReview has requester=
+# HospitalF, so the placer is neither owner nor requester → denied by Rule 1b
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task/TaskInternalLabReview
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# NEGATIVE — Appointment search is not a declared interaction at the external
+# gateway (no search route for Appointment) → 404
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment?_id=AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 404
+
+
+# ---------------------------------------------------------------------------
+# REVOCATION — Inactive Consent → denied
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/status", "value": "inactive"}
+]
+HTTP 200
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/status", "value": "active"}
+]
+HTTP 200
+
+
+# ---------------------------------------------------------------------------
+# EXPIRY — Expired provision.period.end → denied even if status=active
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "2020-01-01"}
+]
+HTTP 200
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
+Authorization: Bearer {{fulfiller_user_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
+]
+HTTP 200
+
+# Confirm access is restored after expiry fix
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentOrthopedicConsultation
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.id" == "AppointmentOrthopedicConsultation"
+
+
+# ===========================================================================
+# TASK-GRAPH TAMPERING — a Task reader must not be able to inject the graph it
+# reads from. The cross-party read graph is Task.output (Rule 4b and the Task
+# _include path), and Task writes are owner-only, so the placer (the requester,
+# not the owner) cannot inject it.
+#
+# Fixture: AppointmentFulfillerInternal — a fulfiller-internal appointment for an
+# unrelated patient (seeded in fulfiller-bundle.json), referenced by no Task; the
+# Placer must never be able to read it. The suite runs hurl with
+# --continue-on-error so the cleanup entry still restores TaskOrthopedicReferral
+# even when a check fails, and so every check is reported in one run.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# CONTROL — the canary is not reachable without tampering (invariant). Confirms
+# the reads below are governed by the Task graph, not pre-existing access.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentFulfillerInternal
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# TAMPER — the Placer (requester, not owner of TaskOrthopedicReferral) tries to
+# inject an out-of-band output edge. The capability-guard rejects it: /output is
+# not an IG-patchable field (400). Status left unasserted; the property under
+# test is the READ/SEARCH below.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {
+    "op": "add",
+    "path": "/output/-",
+    "value": {
+      "type": { "coding": [ { "system": "http://snomed.info/sct", "code": "11429006" } ] },
+      "valueReference": { "reference": "Appointment/AppointmentFulfillerInternal" }
+    }
+  }
+]
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 1 — Rule 4b graph tampering: the canary must not be readable via the
+# Task-rooted graph (the inject above was rejected, so it is not in the graph).
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Appointment/AppointmentFulfillerInternal
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 403
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 2 — _include graph tampering: the Task search _include must not surface
+# the injected edge.
+# ---------------------------------------------------------------------------
+
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+Authorization: Bearer {{placer_task_context_token}}
+HTTP 200
+[Asserts]
+jsonpath "$.entry[*].resource.id" not includes "AppointmentFulfillerInternal"
+
+
+# ---------------------------------------------------------------------------
+# CLEANUP — remove any injected edge, restoring the seeded Task. Status
+# unasserted: a no-op (400) when the TAMPER PATCH was rejected.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskOrthopedicReferral
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "remove", "path": "/output/1"}
+]
+
+
+# ---------------------------------------------------------------------------
+# VECTOR 3 — unauthorized Task write: the Placer is neither owner nor requester
+# of TaskInternalLabReview (both = HospitalF). Uses an IG-patchable field
+# (businessStatus) so the capability-guard passes and the OPA owner check
+# (Rule 1d) is what denies the write.
+# ---------------------------------------------------------------------------
+
+PATCH {{fulfiller_ext_url}}/fhir/Task/TaskInternalLabReview
+Authorization: Bearer {{placer_token}}
+Content-Type: application/json-patch+json
+[
+  {"op": "add", "path": "/businessStatus", "value": {"text": "review"}}
+]
+HTTP 403

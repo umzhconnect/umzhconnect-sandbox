@@ -98,7 +98,7 @@ services:
   #   /fhir/fulfiller -> HospitalF partition
   # ===========================================================================
   hapi-fhir:
-    image: hapiproject/hapi:v7.4.0
+    image: hapiproject/hapi:v8.10.0-1
     container_name: umzh-hapi-fhir
     environment:
       SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
@@ -258,6 +258,7 @@ services:
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
+      - ./services/apisix/plugins/umzh-capability-guard.lua:/usr/local/apisix/apisix/plugins/umzh-capability-guard.lua:ro
     ports:
       - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
     depends_on:
@@ -339,6 +340,7 @@ services:
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
+      - ./services/apisix/plugins/umzh-capability-guard.lua:/usr/local/apisix/apisix/plugins/umzh-capability-guard.lua:ro
     ports:
       - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
     depends_on:

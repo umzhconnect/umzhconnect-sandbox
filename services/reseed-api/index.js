@@ -30,13 +30,45 @@ async function fhirPost(path, body) {
   return { status: res.status, body: text };
 }
 
+// Resource types seeded across the clinical partitions.
+// expungeEverything=true is unconditionally GLOBAL in HAPI and wipes the IG
+// package (SearchParameters). Instead: soft-delete per type, then hard-expunge
+// deleted resources — both operations are partition-scoped.
+//
+// Order matters: Consent.provision.data.reference is not a registered
+// SearchParameter so HAPI's _cascade=delete cannot follow it. Delete Consent
+// and QuestionnaireResponse first so subsequent deletes succeed without 409.
+const CLINICAL_TYPES = [
+  'Consent', 'QuestionnaireResponse',
+  'Task', 'Appointment',
+  'ServiceRequest',
+  'Observation', 'AllergyIntolerance', 'Condition', 'Coverage',
+  'DocumentReference', 'ImagingStudy', 'MedicationStatement',
+  'PractitionerRole', 'HealthcareService', 'Endpoint',
+  'Organization', 'Patient', 'Practitioner',
+];
+
 // ---------------------------------------------------------------------------
-// Helper: expunge a single partition
+// Helper: clear a single partition (partition-scoped, IG-safe)
 // ---------------------------------------------------------------------------
 async function expungePartition(partition, log) {
+  // Step 1: soft-delete per type. _cascade=delete handles referential integrity.
+  for (const type of CLINICAL_TYPES) {
+    const res = await fetch(
+      `${FHIR_BASE}/${partition}/${type}?_lastUpdated=ge1900-01-01&_cascade=delete`,
+      { method: 'DELETE' }
+    );
+    if (res.status !== 200 && res.status !== 204 && res.status !== 404) {
+      log(`  DELETE /${partition}/${type}: HTTP ${res.status}`);
+    }
+  }
+
+  // Step 2: hard-expunge tombstones (partition-scoped, not global).
+  // Safe because expire_search_results_after_millis=0 disables the search
+  // cache, so PID reassignment on recreate causes no stale-entry issues.
   const result = await fhirPost(`/${partition}/$expunge`, {
     resourceType: 'Parameters',
-    parameter   : [{ name: 'expungeEverything', valueBoolean: true }],
+    parameter   : [{ name: 'expungeDeletedResources', valueBoolean: true }],
   });
   log(`  Expunge /${partition}: HTTP ${result.status}`);
 }
@@ -71,9 +103,8 @@ async function reseed() {
 
   log('=== RESEED STARTED ===');
 
-  // [1/6] Expunge all partitions
+  // [1/6] Clear clinical partitions (IG-safe per-type delete + expunge)
   log('\n[1/6] Expunging FHIR partitions…');
-  await expungePartition('DEFAULT',   log);
   await expungePartition('placer',    log);
   await expungePartition('fulfiller', log);
   await expungePartition('registry',  log);

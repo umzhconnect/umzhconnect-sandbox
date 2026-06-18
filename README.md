@@ -117,7 +117,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 |---------|-------|-----------|---------|
 | `postgres` | `postgres:16-alpine` | 5431 | Shared DB (HAPI FHIR + Keycloak) |
 | `keycloak` | `quay.io/keycloak/keycloak:25.0` | 8180 | OAuth2 / OIDC / SMART on FHIR |
-| `hapi-fhir` | `hapiproject/hapi:v7.4.0` | 8090 | FHIR R4 server (URL-partitioned) |
+| `hapi-fhir` | `hapiproject/hapi:v8.10.0-1` | 8090 | FHIR R4 server (URL-partitioned) |
 | `nginx-proxy` | `nginx:alpine` | 8084 | Self-link rewriting proxy (ports 80–83); port 84 = public registry gateway |
 | `opa-placer` | `openpolicyagent/opa:0.70.0` | 8181 | Policy engine for HospitalP |
 | `opa-fulfiller` | `openpolicyagent/opa:0.70.0` | 8182 | Policy engine for HospitalF |
@@ -176,7 +176,7 @@ Both gateways share the **same Keycloak realm** and the **same HAPI FHIR instanc
 
 ### FHIR Server — URL-based Partitioning
 
-A single HAPI FHIR v7.4 instance provides three logical partitions via URL-based multi-tenancy:
+A single HAPI FHIR v8.10 instance provides three logical partitions via URL-based multi-tenancy:
 
 | Partition | Base URL | Tenant | Auth |
 |-----------|----------|--------|------|
@@ -276,20 +276,22 @@ Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent
 
 **apisix-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
 
-| Endpoint | Method | Query params | Backend | OPA gate |
-|----------|--------|-------------|---------|----------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | ✅ built-in `opa` plugin |
-| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | ✅ built-in `opa` plugin |
+| Endpoint | Method | Query params | Backend | Guards |
+|----------|--------|-------------|---------|--------|
+| `/fhir/Task` | GET | `owner`, `requester`, `status`, `_id`, `_include` | `opa-placer:8181` → `nginx-proxy:81` | `umzh-capability-guard` + `opa` |
+| `/fhir/ServiceRequest` | GET | `_id` (required), `_include` | `opa-placer:8181` → `nginx-proxy:81` | `umzh-capability-guard` + `opa` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-placer:8181` → `nginx-proxy:81` | `umzh-capability-guard` + `opa` |
 | `/fhir/Task` | POST | — | `nginx-proxy:81` | — |
 
 **apisix-fulfiller-external `:8083`** — consumed by the Placer to read Fulfiller data and write/update Tasks:
 
-| Endpoint | Method | Query params | Backend | OPA gate |
-|----------|--------|-------------|---------|----------|
-| `/fhir/{resource}` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
-| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | ✅ built-in `opa` plugin |
+| Endpoint | Method | Query params | Backend | Guards |
+|----------|--------|-------------|---------|--------|
+| `/fhir/Task` | GET | `owner`, `requester`, `status`, `_id`, `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` + `opa` |
+| `/fhir/ServiceRequest` | GET | `_id` (required), `_include` | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` + `opa` |
+| `/fhir/{resource}/{id}` | GET | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` + `opa` |
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
-| `/fhir/Task/{id}` | PATCH | — | `nginx-proxy:83` | — |
+| `/fhir/Task/{id}` | PATCH | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` (patchable fields) + `opa` |
 
 #### Category 3 — Internal Proxy API (internal gateways only)
 
@@ -422,7 +424,7 @@ The symmetric flow for **Fulfiller web-app reading Placer data** follows the sam
 
 ### APISIX Plugins
 
-The gateways use a mix of built-in APISIX plugins and one custom Lua plugin.
+The gateways use a mix of built-in APISIX plugins and three custom Lua plugins.
 
 #### Built-in plugins used
 
@@ -470,6 +472,33 @@ umzh-m2m-token:
 |---|---|---|
 | `/proxy/fhir/*` | `true` | Adds `authorization_details` from path → `fhirContext` in token |
 | `/api/actions/create-task` | `false` | Plain M2M token, no consent scope |
+
+#### Custom plugin — `umzh-capability-guard`
+
+**File:** `services/apisix/plugins/umzh-capability-guard.lua`  
+**Priority:** 2400 (after `openid-connect` at 2599, before `opa` at 2001)
+
+Deny-by-default allowlist for FHIR query parameters, `_include` values, and JSON-Patch fields on external gateway routes, enforcing the static API contract from the IG CapabilityStatement at the edge. A request passes only if:
+
+- every name in `require` is present (e.g. `_id` for ServiceRequest search)
+- `_id` (when allowed) is single-valued — no comma-OR, no repeats
+- `_include` values are in `allow_includes` — rejects `*`, `:iterate`, and any non-enumerated include
+- every other query key's base name is in `allow_params` — no `:modifier`, no `.chain`
+- on PATCH routes: every JSON-Patch op's `path` (and `from`) root is in `patchable_fields`
+
+Violations return **400 + OperationOutcome** (FHIR `handling=strict` behaviour). `_revinclude`, `_has`, `_filter`, `_query`, modifiers, chained params, and generic control params (`_format`, `_count`, …) are all blocked by not being in the allowlist.
+
+```yaml
+umzh-capability-guard:
+  require: ["_id"]           # optional: params that MUST be present
+  allow_params: ["_id"]      # params that MAY be present
+  allow_includes:
+    - "ServiceRequest:patient"
+    - "ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo"
+  patchable_fields: ["input", "owner", "focus", "businessStatus"]  # PATCH only
+```
+
+Used on all external gateway FHIR routes. Registered in the external gateways' `config.yaml` and volume-mounted into both external containers. The allowlists are sourced from the IG [CapabilityStatement](https://build.fhir.org/ig/umzhconnect/umzhconnect-ig/CapabilityStatement-ChUmzhConnectCapabilityStatement.html).
 
 #### OPA adapter — `apisix.rego`
 
@@ -552,12 +581,16 @@ Both L1 and L2 issue structurally identical tokens. The only difference is how t
 
 ### Consent Enforcement — OPA Gate
 
-Both external gateway read endpoints enforce consent **at the gateway** using APISIX's built-in `opa` plugin. The policy decision is taken before the FHIR backend is called — OPA denies return HTTP **403** directly.
+Both external gateway read endpoints enforce two layers before the FHIR backend is called:
 
-| Endpoint | Query constraint | OPA enforcement |
+1. **`umzh-capability-guard`** (priority 2400) — deny-by-default allowlist of query params and `_include` values; invalid or unsupported parameters → **400**.
+2. **`opa` plugin** (priority 2001) — consent / fhirContext-graph authorization; unauthorized resource → **403**.
+
+| Endpoint | Query constraint | Guards |
 |---|---|---|
-| `GET /fhir/{resource}` | `_id` required, `_include` optional | `opa` plugin — resource ID from `_id` query param |
-| `GET /fhir/{resource}/{id}` | — | `opa` plugin — resource ID from URL path |
+| `GET /fhir/Task` | `owner/requester/status/_id/_include` enumerated | `umzh-capability-guard` → `opa` |
+| `GET /fhir/ServiceRequest` | `_id` required, `_include` enumerated | `umzh-capability-guard` → `opa` |
+| `GET /fhir/{resource}/{id}` | no query params | `umzh-capability-guard` → `opa` |
 
 #### Architecture
 
@@ -569,6 +602,9 @@ Client
 apisix-*-external
   │
   ├─── openid-connect ── validates JWT, sets X-Access-Token
+  │
+  ├─── umzh-capability-guard ── allowlist check (params + _include)
+  │    • disallowed param / _include → HTTP 400 immediately
   │
   ├─── opa plugin ─────────────────────────────────────────────────────────┐
   │    POST /v1/data/umzh/authz/allow                                       │

@@ -42,19 +42,19 @@
         "owner": {
           "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
         },
-        "input": [
+        "output": [
           {
             "type": {
               "coding": [
                 {
-                  "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
-                  "code": "IRCP",
-                  "display": "information recipient"
+                  "system": "http://snomed.info/sct",
+                  "code": "11429006",
+                  "display": "Consultation"
                 }
               ]
             },
             "valueReference": {
-              "reference": "__PLACER_EXTERNAL_URL__/fhir/Consent/ConsentOrthopedicReferral"
+              "reference": "Appointment/AppointmentOrthopedicConsultation"
             }
           }
         ]
@@ -92,6 +92,146 @@
       "request": {
         "method": "PUT",
         "url": "Task/TaskInternalLabReview"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:appointment-ortho",
+      "resource": {
+        "resourceType": "Appointment",
+        "id": "AppointmentOrthopedicConsultation",
+        "status": "fulfilled",
+        "description": "Pre-operative orthopedic consultation prior to ACL reconstruction surgery",
+        "start": "2026-01-08T09:00:00+01:00",
+        "end": "2026-01-08T09:30:00+01:00",
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "SBJ",
+                    "display": "subject"
+                  }
+                ]
+              }
+            ],
+            "status": "accepted"
+          },
+          {
+            "actor": {
+              "reference": "__REGISTRY_URL__/fhir/HealthcareService/HealthcareServiceOrthopedicsFulfiller"
+            },
+            "status": "accepted"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Appointment/AppointmentOrthopedicConsultation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:appointment-fulfiller-internal",
+      "resource": {
+        "resourceType": "Appointment",
+        "id": "AppointmentFulfillerInternal",
+        "status": "fulfilled",
+        "description": "Fulfiller-internal appointment for an UNRELATED patient. Not referenced by any Task; the Placer must never be able to read it. Security-test canary for finding 6 (Task-graph tampering) — see tests/hurl/xfail-issue6-task-graph-tampering.hurl.",
+        "start": "2026-02-02T14:00:00+01:00",
+        "end": "2026-02-02T14:30:00+01:00",
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "SBJ",
+                    "display": "subject"
+                  }
+                ]
+              }
+            ],
+            "status": "accepted"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Appointment/AppointmentFulfillerInternal"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:consent-task-ortho",
+      "resource": {
+        "resourceType": "Consent",
+        "id": "ConsentTaskOrthopedicReferral",
+        "status": "active",
+        "scope": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/consentscope",
+              "code": "patient-privacy",
+              "display": "Privacy Consent"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://loinc.org",
+                "code": "59284-0",
+                "display": "Consent Document"
+              }
+            ]
+          }
+        ],
+        "patient": {
+          "reference": "__PLACER_EXTERNAL_URL__/fhir/Patient/PetraMeier"
+        },
+        "dateTime": "2025-12-15T12:00:00+01:00",
+        "organization": [
+          {
+            "reference": "__REGISTRY_URL__/fhir/Organization/HospitalF"
+          }
+        ],
+        "provision": {
+          "type": "permit",
+          "period": {
+            "start": "2025-12-15",
+            "end": "2026-06-15"
+          },
+          "actor": [
+            {
+              "role": {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "IRCP",
+                    "display": "information recipient"
+                  }
+                ]
+              },
+              "reference": {
+                "reference": "__REGISTRY_URL__/fhir/Organization/HospitalP"
+              }
+            }
+          ],
+          "data": [
+            {
+              "meaning": "related",
+              "reference": {
+                "reference": "Task/TaskOrthopedicReferral"
+              }
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Consent/ConsentTaskOrthopedicReferral"
       }
     }
   ]
