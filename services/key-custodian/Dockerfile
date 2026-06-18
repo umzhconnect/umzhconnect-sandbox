@@ -10,7 +10,10 @@
 # a bootstrap secret, or per-caller policy. See services/key-custodian/README.md.
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir flask==3.0.3 pyjwt==2.9.0 cryptography==43.0.1
+ARG BUILD_INSECURE=
+RUN pip install --no-cache-dir \
+    ${BUILD_INSECURE:+--trusted-host pypi.org --trusted-host files.pythonhosted.org} \
+    flask==3.0.3 pyjwt==2.9.0 cryptography==43.0.1
 
 WORKDIR /app
 COPY app.py /app/app.py
