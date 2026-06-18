@@ -68,14 +68,12 @@ the key material itself.
 
 ## Callers in this codebase
 
-| Caller                                        | Endpoint used      | Replaces                            |
-|-----------------------------------------------|--------------------|-------------------------------------|
-| `apisix-placer-internal` (m2m-token plugin)   | `POST /sign`       | Inline `resty.jwt` signing          |
-| `apisix-fulfiller-internal` (m2m-token plugin)| `POST /sign`       | Inline `resty.jwt` signing          |
-| `apisix-placer-external` (jwks route)         | `GET /jwks.json`   | nginx-proxy port 85 server block    |
-| `apisix-fulfiller-external` (jwks route)      | `GET /jwks.json`   | nginx-proxy port 86 server block    |
-| `kestra` (`prepareTokenRequest` task)         | `POST /sign`       | In-task PyJWT signing               |
-| `tests/scripts/get-token.sh`                  | `POST /sign`       | Local `openssl dgst` signing        |
+| Caller                                   | Endpoint used    |
+|------------------------------------------|------------------|
+| `apisix-placer-external` (jwks route)    | `GET /jwks.json` |
+| `apisix-fulfiller-external` (jwks route) | `GET /jwks.json` |
+| `kestra` (`prepareTokenRequest` task)    | `POST /sign`     |
+| `tests/scripts/get-token.sh`             | `POST /sign`     |
 
 The browser-side flow in `web-app/src/pages/CredentialsPage.tsx` is **intentionally
 left untouched** — the in-browser Web Crypto signing is the teaching point on

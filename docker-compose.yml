@@ -237,9 +237,9 @@ services:
     container_name: umzh-apisix-placer-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
-      # Internal gateway serves only this party's own partition. Cross-party
-      # access is no longer proxied here — the web-app authenticates cross-domain
-      # calls itself and talks to partner external gateways directly.
+      # Internal gateway serves only this party's own partition. The web-app
+      # authenticates cross-party calls itself and talks to the partner's
+      # external gateway directly.
       PARTY: "placer"
       NGINX_OWN_PORT: "80"
     volumes:
@@ -306,9 +306,9 @@ services:
     container_name: umzh-apisix-fulfiller-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
-      # Internal gateway serves only this party's own partition. Cross-party
-      # access is no longer proxied here — the web-app authenticates cross-domain
-      # calls itself and talks to partner external gateways directly.
+      # Internal gateway serves only this party's own partition. The web-app
+      # authenticates cross-party calls itself and talks to the partner's
+      # external gateway directly.
       PARTY: "fulfiller"
       NGINX_OWN_PORT: "82"
     volumes:

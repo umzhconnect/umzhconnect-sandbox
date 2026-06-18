@@ -104,7 +104,7 @@ HTTP 404
 
 
 # --- Step 6: Placer reads its own + the partner's Tasks (client-side fan-out) ---
-# The merged "all-tasks" action is gone; the web-app now does two direct reads.
+# Two direct reads — own partition and partner's external gateway:
 # 6a: own Tasks via the internal gateway (user/M2M token).
 
 GET {{placer_url}}/fhir/Task

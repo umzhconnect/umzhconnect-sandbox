@@ -37,9 +37,9 @@ body:json {
 
 docs {
   The Placer writes a Task into the Fulfiller's partition directly via the
-  external gateway — the same call the web-app makes (it authenticates itself
-  with an in-browser M2M token rather than going through any internal proxy).
-  Task create is not fhirContext-gated, so a plain placer token is sufficient.
+  external gateway — the same call the web-app makes (authenticating itself
+  with an in-browser M2M token). Task create is not fhirContext-gated, so a
+  plain placer token is sufficient.
 
   Run "Get Placer Token" first.
 }

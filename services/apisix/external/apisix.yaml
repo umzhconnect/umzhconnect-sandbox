@@ -180,7 +180,7 @@ upstreams:
   # The party's key custodian serves /jwks.json (verbatim from the mounted JWK
   # Set). The external gateway proxies its public /jwks.json to this upstream,
   # so Keycloak still fetches the JWKS at this gateway's same-origin URL —
-  # the JWK Set itself just lives on the custodian rather than nginx-proxy.
+  # the JWK Set is served by the custodian.
   - id: jwks-${PARTY}
     nodes:
       "key-custodian-${PARTY}:8000": 1

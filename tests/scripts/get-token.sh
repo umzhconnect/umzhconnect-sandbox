@@ -6,13 +6,12 @@
 #                 placer-l2 | fulfiller-l2 | fulfiller-l2-context
 #   sr_id:        for *-context variants — the ServiceRequest id to use as fhirContext
 #
-# L2 variants no longer sign locally. They POST to the per-party key custodian
-# (services/key-custodian/) which holds the private key and returns a signed
-# RS256 client assertion. The script then exchanges that assertion at Keycloak's
-# token endpoint — the same flow a real Level-2 client uses. The browser flow in
-# web-app/src/pages/CredentialsPage.tsx still signs in-browser via Web Crypto;
-# that's intentional (the in-browser signing is the teaching point on that
-# page).
+# L2 variants POST to the per-party key custodian (services/key-custodian/),
+# which holds the private key and returns a signed RS256 client assertion. The
+# script then exchanges that assertion at Keycloak's token endpoint — the same
+# flow a real Level-2 client uses. The browser flow in
+# web-app/src/pages/CredentialsPage.tsx signs in-browser via Web Crypto
+# (the in-browser signing is the teaching point on that page).
 #
 # Uses curl or wget (no jq) to stay compatible with both the hurl Docker image
 # (wget only) and macOS dev environments (curl only).

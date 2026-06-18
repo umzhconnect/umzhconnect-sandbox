@@ -26,9 +26,9 @@ routes:
         uri: /fhir/${PARTY}/metadata
 
   # ─── Own FHIR data — JWT + realm-role + URL rewrite ──────────────────
-  # Serves only this party's own partition. Cross-party access is no longer
-  # proxied here — the web-app authenticates cross-domain calls itself (in-browser
-  # client_credentials) and talks to the partner's external gateway directly.
+  # Serves only this party's own partition. The web-app authenticates cross-party
+  # calls itself (in-browser client_credentials) and talks directly to the
+  # partner's external gateway.
   - id: int-fhir
     uri: /fhir/*
     methods: [GET, POST, PUT, PATCH, DELETE]

@@ -387,12 +387,12 @@ umzh-role-check:
 
 Used on all internal gateway routes. Registered via `plugins:` list in the internal gateways' `config.yaml` and volume-mounted into both internal containers.
 
-#### M2M token acquisition (no gateway plugin)
+#### M2M token acquisition
 
-Cross-party M2M tokens are no longer minted by a gateway plugin. The caller —
-the web-app (in-browser Web Crypto, see `web-app/src/services/l2-signing.ts`),
-`tests/scripts/get-token.sh`, or the Kestra flow — signs its own L2
-`private_key_jwt` assertion and exchanges it at Keycloak directly. Clinical
+The caller — the web-app (in-browser Web Crypto, see
+`web-app/src/services/l2-signing.ts`), `tests/scripts/get-token.sh`, or the
+Kestra flow — signs its own L2 `private_key_jwt` assertion and exchanges it at
+Keycloak directly. Clinical
 reads include RFC 9396 `authorization_details` so the issued token carries the
 ServiceRequest `fhirContext` the partner's OPA gate checks; Task list/create
 omit it (not fhirContext-gated).

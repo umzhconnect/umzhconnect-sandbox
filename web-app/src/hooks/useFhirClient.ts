@@ -41,8 +41,8 @@ export function useRegistryClient(): FhirClient {
  * fhirContextRef (e.g. "ServiceRequest/abc") for fhirContext-gated clinical
  * reads; omit it for Task list/create.
  *
- * This is what replaces the old internal-gateway proxy: the web-app authenticates
- * cross-party calls itself, then talks to the partner external gateway directly.
+ * The web-app authenticates cross-party calls itself, then talks to the
+ * partner external gateway directly.
  */
 export function useM2mToken(): (fhirContextRef?: string) => Promise<string> {
   const { keycloakTokenUrl, ownL2ClientId, ownL2Kid, ownL2KeyUrl } = useRole();
