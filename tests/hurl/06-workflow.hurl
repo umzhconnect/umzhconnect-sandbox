@@ -80,7 +80,7 @@ HTTP 403
 POST {{fulfiller_ext_url}}/fhir/Task
 Authorization: Bearer {{placer_token}}
 Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","description":"Owner PATCH positive test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{registry_url}}/fhir/Organization/HospitalP"}}
+{"resourceType":"Task","status":"requested","intent":"order","description":"Owner PATCH positive test","focus":{"reference":"{{hapi_url}}/fhir/placer/ServiceRequest/ReferralOrthopedicSurgery"},"for":{"reference":"{{hapi_url}}/fhir/placer/Patient/PetraMeier"},"requester":{"reference":"{{org_url}}/fhir/Organization/HospitalP"},"owner":{"reference":"{{org_url}}/fhir/Organization/HospitalP"}}
 HTTP 201
 [Captures]
 placer_owned_task_id: jsonpath "$.id"
