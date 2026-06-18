@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRole } from '../../contexts/RoleContext';
+import { serviceUrl } from '../../config/env';
 
 type ReseedStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -14,7 +15,8 @@ const Header: React.FC = () => {
     if (reseedStatus === 'loading') return;
     setReseedStatus('loading');
     try {
-      const res = await fetch('http://localhost:9001/reseed', { method: 'POST' });
+      const reseedUrl = serviceUrl('VITE_RESEED_API_URL', 'RESEED_API_PORT', 9001);
+      const res = await fetch(`${reseedUrl}/reseed`, { method: 'POST' });
       const json = await res.json();
       setReseedStatus(json.success ? 'success' : 'error');
     } catch {

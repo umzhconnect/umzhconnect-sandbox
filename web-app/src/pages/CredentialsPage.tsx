@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
+import { serviceUrl } from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
 
+const KEYCLOAK_URL = serviceUrl('VITE_KEYCLOAK_URL', 'KEYCLOAK_PORT', 8180);
 const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
+  `${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token`;
+const PLACER_EXTERNAL_URL    = serviceUrl('VITE_PLACER_EXTERNAL_URL',    'APISIX_PLACER_EXTERNAL_PORT',    8081);
+const FULFILLER_EXTERNAL_URL = serviceUrl('VITE_FULFILLER_EXTERNAL_URL', 'APISIX_FULFILLER_EXTERNAL_PORT', 8083);
 
 const CLIENT_CONFIG = {
   placer: {
@@ -446,7 +450,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalP</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/placer-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8081/jwks.json" target="_blank" rel="noreferrer">localhost:8081/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${PLACER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{`${PLACER_EXTERNAL_URL}/jwks.json`}</a></span>
               </td>
             </tr>
             <tr>
@@ -455,7 +459,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalF</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/fulfiller-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8083/jwks.json" target="_blank" rel="noreferrer">localhost:8083/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${FULFILLER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{`${FULFILLER_EXTERNAL_URL}/jwks.json`}</a></span>
               </td>
             </tr>
           </tbody>
