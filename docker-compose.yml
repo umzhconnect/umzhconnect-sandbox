@@ -29,6 +29,8 @@ services:
   keycloak-mapper-build:
     image: maven:3.9-eclipse-temurin-17
     container_name: umzh-keycloak-mapper-build
+    environment:
+      MAVEN_OPTS: -Djava.net.preferIPv4Stack=true
     volumes:
       - ./services/keycloak/mapper:/app
       - ./services/keycloak/providers:/providers
