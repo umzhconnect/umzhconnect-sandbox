@@ -1,0 +1,3 @@
+
+# Dev-only: Vite serves the L2 demo keys (nginx does this in Docker)
+public/l2-keys
