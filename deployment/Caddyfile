@@ -20,7 +20,7 @@ auth.sandbox.umzh-connect.ch {
 }
 
 # Public mCSD registry (no auth)
-register.sandbox.umzh-connect.ch {
+registry.sandbox.umzh-connect.ch {
     reverse_proxy localhost:8084
 }
 

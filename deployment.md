@@ -13,7 +13,7 @@ four — the three gateway subdomains below are the additional ones needed):
 |-----------|---------|-----------|
 | `sandbox.umzh-connect.ch` | Web app (SPA) | 3000 |
 | `auth.sandbox.umzh-connect.ch` | Keycloak | 8180 |
-| `register.sandbox.umzh-connect.ch` | Registry (public mCSD, no auth) | 8084 |
+| `registry.sandbox.umzh-connect.ch` | Registry (public mCSD, no auth) | 8084 |
 | `placer.sandbox.umzh-connect.ch` | Placer external gateway (cross-party) | 8081 |
 | `placer-int.sandbox.umzh-connect.ch` | Placer internal gateway (own-party FHIR) | 8080 |
 | `fulfiller.sandbox.umzh-connect.ch` | Fulfiller external gateway (cross-party) | 8083 |
@@ -97,87 +97,26 @@ VITE_PLACER_URL=https://placer-int.sandbox.umzh-connect.ch
 VITE_PLACER_EXTERNAL_URL=https://placer.sandbox.umzh-connect.ch
 VITE_FULFILLER_URL=https://fulfiller-int.sandbox.umzh-connect.ch
 VITE_FULFILLER_EXTERNAL_URL=https://fulfiller.sandbox.umzh-connect.ch
-VITE_REGISTRY_URL=https://register.sandbox.umzh-connect.ch
+VITE_REGISTRY_URL=https://registry.sandbox.umzh-connect.ch
 ```
 
 The `seed-loader` and `reseed-api` read the `VITE_*_EXTERNAL_URL` variables at
 start-up to embed the correct absolute references in FHIR resources (Organization
 cross-references, Task.requester, etc.). They must be the public HTTPS URLs.
 
-### 4b. Update nginx-proxy self-link rewriting
+### 4b. nginx-proxy self-link rewriting — no action needed
 
-`services/nginx-proxy/nginx.conf` rewrites HAPI's internal self-links
-(`localhost:8090/fhir/{partition}/`) into the gateway URLs that the browser will
-actually use. Change each `sub_filter` line to use the public HTTPS URL:
+`services/nginx-proxy/templates/servers.conf.template` uses `${VITE_*}` placeholders
+that are resolved by `envsubst` when the container starts. The `VITE_*` values you
+set in `.env` above are passed automatically to the nginx-proxy container via
+`docker-compose.yml`, so self-link rewriting uses the correct public HTTPS URLs
+without any file edits.
 
-```
-# Port 80 — placer internal
-sub_filter "http://localhost:8090/fhir/placer/"    "https://placer-int.sandbox.umzh-connect.ch/fhir/";
+### 4c. Keycloak client URIs — no action needed
 
-# Port 81 — placer external
-sub_filter "http://localhost:8090/fhir/placer/"    "https://placer.sandbox.umzh-connect.ch/fhir/";
-
-# Port 82 — fulfiller internal
-sub_filter "http://localhost:8090/fhir/fulfiller/" "https://fulfiller-int.sandbox.umzh-connect.ch/fhir/";
-
-# Port 83 — fulfiller external
-sub_filter "http://localhost:8090/fhir/fulfiller/" "https://fulfiller.sandbox.umzh-connect.ch/fhir/";
-
-# Port 84 — registry
-sub_filter "http://localhost:8090/fhir/registry/"  "https://register.sandbox.umzh-connect.ch/fhir/";
-```
-
-Run this sed command (or edit the file manually):
-
-```bash
-sed -i \
-  -e 's|"http://localhost:8090/fhir/placer/" "http://localhost:8080/fhir/"|"http://localhost:8090/fhir/placer/" "https://placer-int.sandbox.umzh-connect.ch/fhir/"|' \
-  -e 's|"http://localhost:8090/fhir/placer/" "http://localhost:8081/fhir/"|"http://localhost:8090/fhir/placer/" "https://placer.sandbox.umzh-connect.ch/fhir/"|' \
-  -e 's|"http://localhost:8090/fhir/fulfiller/" "http://localhost:8082/fhir/"|"http://localhost:8090/fhir/fulfiller/" "https://fulfiller-int.sandbox.umzh-connect.ch/fhir/"|' \
-  -e 's|"http://localhost:8090/fhir/fulfiller/" "http://localhost:8083/fhir/"|"http://localhost:8090/fhir/fulfiller/" "https://fulfiller.sandbox.umzh-connect.ch/fhir/"|' \
-  -e 's|"http://localhost:8090/fhir/registry/" "http://localhost:8084/fhir/"|"http://localhost:8090/fhir/registry/" "https://register.sandbox.umzh-connect.ch/fhir/"|' \
-  services/nginx-proxy/nginx.conf
-```
-
-### 4c. Update Keycloak client URIs in realm-export.json
-
-`services/keycloak/realm-export.json` has `localhost:3000` hardcoded in
-`redirectUris` and `webOrigins` for all clients. Add the public domain alongside
-`localhost` so the same export works for both local dev and the VPS:
-
-```bash
-# Add redirect URI for web-app client
-python3 - <<'EOF'
-import json, sys
-
-with open('services/keycloak/realm-export.json') as f:
-    realm = json.load(f)
-
-PUBLIC_ORIGIN = 'https://sandbox.umzh-connect.ch'
-PUBLIC_WILDCARD = 'https://sandbox.umzh-connect.ch/*'
-
-for client in realm.get('clients', []):
-    cid = client.get('clientId', '')
-
-    # All clients get the public web-app origin in webOrigins
-    wo = client.get('webOrigins', [])
-    if PUBLIC_ORIGIN not in wo:
-        wo.append(PUBLIC_ORIGIN)
-        client['webOrigins'] = wo
-
-    # web-app client also gets the redirect URI wildcard
-    if cid == 'web-app':
-        ru = client.get('redirectUris', [])
-        if PUBLIC_WILDCARD not in ru:
-            ru.append(PUBLIC_WILDCARD)
-            client['redirectUris'] = ru
-
-with open('services/keycloak/realm-export.json', 'w') as f:
-    json.dump(realm, f, indent=2)
-
-print('Done.')
-EOF
-```
+`services/keycloak/realm-export.json` already includes both `localhost` and
+`https://sandbox.umzh-connect.ch` in `redirectUris` and `webOrigins` for all
+clients. No modification is required at deploy time.
 
 ## 5. Caddy configuration
 
@@ -225,7 +164,7 @@ curl -s https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/ope
 ### Registry (public, no auth)
 
 ```bash
-curl -s https://register.sandbox.umzh-connect.ch/fhir/Organization \
+curl -s https://registry.sandbox.umzh-connect.ch/fhir/Organization \
   | python3 -m json.tool | grep '"resourceType"'
 # Should print: "resourceType": "Bundle"
 ```

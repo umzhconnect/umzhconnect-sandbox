@@ -118,6 +118,13 @@ services:
     container_name: umzh-nginx-proxy
     volumes:
       - ./services/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./services/nginx-proxy/templates:/etc/nginx/templates:ro
+    environment:
+      - VITE_PLACER_URL
+      - VITE_PLACER_EXTERNAL_URL
+      - VITE_FULFILLER_URL
+      - VITE_FULFILLER_EXTERNAL_URL
+      - VITE_REGISTRY_URL
     ports:
       - '${REGISTRY_PORT:-8084}:84'
     depends_on:
@@ -383,11 +390,20 @@ services:
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      PLACER_USER_PASSWORD: ${PLACER_USER_PASSWORD}
+      FULFILLER_USER_PASSWORD: ${FULFILLER_USER_PASSWORD}
+      ADMIN_USER_PASSWORD: ${ADMIN_USER_PASSWORD}
     volumes:
       - ./services/seed:/seed
     depends_on:
       hapi-fhir:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     networks:
       - umzh-net
 

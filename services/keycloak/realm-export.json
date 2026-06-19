@@ -190,11 +190,12 @@
       "rootUrl": "http://localhost:3000",
       "baseUrl": "/",
       "redirectUris": [
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "https://sandbox.umzh-connect.ch/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
-        "http://localhost:8080"
+        "https://sandbox.umzh-connect.ch"
       ],
       "defaultClientScopes": [],
       "optionalClientScopes": [],
@@ -227,7 +228,8 @@
       "secret": "placer-secret-2025",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://sandbox.umzh-connect.ch"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -311,7 +313,8 @@
       "secret": "fulfiller-secret-2025",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://sandbox.umzh-connect.ch"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -400,7 +403,8 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://sandbox.umzh-connect.ch"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -487,7 +491,8 @@
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://sandbox.umzh-connect.ch"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
