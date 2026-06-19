@@ -20,7 +20,7 @@ FHIR_BASE_URL="${FHIR_BASE_URL:-http://hapi-fhir:8080/fhir}"
 PLACER_EXTERNAL_URL="${PLACER_EXTERNAL_URL:-http://localhost:8081}"
 FULFILLER_EXTERNAL_URL="${FULFILLER_EXTERNAL_URL:-http://localhost:8083}"
 REGISTRY_EXTERNAL_URL="${REGISTRY_EXTERNAL_URL:-http://localhost:8084}"
-MAX_RETRIES=60
+MAX_RETRIES=120
 RETRY_INTERVAL=5
 
 echo "============================================="

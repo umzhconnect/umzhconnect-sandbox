@@ -4,9 +4,9 @@ spring:
   flyway:
     enabled: false
   datasource:
-    url: jdbc:postgresql://postgres:5432/hapi_fhir
-    username: umzh
-    password: umzh_sandbox_2025
+    url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
     driverClassName: org.postgresql.Driver
   jpa:
     properties:

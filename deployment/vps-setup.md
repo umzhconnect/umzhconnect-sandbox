@@ -146,14 +146,16 @@ ls -la /var/run/docker.sock
 # Should show: srw-rw---- ... root docker ...
 ```
 
-Disable the Docker daemon's default iptables manipulation for external exposure
-— Caddy handles all inbound routing, and all service ports bind to `127.0.0.1`:
+Publish every container port on the loopback interface only, while keeping
+Docker's iptables management **on** so containers retain outbound internet
+access. The `"ip"` setting makes `127.0.0.1` the default host bind address for
+all published ports — Caddy is then the sole public entry point:
 
 ```bash
 sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
 {
-  "iptables": false,
+  "ip": "127.0.0.1",
   "log-driver": "json-file",
   "log-opts": {
     "max-size": "20m",
@@ -165,11 +167,21 @@ EOF
 sudo systemctl restart docker
 ```
 
-> **Why `"iptables": false`?** Docker's default iptables rules bypass UFW and
-> can expose container ports to the internet even when UFW would block them. With
-> this flag off, only ports explicitly published to `127.0.0.1` (the docker-compose
-> default for host-bound ports) are reachable — Caddy is the sole public entry
-> point.
+> **Why `"ip": "127.0.0.1"` and not `"iptables": false`?** The concern is that
+> Docker's iptables rules can bypass UFW and expose container ports publicly. The
+> `"ip"` setting solves this directly: it forces *every* published port to bind to
+> loopback — even mappings written as bare numbers like `8180:8080` (which would
+> otherwise bind to `0.0.0.0`) — so nothing is ever reachable on the public
+> interface, and UFW remains the gatekeeper for the host's own ports (22/80/443).
+>
+> **Do not set `"iptables": false`.** It stops Docker from installing the NAT
+> masquerade rules for its bridge networks, which silently breaks **outbound**
+> connectivity for containers on the Compose network (`umzh-net`). The
+> `keycloak-mapper-build` step then hangs and fails with `Connect timed out`
+> reaching Maven Central, and any image build that fetches dependencies fails the
+> same way. (A leftover masquerade rule on the default `docker0` bridge can make
+> a quick `docker run alpine` test look fine while the Compose network has no
+> egress — test on `umzh-net` if in doubt.)
 
 Enable Docker to start on boot:
 

@@ -97,6 +97,9 @@ services:
     container_name: umzh-hapi-fhir
     environment:
       SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./services/hapi-fhir/application.yaml:/app/config/application.yaml
     ports:
