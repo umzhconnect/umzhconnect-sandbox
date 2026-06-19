@@ -34,6 +34,13 @@ interface RoleContextType {
   ownExternalBaseUrl: string;
   /** Base URL for the Organization registry (public, no auth), e.g. http://localhost:8084/fhir */
   registryBaseUrl: string;
+  /**
+   * Absolute registry reference to THIS party's own Organization, e.g.
+   * http://localhost:8084/fhir/Organization/HospitalP. Used as Task.requester,
+   * which the IG profile constrains to Reference(Organization) with an absolute
+   * URL (ch-umzh-connect-coordinationtask). Empty for the registry role.
+   */
+  ownOrgRegistryRef: string;
   // ─── L2 identity for in-browser client_credentials (cross-party calls) ───
   /** Keycloak token endpoint used for the M2M exchange. */
   keycloakTokenUrl: string;
@@ -55,6 +62,7 @@ const RoleContext = createContext<RoleContextType>({
   partnerExternalBaseUrl: `${FULFILLER_EXTERNAL_URL}/fhir`,
   ownExternalBaseUrl: `${PLACER_EXTERNAL_URL}/fhir`,
   registryBaseUrl: `${REGISTRY_URL}/fhir`,
+  ownOrgRegistryRef: `${REGISTRY_URL}/fhir/Organization/HospitalP`,
   keycloakTokenUrl: KEYCLOAK_TOKEN_URL,
   ownL2ClientId: 'placer-client-l2',
   ownL2Kid: 'placer-l2',
@@ -86,6 +94,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         partnerExternalBaseUrl:  `${FULFILLER_EXTERNAL_URL}/fhir`,
         ownExternalBaseUrl:      `${PLACER_EXTERNAL_URL}/fhir`,
         registryBaseUrl,
+        ownOrgRegistryRef:       `${registryBaseUrl}/Organization/HospitalP`,
         keycloakTokenUrl:        KEYCLOAK_TOKEN_URL,
         ownL2ClientId:           'placer-client-l2',
         ownL2Kid:                'placer-l2',
@@ -99,6 +108,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         partnerExternalBaseUrl:  `${PLACER_EXTERNAL_URL}/fhir`,
         ownExternalBaseUrl:      `${FULFILLER_EXTERNAL_URL}/fhir`,
         registryBaseUrl,
+        ownOrgRegistryRef:       `${registryBaseUrl}/Organization/HospitalF`,
         keycloakTokenUrl:        KEYCLOAK_TOKEN_URL,
         ownL2ClientId:           'fulfiller-client-l2',
         ownL2Kid:                'fulfiller-l2',
@@ -111,6 +121,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         partnerExternalBaseUrl:  '',
         ownExternalBaseUrl:      registryBaseUrl,
         registryBaseUrl,
+        ownOrgRegistryRef:       '',
         keycloakTokenUrl:        KEYCLOAK_TOKEN_URL,
         ownL2ClientId:           '',
         ownL2Kid:                '',
