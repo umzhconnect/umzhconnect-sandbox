@@ -44,7 +44,7 @@ routes:
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
         bearer_only: true
         use_jwks: true
         set_access_token_header: true
@@ -72,7 +72,7 @@ routes:
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
         bearer_only: true
         use_jwks: true
         set_access_token_header: true
@@ -93,7 +93,7 @@ routes:
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
         bearer_only: true
         use_jwks: true
         set_access_token_header: true
@@ -120,7 +120,7 @@ routes:
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
         bearer_only: true
         use_jwks: true
         set_access_token_header: true
@@ -148,7 +148,7 @@ routes:
     upstream_id: hapi-${PARTY}
     plugins:
       openid-connect:
-        discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
         bearer_only: true
         use_jwks: true
         set_access_token_header: true
@@ -177,11 +177,13 @@ upstreams:
       "nginx-proxy:${NGINX_OWN_PORT}": 1
     type: roundrobin
 
-  # Internal-only static-file server (nginx-proxy server block on port 85/86)
-  # holding the party's JWK Set from services/keys/${PARTY}-l2.jwks.json.
+  # The party's key custodian serves /jwks.json (verbatim from the mounted JWK
+  # Set). The external gateway proxies its public /jwks.json to this upstream,
+  # so Keycloak still fetches the JWKS at this gateway's same-origin URL —
+  # the JWK Set is served by the custodian.
   - id: jwks-${PARTY}
     nodes:
-      "nginx-proxy:${JWKS_NGINX_PORT}": 1
+      "key-custodian-${PARTY}:8000": 1
     type: roundrobin
 
 global_rules:

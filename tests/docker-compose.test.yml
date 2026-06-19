@@ -33,6 +33,8 @@ services:
       OPA_FULFILLER_URL: http://opa-fulfiller:8181
       RESEED_API_URL: http://reseed-api:9001
       WEB_APP_URL: http://web-app:80
+      KEY_CUSTODIAN_PLACER_URL: http://key-custodian-placer:8000
+      KEY_CUSTODIAN_FULFILLER_URL: http://key-custodian-fulfiller:8000
     depends_on:
       apisix-placer-internal:
         condition: service_healthy
@@ -47,6 +49,10 @@ services:
       web-app:
         condition: service_started
       nginx-proxy:
+        condition: service_started
+      key-custodian-placer:
+        condition: service_started
+      key-custodian-fulfiller:
         condition: service_started
     networks:
       - umzh-net

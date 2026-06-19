@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import type { AllTasksResponse } from '../../hooks/useFhirSearch';
-import { useFhirClient } from '../../hooks/useFhirClient';
+import { usePartnerClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import type { FhirResource, Task, ServiceRequest, Organization, Endpoint } from '../../types/fhir';
@@ -23,9 +23,9 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   defaultSRId,
   onSuccessResource,
 }) => {
-  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl } = useRole();
+  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownL2ClientId } = useRole();
   const { addLog } = useLog();
-  const client = useFhirClient();
+  const getPartnerClient = usePartnerClient();
   const queryClient = useQueryClient();
 
   // Form state — initialise SR from default so it's correct on the very first render
@@ -62,7 +62,6 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const partnerEndpoint = endpoints.find((ep) =>
     ep.managingOrganization?.reference?.endsWith(`/Organization/${partnerAlias}`)
   );
-  const partnerClientId = activeRole === 'placer' ? 'fulfiller-client' : 'placer-client';
   const partnerApiHost = partnerEndpoint?.address ?? partnerExternalBaseUrl;
 
   // Build the owner reference using the registry URL and the Organisation's canonical
@@ -125,10 +124,14 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       }),
     };
 
-    addLog({ type: 'info', message: `Creating Task → ${partnerApiHost}/fhir/Task via /api/actions/create-task` });
+    addLog({ type: 'info', message: `Creating Task → ${partnerApiHost}/fhir/Task (direct, in-browser M2M token)` });
 
     try {
-      const result = await client.postAction<Task>('/api/actions/create-task', task);
+      // Authenticate the cross-party write ourselves: mint an M2M token (no
+      // fhirContext — Task create is not fhirContext-gated) and POST directly
+      // to the partner's external gateway. No internal-gateway proxy involved.
+      const partner = await getPartnerClient();
+      const result = await partner.create<Task>(task);
 
       // Await invalidation so any CURRENTLY-ACTIVE all-tasks subscriber
       // completes its refetch first (same post-fetch injection pattern as SR).
@@ -206,7 +209,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             <>
               {/* Routing panel — tag-based partner discovery */}
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
-                <p className="font-medium text-blue-800 mb-1">Routing via /api/actions/create-task</p>
+                <p className="font-medium text-blue-800 mb-1">Direct cross-party create (in-browser M2M token)</p>
                 {partnerOrg ? (
                   <div className="text-blue-700 space-y-0.5">
                     <p>
@@ -214,8 +217,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                       {partnerOrg.name ?? partnerOrg.alias?.[0] ?? partnerOrg.id}
                     </p>
                     <p>
-                      <span className="font-medium">Keycloak client:</span>{' '}
-                      <code className="bg-blue-100 px-1 rounded">{partnerClientId ?? '—'}</code>
+                      <span className="font-medium">Authenticating client:</span>{' '}
+                      <code className="bg-blue-100 px-1 rounded">{ownL2ClientId || '—'}</code>
                     </p>
                     <p>
                       <span className="font-medium">External host:</span>{' '}

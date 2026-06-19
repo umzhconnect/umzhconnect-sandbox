@@ -24,20 +24,22 @@ body:json {
     "priority": "routine",
     "description": "Demo task created directly via fulfiller external gateway",
     "for": {
-      "reference": "http://localhost:8080/fhir/Patient/PetraMeier"
+      "reference": "http://localhost:8081/fhir/Patient/PetraMeier"
     },
     "requester": {
-      "reference": "http://localhost:8080/fhir/Organization/placer-HospitalP"
+      "reference": "http://localhost:8084/fhir/Organization/HospitalP"
     },
     "owner": {
-      "reference": "http://localhost:8083/fhir/Organization/fulfiller-HospitalF"
+      "reference": "http://localhost:8084/fhir/Organization/HospitalF"
     }
   }
 }
 
 docs {
-  Writes a Task directly into the Fulfiller's partition via the external gateway.
-  This is the same backend call used by krakend-placer's /api/actions/create-task.
+  The Placer writes a Task into the Fulfiller's partition directly via the
+  external gateway — the same call the web-app makes (authenticating itself
+  with an in-browser M2M token). Task create is not fhirContext-gated, so a
+  plain placer token is sufficient.
 
   Run "Get Placer Token" first.
 }

@@ -6,19 +6,15 @@
 #                 placer-l2 | fulfiller-l2 | fulfiller-l2-context
 #   sr_id:        for *-context variants — the ServiceRequest id to use as fhirContext
 #
-# L2 variants sign an RS256 private_key_jwt client assertion locally (openssl)
-# and exchange it directly at Keycloak's token endpoint — the same flow a real
-# Level-2 client uses, mirroring the browser's Web Crypto implementation. The
-# RSA private key is committed in services/keys/ and served over HTTP by the
-# web-app at /l2-keys/ — the same source the browser uses. Keycloak verifies
-# the signature against the corresponding *.jwks.json, also committed in
-# services/keys/ and published by each party's external APISIX gateway at
-# http://localhost:8081/jwks.json (placer) / :8083/jwks.json (fulfiller).
+# L2 variants POST to the per-party key custodian (services/key-custodian/),
+# which holds the private key and returns a signed RS256 client assertion. The
+# script then exchanges that assertion at Keycloak's token endpoint — the same
+# flow a real Level-2 client uses. The browser flow in
+# web-app/src/pages/CredentialsPage.tsx signs in-browser via Web Crypto
+# (the in-browser signing is the teaching point on that page).
 #
 # Uses curl or wget (no jq) to stay compatible with both the hurl Docker image
-# (wget only) and macOS dev environments (curl only). The L2 variants also need
-# openssl — already a project dependency, as the seed loader generates the keys
-# with it.
+# (wget only) and macOS dev environments (curl only).
 
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
 TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
@@ -32,11 +28,10 @@ TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
 KEYCLOAK_ISSUER="${KEYCLOAK_ISSUER:-${KEYCLOAK_URL}/realms/umzh-connect}"
 TOKEN_AUD="${TOKEN_AUD:-${KEYCLOAK_ISSUER}/protocol/openid-connect/token}"
 
-# L2 private keys are served at /l2-keys/ by the web-app (bind-mounted from
-# services/keys/) — the same source the browser uses. Override WEB_APP_URL
-# for non-default hosts.
-WEB_APP_URL="${WEB_APP_URL:-http://localhost:3000}"
-L2_KEY_BASE_URL="${L2_KEY_BASE_URL:-${WEB_APP_URL}/l2-keys}"
+# Key custodians — each party runs its own. On the host they bind to fixed
+# ports; in CI (test-runner inside Docker) they're reachable by container name.
+KEY_CUSTODIAN_PLACER_URL="${KEY_CUSTODIAN_PLACER_URL:-http://localhost:8087}"
+KEY_CUSTODIAN_FULFILLER_URL="${KEY_CUSTODIAN_FULFILLER_URL:-http://localhost:8089}"
 CLIENT_ASSERTION_TYPE="urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
 
 CLIENT_TYPE="$1"
@@ -63,43 +58,31 @@ url_encode() {
 
 # --- L2 (private_key_jwt) helpers ---------------------------------------------
 
-# base64url-encode stdin, no padding (RFC 7515 §2).
-b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-
-# Sign a private_key_jwt assertion and exchange it for an M2M access token.
-#   $1 = client_id   $2 = key basename (matches both <name>.key in services/keys/
-#                         and the JWK kid in <name>.jwks.json)
-#   $3 = space-separated scope   $4 = optional authorization_details JSON
+# Sign a private_key_jwt assertion via the per-party key custodian and exchange
+# it for an M2M access token.
+#   $1 = client_id           e.g. placer-client-l2
+#   $2 = custodian base URL  e.g. http://localhost:8087
+#   $3 = space-separated scope (may be empty)
+#   $4 = optional authorization_details JSON
 #
-# L2 needs curl + openssl (the CI test-runner image installs both on top of the
-# hurl base). run-tests waits for the web-app, so the key is already served by
-# the time this runs.
-#
-# The `kid` we emit in the JWT header matches the `kid` of the corresponding
-# JWK that Keycloak fetches from the client's jwks.url (see services/keys/
-# *.jwks.json). With one key per JWKS today that lookup is trivial, but the
-# linkage is what makes overlap-window rotation work.
+# The custodian sets iss/sub/kid from its own env, so we only need to supply
+# the audience.
 fetch_l2_token() {
-    l2_cid="$1"; key_name="$2"; l2_scope="$3"; auth_details="$4"
+    l2_cid="$1"; custodian_url="$2"; l2_scope="$3"; auth_details="$4"
 
-    key_file=$(mktemp) || { echo "get-token: mktemp failed" >&2; return 1; }
-    if ! curl -sf "${L2_KEY_BASE_URL}/${key_name}.key" -o "$key_file" \
-         || ! grep -q "PRIVATE KEY" "$key_file"; then
-        rm -f "$key_file"
-        echo "get-token: could not fetch L2 key '${key_name}' from ${L2_KEY_BASE_URL}" >&2
+    sign_resp=$(curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"audience\":\"${TOKEN_AUD}\"}" \
+        "${custodian_url}/sign" 2>/dev/null)
+    if [ -z "$sign_resp" ]; then
+        echo "get-token: custodian /sign at ${custodian_url} failed" >&2
         return 1
     fi
-
-    # kid matches the JWK kid in services/keys/${key_name}.jwks.json
-    header=$(printf '{"typ":"JWT","alg":"RS256","kid":"%s"}' "$key_name" | b64url)
-    now=$(date +%s)
-    payload=$(printf '{"iss":"%s","sub":"%s","aud":"%s","exp":%s,"jti":"%s"}' \
-              "$l2_cid" "$l2_cid" "$TOKEN_AUD" "$((now + 60))" "${now}-$(openssl rand -hex 8)" \
-              | b64url)
-    signing_input="${header}.${payload}"
-    signature=$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_file" | b64url)
-    rm -f "$key_file"
-    assertion="${signing_input}.${signature}"
+    assertion=$(printf '%s' "$sign_resp" | sed -n 's/.*"assertion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    if [ -z "$assertion" ]; then
+        echo "get-token: no assertion in custodian response (${custodian_url})" >&2
+        return 1
+    fi
 
     body="grant_type=client_credentials&client_id=${l2_cid}"
     body="${body}&client_assertion_type=${CLIENT_ASSERTION_TYPE}&client_assertion=${assertion}"
@@ -142,19 +125,19 @@ case "$CLIENT_TYPE" in
     fetch_token "grant_type=password&client_id=web-app&username=fulfiller-user&password=fulfiller123&scope=openid"
     ;;
   placer-l2)
-    fetch_l2_token placer-client-l2 placer-l2 ""
+    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" ""
     ;;
   fulfiller-l2)
-    fetch_l2_token fulfiller-client-l2 fulfiller-l2 ""
+    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" ""
     ;;
   fulfiller-l2-context)
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
-    fetch_l2_token fulfiller-client-l2 fulfiller-l2 "" \
+    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "" \
       '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     ;;
   placer-l2-context)
     TASK="${SR_ID:-TaskOrthopedicReferral}"
-    fetch_l2_token placer-client-l2 placer-l2 "" \
+    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "" \
       '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
     ;;
   *)

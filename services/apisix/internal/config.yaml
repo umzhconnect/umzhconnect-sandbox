@@ -2,24 +2,14 @@ apisix:
   node_listen: 9080
   enable_ipv6: false
 
-nginx_config:
-  main_configuration_snippet: |
-    env CLIENT_ID;
-    env CLIENT_SECRET;
-    env CLIENT_ID_L2;
-    env CLIENT_KEY_PATH;
-    env KEYCLOAK_TOKEN_ENDPOINT;
-
 plugins:
   - cors
   - openid-connect
   - opa
   - proxy-rewrite
-  - response-rewrite
   - serverless-pre-function
   - serverless-post-function
   - umzh-role-check
-  - umzh-m2m-token
 
 deployment:
   role: data_plane

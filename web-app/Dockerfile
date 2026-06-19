@@ -7,9 +7,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-ARG NPM_FLAGS=""
+ARG BUILD_INSECURE=
 COPY package.json ./
-RUN npm install ${NPM_FLAGS}
+RUN npm install ${BUILD_INSECURE:+--strict-ssl=false}
 
 COPY . .
 RUN npm run build

@@ -1,5 +1,5 @@
 meta {
-  name: Placer External — Read Patient (as Fulfiller)
+  name: Placer External — Read Patient (as Fulfiller, fhirContext)
   type: http
   seq: 1
 }
@@ -11,14 +11,16 @@ get {
 }
 
 headers {
-  Authorization: Bearer {{fulfillerToken}}
+  Authorization: Bearer {{fulfillerContextToken}}
   Accept: application/fhir+json
 }
 
 docs {
-  Simulates the Fulfiller calling the Placer's external gateway directly.
-  JWT is validated by krakend-placer-external. Claims extensions.umzhconnect.organization_reference,
-  tenant and scope are propagated as X-* headers to the backend.
+  The Fulfiller reads a Patient from the Placer's external gateway directly —
+  no internal-gateway proxy. apisix-placer-external validates the JWT and the
+  OPA gate permits the read only because the token carries a fhirContext whose
+  ServiceRequest graph contains this Patient.
 
-  Run "Get Fulfiller Token" first.
+  Run "Get Fulfiller Context Token" first (sets {{fulfillerContextToken}} for
+  {{serviceRequestId}} = PetraMeier's ReferralOrthopedicSurgery).
 }

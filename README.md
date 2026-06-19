@@ -71,14 +71,13 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 │                                 │     │                                            │
 │  apisix-placer-internal  :8080  │     │  apisix-fulfiller-internal     :8082       │
 │  (internal gateway)             │     │  (internal gateway)                        │
-│   /fhir/*        own data       │     │   /fhir/*        own data                  │
-│   /proxy/fhir/*  partner data   │     │   /proxy/fhir/*  partner data              │
-│   /api/actions/* orchestration  │     │   /api/actions/* orchestration             │
+│   /fhir/*        own data only  │     │   /fhir/*        own data only             │
 │                                 │     │                                            │
 │  apisix-placer-external  :8081  │     │  apisix-fulfiller-external     :8083       │
 │  (external gateway)             │◄───►│  (external gateway)                        │
 │   /fhir/*  Fulfiller reads      │     │   /fhir/*  Placer reads                    │
 │            Placer data          │     │            Fulfiller data                  │
+│   /jwks.json  L2 public keys    │     │   /jwks.json  L2 public keys               │
 └──────────────────┬──────────────┘     └─────────────────────┬──────────────────────┘
                    │                                          │
                    └────────────────────┬─────────────────────┘
@@ -140,35 +139,40 @@ Each party operates **two dedicated API gateways**: an *internal* gateway for it
                     │                                                              │
   Placer web-app    │  apisix-placer-internal  :8080                               │
   ─────────────────►│   /fhir/*            → own FHIR partition (nginx-proxy:80)   │
-                    │   /proxy/fhir/*      → fulfiller data (token exchange + fwd) │
-                    │   /api/actions/*     → orchestration (create-task, all-tasks)│
+                    │   (own data only — no proxy, no orchestration)               │
                     │                                                              │
                     │  apisix-placer-external  :8081                               │
   Fulfiller calls  ►│   GET /fhir/{resource}?_id=<id>  → OPA → placer partition   │
                     │   GET /fhir/{resource}/{id}      → OPA → placer partition   │
                     │   POST /fhir/Task                → placer partition          │
+                    │   GET /jwks.json                 → L2 public keys            │
                      ──────────────────────────────────────────────────────────────
 
                      ── HospitalF (Fulfiller) ───────────────────────────────────
                     │                                                              │
   Fulfiller web-app │  apisix-fulfiller-internal  :8082                            │
   ─────────────────►│   /fhir/*            → own FHIR partition (nginx-proxy:82)   │
-                    │   /proxy/fhir/*      → placer data (token exchange + fwd)    │
-                    │   /api/actions/*     → orchestration                         │
+                    │   (own data only — no proxy, no orchestration)               │
                     │                                                              │
                     │  apisix-fulfiller-external  :8083                            │
   Placer calls     ►│   GET  /fhir/{resource}?_id=<id>  → OPA → fulfiller partition│
                     │   GET  /fhir/{resource}/{id}      → OPA → fulfiller partition│
                     │   POST /fhir/Task                 → fulfiller partition      │
                     │   PATCH /fhir/Task/{id}           → fulfiller partition      │
+                    │   GET /jwks.json                  → L2 public keys           │
                      ──────────────────────────────────────────────────────────────
 ```
+
+Cross-party calls do **not** pass through the internal gateway. The web-app mints
+its own M2M token (in-browser L2 client_credentials) and calls the partner's
+external gateway directly — the same arrow as "Fulfiller calls ►" / "Placer calls ►"
+above, originating from the *other party's web-app* rather than its internal gateway.
 
 **Design principles:**
 
 - **External gateways are stateless and consistent.** They always return the same self-link URLs (e.g. `http://localhost:8083/fhir/...` for fulfiller-external) regardless of which party calls them.
-- **URL rewriting is owned by the calling party's internal gateway.** nginx-proxy rewrites HAPI self-links for own-data requests; the internal gateway's `response-rewrite` plugin rewrites partner external URLs in cross-party proxy responses into the party's own `/proxy/fhir/` path.
-- **Double JWT validation.** A request from the placer web-app routed via the proxy path is validated twice: once at `apisix-placer-internal` (the user's gateway) and once at `apisix-fulfiller-external` (the partner's gateway). The Fulfiller retains full control over who can access its data.
+- **The caller authenticates itself.** Because the web-app holds the party's L2 credentials, it performs the client_credentials flow in-browser and calls the partner external gateway directly. No internal-gateway token exchange, no response rewriting — stored partner references are already absolute partner-external URLs.
+- **The partner controls access to its own data.** The external gateway validates the M2M JWT and runs the OPA fhirContext consent gate on every read. The Fulfiller retains full control over who can access its data.
 
 Both gateways share the **same Keycloak realm** and the **same HAPI FHIR instance** (via different URL partitions). In a production deployment, each gateway would typically live in its own network perimeter.
 
@@ -243,7 +247,9 @@ Port 84: registry gateway — public, no auth (host port 8084)
   Used by: web-app (Organization + Endpoint lookups), seed-loader (registry bundle upload)
 ```
 
-Cross-party proxy responses (`/proxy/fhir/*`, `/api/actions/all-tasks`) are rewritten by APISIX's `response-rewrite` plugin on the internal gateways — partner external URLs are replaced with the calling party's `/proxy/fhir/` base path. nginx is not involved in cross-party response rewriting.
+Cross-party responses are **not** rewritten. The web-app calls the partner's
+external gateway directly, so the partner-external self-links in the response are
+already navigable by the caller — no `response-rewrite` step is involved.
 
 **Key nginx settings** (applied to all server blocks):
 ```nginx
@@ -272,7 +278,7 @@ Direct FHIR access for the logged-in user to manage their own party's partition.
 
 Endpoints the **partner gateway calls** to read or write data. Each external gateway serves a fixed set of endpoints that always return self-links for its own base URL, regardless of caller.
 
-Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent-gated via OPA before the FHIR backend is called. Task write endpoints are not consent-gated.
+Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are fhirContext-gated via OPA before the FHIR backend is called. Task write endpoints are not fhirContext-gated.
 
 **apisix-placer-external `:8081`** — consumed by the Fulfiller to read Placer data and write Tasks:
 
@@ -293,132 +299,64 @@ Both read endpoints (`/fhir/{resource}` and `/fhir/{resource}/{id}`) are consent
 | `/fhir/Task` | POST | — | `nginx-proxy:83` | — |
 | `/fhir/Task/{id}` | PATCH | — | `opa-fulfiller:8181` → `nginx-proxy:83` | `umzh-capability-guard` (patchable fields) + `opa` |
 
-#### Category 3 — Internal Proxy API (internal gateways only)
+#### Category 3 — Local diagnostic (internal gateways only)
 
-The internal gateway proxies requests from the web-app into the **partner's FHIR partition**. Traffic is routed through a dedicated nginx-proxy port that enforces the partner's external gateway security and rewrites response self-links to the calling party's own `/proxy/fhir/` base path.
-
-| Endpoint | Method | Backend (placer) | Backend (fulfiller) |
-|----------|--------|-----------------|---------------------|
-| `/proxy/fhir/{resource}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
-| `/proxy/fhir/{resource}/{id}` | GET | `apisix-fulfiller-external:9080` | `apisix-placer-external:9080` |
-
-The internal gateway performs an M2M token exchange before forwarding; the partner's external gateway enforces its own JWT validation and OPA consent check. The `response-rewrite` plugin rewrites partner external URLs in the response body to the calling party's `/proxy/fhir/` path.
-
-Consent is enforced on both read endpoints of each external gateway via the OPA gate (`/fhir/{resource}?_id=` and `/fhir/{resource}/{id}`); the consent ID is extracted from the JWT `scope` claim (`consent:<id>`) rather than a separate header.
-
-#### Category 4 — Actions & Business API (internal gateways only)
-
-Orchestrated endpoints that fan-out to multiple backends or route to the partner gateway.
-
-| Endpoint | Method | Description | Backend(s) |
-|----------|--------|-------------|------------|
-| `/api/actions/create-task` | POST | Create a Task at the partner | Direct call to partner's external gateway `/fhir/Task` |
-| `/api/actions/all-tasks` | GET | Merge local + remote Task bundles | `local`: own FHIR partition; `remote`: partner external gateway `/fhir/Task` |
-| `/api/actions/create-referral` | POST | Create ServiceRequest at Placer | Placer FHIR partition (Placer only) |
+| Endpoint | Method | Description | Backend |
+|----------|--------|-------------|---------|
 | `/api/policy/check` | POST | Direct OPA policy evaluation | Own OPA instance |
 
-The `all-tasks` endpoint fans out to both own FHIR partition and partner external gateway in a single `serverless-post-function` and returns a merged JSON object:
-
-```json
-{
-  "local":  { "resourceType": "Bundle", "entry": [ ... ] },
-  "remote": { "resourceType": "Bundle", "entry": [ ... ] }
-}
-```
+There is no internal-gateway proxy and no `/api/actions/*` orchestration. The
+internal gateway serves only its own party's partition.
 
 ---
 
-### Proxy Walk-Through — Placer Web-App Reads Fulfiller Data
+### Cross-Party Walk-Through — Placer Web-App Reads Fulfiller Data
 
-When a response crosses a domain boundary (placer reads fulfiller data or vice versa), the FHIR URLs embedded in that response still point to the originating server. They need to be rewritten to navigable URLs on the receiving party's gateway so that pagination links and resource references resolve correctly for the caller.
-
-This diagram traces a `GET /proxy/fhir/Task` request from the placer web-app, showing every hop and transformation.
+Cross-party access is performed **directly by the caller** — there is no
+internal-gateway proxy and no response URL rewriting. The web-app authenticates
+itself with an L2 `private_key_jwt` client-credentials flow (signed in-browser
+via Web Crypto using the keys at `/l2-keys/`) and calls the partner's external
+gateway. The same flow is what `tests/scripts/get-token.sh` and the Kestra
+workflow engine perform.
 
 ```
-Placer web-app                                         Fulfiller
-localhost:3000                                         (enforces its own security)
+Placer web-app  (localhost:3000)
      │
-     │  GET /proxy/fhir/Task
-     │  Authorization: Bearer <JWT-placer>
+     │  1. Fetch own L2 key            GET /l2-keys/placer-l2.key   (served by web-app)
+     │  2. Sign RS256 assertion        iss=sub=placer-client-l2, aud=<keycloak token URL>, kid=placer-l2
+     │  3. Exchange for M2M token      POST keycloak:8180/.../token
+     │        grant_type=client_credentials, client_assertion=<JWT>,
+     │        authorization_details=[{type:umzh-connect-context, identifier:ServiceRequest/<id>}]
+     │        → access_token (carries the fhirContext claim)
      │
+     │  4. Direct cross-party read     GET http://localhost:8083/fhir/ServiceRequest?_id=<id>&_include=…
+     │        Authorization: Bearer <M2M access_token>
      ▼
-┌────────────────────────────────────────────────────────────────────────────────┐
-│  apisix-placer-internal  :8080                                                 │
-│                                                                                │
-│  1. openid-connect plugin — JWT validation                                     │
-│     · Fetches JWKS from keycloak:8080                                          │
-│     · Verifies RS256 signature, issuer, expiry — 401 if invalid                │
-│                                                                                │
-│  2. umzh-role-check plugin — checks realm_role == "placer"                     │
-│                                                                                │
-│  3. umzh-m2m-token plugin — M2M token exchange                                 │
-│     · POST /token client_credentials (L1 secret or L2 private_key_jwt)         │
-│     · Replaces Authorization header with M2M token                             │
-│                                                                                │
-│  4. proxy-rewrite — strips /proxy/fhir prefix                                  │
-│     · forwards to apisix-fulfiller-external:9080  /fhir/Task                  │
-└────────────────────────────┬───────────────────────────────────────────────────┘
-                             │  GET /fhir/Task
-                             │  Authorization: Bearer <M2M-token>
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  apisix-fulfiller-external  :8083                                             │
+│   · openid-connect — RS256 JWT validation (Keycloak JWKS)                     │
+│   · opa — fhirContext consent gate (apisix.rego → main.rego); 403 if denied  │
+│   · proxy-rewrite — /fhir/* → /fhir/fulfiller/*  (upstream nginx-proxy:83)    │
+└────────────────────────────┬─────────────────────────────────────────────────┘
                              ▼
-┌────────────────────────────────────────────────────────────────────────────────┐
-│  apisix-fulfiller-external  :8083                                              │
-│                                                                                │
-│  5. openid-connect plugin — JWT validation (second, independent check)         │
-│     · Fulfiller controls this gateway — 401 if JWT is invalid or expired       │
-│     · Sets X-Access-Token from validated M2M token                             │
-│                                                                                │
-│  6. opa plugin — consent gate (apisix.rego adapter → main.rego)                │
-│     · Reads extensions.umzhconnect.organization_reference, scope               │
-│       from JWT via Authorization header                                         │
-│     · 403 if OPA denies                                                        │
-│                                                                                │
-│  7. proxy-rewrite — /fhir/Task → /fhir/fulfiller/Task                          │
-│     · upstream: nginx-proxy:83                                                 │
-└────────────────────────────┬───────────────────────────────────────────────────┘
-                             │  GET /fhir/fulfiller/Task
+                    nginx-proxy:83 → hapi-fhir  (self-links rewritten to :8083)
+                             │  200 OK (FHIR Bundle, self-links at :8083)
                              ▼
-┌────────────────────────────────────────────────────────────────────────────────┐
-│  nginx-proxy  port 83                                                          │
-│                                                                                │
-│  8. proxy_pass → hapi-fhir:8080                                                │
-│  9. sub_filter (streaming):                                                    │
-│     "http://localhost:8090/fhir/fulfiller/" → "http://localhost:8083/fhir/"    │
-│     · Self-links now point to apisix-fulfiller-external's base URL             │
-└────────────────────────────┬───────────────────────────────────────────────────┘
-                             │  200 OK  (FHIR Bundle)
-                             │  self-links: http://localhost:8083/fhir/Task/...
-                             ▼
-         ┌───────────────────────────────────────────────────────────────────────┐
-         │  apisix-placer-internal  :8080  (response path)                       │
-         │                                                                       │
-         │  10. response-rewrite plugin:                                         │
-         │      "http://localhost:8083/fhir/"                                    │
-         │      → "http://localhost:8080/proxy/fhir/"                            │
-         │      · Self-links now point to apisix-placer-internal's proxy path    │
-         └───────────────────────────────────────────────────────────────────────┘
-                             │  200 OK  (FHIR Bundle)
-                             │  self-links: http://localhost:8080/proxy/fhir/Task/...
-                             ▼
-                     Placer web-app
-                     ─────────────
-                     Receives Bundle where every self-link is navigable via:
-                     http://localhost:8080/proxy/fhir/{resource}/{id}
-                     → routed again through apisix-placer-internal
-                       → apisix-fulfiller-external → nginx-proxy:83 → HAPI
+                    Placer web-app — references already point at the partner
+                    external gateway (:8083), so follow-up reads repeat the
+                    same direct flow. No proxy path, no response rewriting.
 ```
 
 **Security properties of this flow:**
 
 | Property | Where enforced |
 |----------|---------------|
-| JWT is valid and not expired | apisix-placer-internal (step 1) |
-| Fulfiller controls who can access its data | apisix-fulfiller-external (step 5) |
-| Consent checked against OPA policy | apisix-fulfiller-external (step 6) |
-| Response self-links are navigable by the placer web-app | apisix-placer-internal response-rewrite (step 10) |
-| Placer web-app never needs a direct route to the fulfiller's external gateway | The proxy path is entirely managed by apisix-placer-internal |
+| Caller proves its identity (L2 private_key_jwt) | Keycloak token endpoint (assertion signature vs. JWKS) |
+| Fulfiller controls who can access its data | apisix-fulfiller-external (`openid-connect`) |
+| Consent checked against OPA policy | apisix-fulfiller-external (`opa`, via the token's fhirContext) |
 
-The symmetric flow for **Fulfiller web-app reading Placer data** follows the same pattern targeting `apisix-placer-external`. The placer's external gateway enforces consent on all FHIR read requests via the OPA gate; consent identity is carried in the JWT `scope` claim.
+The symmetric flow for **Fulfiller web-app reading Placer data** is identical,
+targeting `apisix-placer-external` (:8081) and signing with `fulfiller-client-l2`.
 
 ---
 
@@ -433,14 +371,12 @@ The gateways use a mix of built-in APISIX plugins and three custom Lua plugins.
 | `openid-connect` | access (2599) | all authenticated routes | RS256 JWT validation via Keycloak JWKS; sets `X-Access-Token` |
 | `opa` | access | external gateway FHIR reads | Consent gate — calls OPA via `apisix.rego` adapter |
 | `proxy-rewrite` | — | all routes | URL prefix rewriting (e.g. `/fhir/*` → `/fhir/fulfiller/*`) |
-| `response-rewrite` | — | internal gateway `/fhir/*` + `/proxy/fhir/*` | Regex URL rewriting in response body |
-| `serverless-post-function` | access (1) | internal gateway `/api/actions/all-tasks` | Fan-out local + remote Task lists (needs both user token and M2M token simultaneously) |
 | `serverless-pre-function` | access | `/__health` | In-process health response (no upstream) |
 
 #### Custom plugin — `umzh-role-check`
 
 **File:** `services/apisix/plugins/umzh-role-check.lua`  
-**Priority:** 2500 (after `openid-connect` at 2599, before `umzh-m2m-token` at 1002)
+**Priority:** 2500 (after `openid-connect` at 2599)
 
 Reads the `Authorization: Bearer <token>` header, decodes the JWT payload without re-verifying the signature (already verified by `openid-connect`), and checks that `realm_roles` contains `conf.required_role`. Returns 403 if the role is absent.
 
@@ -451,27 +387,21 @@ umzh-role-check:
 
 Used on all internal gateway routes. Registered via `plugins:` list in the internal gateways' `config.yaml` and volume-mounted into both internal containers.
 
-#### Custom plugin — `umzh-m2m-token`
+#### M2M token acquisition
 
-**File:** `services/apisix/plugins/umzh-m2m-token.lua`  
-**Priority:** 1002 (after `umzh-role-check`, before `serverless-post-function`)
+The caller — the web-app (in-browser Web Crypto, see
+`web-app/src/services/l2-signing.ts`), `tests/scripts/get-token.sh`, or the
+Kestra flow — signs its own L2 `private_key_jwt` assertion and exchanges it at
+Keycloak directly. Clinical
+reads include RFC 9396 `authorization_details` so the issued token carries the
+ServiceRequest `fhirContext` the partner's OPA gate checks; Task list/create
+omit it (not fhirContext-gated).
 
-Acquires an M2M token from Keycloak and replaces the `Authorization` header with it. Supports two authentication levels, selected by environment variables:
-
-- **L1** (`CLIENT_ID` + `CLIENT_SECRET`): `client_credentials` with shared secret
-- **L2** (`CLIENT_ID_L2` + `CLIENT_KEY_PATH` + `CLIENT_KID`): `private_key_jwt` — signs an RS256 client-assertion JWT using the committed demo key bind-mounted from `services/keys/`. The matching JWK Set is served by each party's external APISIX gateway at `/jwks.json` (host ports 8081/8083) — same origin as the FHIR API, the SMART Backend Services discovery shape. The realm export points each L2 client's `jwks.url` attribute at the external gateway's internal address, and Keycloak fetches it to verify the assertion.
-
-The `acquire(extra_body)` function is also called directly from the `all-tasks` fan-out (which needs both the user token and an M2M token simultaneously), so token-acquisition logic lives in exactly one place.
-
-```yaml
-umzh-m2m-token:
-  include_fhir_context: true   # derive authorization_details from /proxy/fhir/<Type>/<id>
-```
-
-| Route | `include_fhir_context` | Effect |
-|---|---|---|
-| `/proxy/fhir/*` | `true` | Adds `authorization_details` from path → `fhirContext` in token |
-| `/api/actions/create-task` | `false` | Plain M2M token, no consent scope |
+The matching JWK Set is served by each party's external APISIX gateway at
+`/jwks.json` (host ports 8081/8083) — same origin as the FHIR API, the SMART
+Backend Services discovery shape. The realm export points each L2 client's
+`jwks.url` attribute at the external gateway, and Keycloak fetches it to verify
+the assertion.
 
 #### Custom plugin — `umzh-capability-guard`
 
@@ -534,22 +464,21 @@ The sandbox implements both client authentication levels of the IG's staged mode
 
 Both L1 and L2 issue structurally identical tokens. The only difference is how the client authenticates to Keycloak's token endpoint. Run tests under L2 with `./tests/scripts/run-tests.sh -l2`.
 
-**Token flow for a cross-party proxy request:**
+**Token flow for a cross-party request (placer reads fulfiller data):**
 
 ```
-1. Browser → Keycloak  (client_credentials, scope=openid [consent:<id>])
-2. Keycloak → Browser  (JWT with extensions.umzhconnect.organization_reference, scope claims)
-3. Browser → apisix-placer-internal  (Bearer <JWT>)
-4. apisix-placer-internal: openid-connect validates JWT (Keycloak JWKS)
-5. apisix-placer-internal: umzh-role-check enforces realm_role == "placer"
-6. apisix-placer-internal: umzh-m2m-token plugin exchanges for M2M token
-7. apisix-placer-internal forwards to apisix-fulfiller-external (Bearer <M2M>)
-8. apisix-fulfiller-external: openid-connect validates M2M JWT (independent check)
-9. apisix-fulfiller-external: opa plugin enforces consent policy
-10. apisix-fulfiller-external → nginx-proxy:83 → hapi-fhir (fulfiller partition)
-11. nginx-proxy:83 rewrites HAPI self-links → apisix-fulfiller-external base URL
-12. apisix-placer-internal response-rewrite rewrites those → /proxy/fhir/ base URL
-13. Browser receives navigable self-links for its own gateway
+1. Browser signs an L2 assertion in-browser (Web Crypto, key from /l2-keys/)
+2. Browser → Keycloak  (client_credentials, client_assertion=<JWT>,
+                        authorization_details=[{type:umzh-connect-context,
+                                                identifier:ServiceRequest/<id>}])
+3. Keycloak → Browser  (M2M JWT with organization_reference, scope, fhirContext)
+4. Browser → apisix-fulfiller-external  (Bearer <M2M>)   ← direct, no proxy
+5. apisix-fulfiller-external: openid-connect validates the JWT (Keycloak JWKS)
+6. apisix-fulfiller-external: opa plugin enforces the fhirContext consent policy
+7. apisix-fulfiller-external → nginx-proxy:83 → hapi-fhir (fulfiller partition)
+8. nginx-proxy:83 rewrites HAPI self-links → apisix-fulfiller-external base URL
+9. Browser receives the Bundle; references already point at :8083, so any
+   follow-up read repeats the same direct flow
 ```
 
 **JWT claims used by OPA (read from the `Authorization` header):**
@@ -597,7 +526,7 @@ Both external gateway read endpoints enforce two layers before the FHIR backend 
 ```
 Client
   │  GET /fhir/Condition/SuspectedACLRupture
-  │  Authorization: Bearer <JWT with scope=consent:ConsentOrthopedicReferral>
+  │  Authorization: Bearer <JWT with fhirContext = ServiceRequest/ReferralOrthopedicSurgery>
   ▼
 apisix-*-external
   │
@@ -664,7 +593,8 @@ Phase 1 — Referral
   Task status: ready
 
 Phase 2 — Data Fetch
-  Fulfiller reads Task, fetches clinical data from Placer via /proxy/fhir/*
+  Fulfiller reads Task, fetches clinical data directly from Placer's external
+  gateway (apisix-placer-external :8081) with an in-browser M2M token
   Resources: Patient, Conditions, Medications, Documents, Imaging
 
 Phase 3 — Information Request
@@ -971,7 +901,7 @@ openid-connect:
   discovery: "http://keycloak:8080/realms/umzh-connect/.well-known/openid-configuration"
   bearer_only: true
   use_jwks: true
-  set_access_token_header: true   # false on proxy-out routes (int-proxy-partner)
+  set_access_token_header: true
   set_userinfo_header: false
   client_id: "unused"
   client_secret: "unused"
@@ -983,10 +913,7 @@ openid-connect:
 |----------|----------|--------|----------|---------------|------|
 | Metadata | `/fhir/metadata` | GET | `nginx-proxy:80` | `/fhir/placer/metadata` | None |
 | 1 – Internal | `/fhir/*` | GET, POST, PUT, PATCH, DELETE | `nginx-proxy:80` | `/fhir/placer/*` | JWT + role |
-| 3 – Proxy | `/proxy/fhir/*` | GET | `apisix-fulfiller-external:9080` | `/fhir/*` | JWT + role + M2M exchange |
-| 4 – Actions | `/api/actions/create-task` | POST | `apisix-fulfiller-external:9080` | `/fhir/Task` | JWT + role + M2M exchange |
-| 4 – Actions | `/api/actions/all-tasks` | GET | — (fan-out) | — | JWT + role + M2M exchange |
-| 4 – Policy | `/api/policy/check` | POST | `opa-placer:8181` | `/v1/data/umzh/authz/allow` | None |
+| 2 – Policy | `/api/policy/check` | POST | `opa-placer:8181` | `/v1/data/umzh/authz/allow` | None |
 
 #### Full Endpoint Reference — Placer External Gateway (`:8081`)
 
@@ -1002,10 +929,7 @@ openid-connect:
 |----------|----------|--------|----------|---------------|------|
 | Metadata | `/fhir/metadata` | GET | `nginx-proxy:82` | `/fhir/fulfiller/metadata` | None |
 | 1 – Internal | `/fhir/*` | GET, POST, PUT, PATCH, DELETE | `nginx-proxy:82` | `/fhir/fulfiller/*` | JWT + role |
-| 3 – Proxy | `/proxy/fhir/*` | GET | `apisix-placer-external:9080` | `/fhir/*` | JWT + role + M2M exchange |
-| 4 – Actions | `/api/actions/create-task` | POST | `apisix-placer-external:9080` | `/fhir/Task` | JWT + role + M2M exchange |
-| 4 – Actions | `/api/actions/all-tasks` | GET | — (fan-out) | — | JWT + role + M2M exchange |
-| 4 – Policy | `/api/policy/check` | POST | `opa-fulfiller:8181` | `/v1/data/umzh/authz/allow` | None |
+| 2 – Policy | `/api/policy/check` | POST | `opa-fulfiller:8181` | `/v1/data/umzh/authz/allow` | None |
 
 #### Full Endpoint Reference — Fulfiller External Gateway (`:8083`)
 
@@ -1217,58 +1141,48 @@ The fulfiller partition starts empty — Tasks are created at runtime by the Pla
 4. Switch role to **HospitalF (Fulfiller)** using the role toggle in the header
 5. **Dashboard** → Workflow Wizard → run the 3-step **Fulfiller** flow:
    - Step 1: Select the incoming Task from the task picker
-   - Step 2: Load Content — fetches the linked ServiceRequest from the Placer via `/proxy/fhir/*`
+   - Step 2: Load Content — fetches the linked ServiceRequest directly from the Placer's external gateway (in-browser M2M token bound to the SR as fhirContext)
    - Step 3: Update Status — sets Task to `in-progress` via the edit form
 6. **Tasks tab** → verify the updated Task status
 
-### Testing Client Credentials + Consent Scope
+### Testing Client Credentials (L1 and L2)
 
 1. Open **Credentials tab**, select `Placer Client` or `Fulfiller Client`
-2. Enter a Consent ID, e.g. `ConsentOrthopedicReferral`
+2. Pick the level — L1 (`client_secret`) or L2 (`private_key_jwt`, signed in-browser via Web Crypto)
 3. Click **Request Access Token**
-4. Inspect the decoded JWT — the `scope` field carries `openid consent:ConsentOrthopedicReferral`
+4. Inspect the decoded JWT — `extensions.umzhconnect.organization_reference`, `tenant`, and the `system/*` scopes. For a clinical cross-party read, the token also carries a `fhirContext` derived from RFC 9396 `authorization_details`.
 
 ### cURL Quickstart
 
 ```bash
-# ── Step 1: Get a placer token (with consent) ──────────────────────────────
+# ── Step 1: Get a placer token ─────────────────────────────────────────────
 TOKEN=$(curl -s -X POST \
   http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token \
   -d "grant_type=client_credentials" \
   -d "client_id=placer-client" \
-  -d "client_secret=placer-secret-2025" \
-  -d "scope=openid consent:ConsentOrthopedicReferral" | jq -r '.access_token')
+  -d "client_secret=placer-secret-2025" | jq -r '.access_token')
 
-# ── Read own resources (Placer internal) ───────────────────────────────────
+# ── Read own resources (Placer internal gateway) ───────────────────────────
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/fhir/Patient/PetraMeier
 
-# ── Read Fulfiller resources via proxy path ────────────────────────────────
-# (apisix-placer-internal → M2M exchange → apisix-fulfiller-external → HAPI)
-# Self-links in the response will be navigable via localhost:8080/proxy/fhir/
+# ── List Fulfiller Tasks directly (Fulfiller external gateway) ─────────────
+# Task search is not fhirContext-gated; the requester filter returns only the
+# Tasks this caller (HospitalP) requested. No proxy — call :8083 directly.
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/proxy/fhir/Task
+  http://localhost:8083/fhir/Task
 
-# ── Read Placer data via external gateway (as Fulfiller) ───────────────────
-FTOKEN=$(curl -s -X POST \
-  http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token \
-  -d "grant_type=client_credentials" \
-  -d "client_id=fulfiller-client" \
-  -d "client_secret=fulfiller-secret-2025" \
-  -d "scope=openid consent:ConsentOrthopedicReferral" | jq -r '.access_token')
-
-curl -H "Authorization: Bearer $FTOKEN" \
-  "http://localhost:8081/fhir/Patient/PetraMeier"
-
-# ── Create a Task at Fulfiller via Placer actions ──────────────────────────
-curl -X POST http://localhost:8080/api/actions/create-task \
+# ── Create a Task at Fulfiller directly (Fulfiller external gateway) ───────
+curl -X POST http://localhost:8083/fhir/Task \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/fhir+json" \
   -d '{ "resourceType": "Task", "status": "requested", "intent": "order" }'
 
-# ── Fetch merged task list ─────────────────────────────────────────────────
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/actions/all-tasks | jq '{local: .local.total, remote: .remote.total}'
+# ── Cross-party clinical read needs a fhirContext-scoped token ─────────────
+# Easiest via the helper, which signs L2 + adds authorization_details:
+CTX=$(./tests/scripts/get-token.sh fulfiller-l2-context ReferralOrthopedicSurgery)
+curl -H "Authorization: Bearer $CTX" \
+  "http://localhost:8081/fhir/ServiceRequest?_id=ReferralOrthopedicSurgery"
 
 # ── Direct OPA policy evaluation ───────────────────────────────────────────
 curl -s -X POST http://localhost:8182/v1/data/umzh/authz/decision \
@@ -1384,23 +1298,28 @@ apisix-fulfiller-external :8083
 
 `get-placer-token.bru` and `get-fulfiller-token.bru` fetch these tokens using the consent ID from `{{consentId}}` (default: `ConsentOrthopedicReferral`) and store them as `{{placerToken}}` and `{{fulfillerToken}}`.
 
-#### Cross-domain calls — automatic M2M token exchange
+#### Cross-domain calls — the caller mints its own M2M token
 
-For internal endpoints that call the partner's external gateway (`/proxy/fhir/*`, `/api/actions/create-task`, `/api/actions/all-tasks`), the internal gateway performs a silent **M2M token exchange** on behalf of the caller:
+There is no gateway-side token exchange. The caller (web-app, `get-token.sh`, or
+the Kestra flow) performs the L2 client_credentials flow itself and calls the
+partner's external gateway directly:
 
 ```
-Web app  ──►  apisix-placer-internal :8080  (validates adminToken, role=placer)
+Web app  ──►  signs L2 assertion in-browser (key from /l2-keys/, kid=placer-l2)
                      │
                      │  POST /token  grant_type=client_credentials
+                     │               client_assertion=<JWT>
+                     │               authorization_details=[…ServiceRequest…]  (clinical reads)
                      ▼
-                 Keycloak  ──► M2M JWT (placer-client-l2 or placer-client + fhirContext)
+                 Keycloak  ──► M2M JWT (placer-client-l2 + fhirContext)
                      │
-                     │  Authorization: Bearer <m2mToken>  (injected by umzh-m2m-token plugin)
+                     │  Authorization: Bearer <m2mToken>
                      ▼
-          apisix-fulfiller-external :8083  (OPA: party + scopes + consent)
+          apisix-fulfiller-external :8083  (openid-connect + OPA: org + scopes + consent)
 ```
 
-The caller only ever sends `adminToken`. The gateway handles obtaining and injecting the correct M2M credential automatically.
+The web-app holds the party's L2 credentials, so it authenticates cross-domain
+calls directly — no internal gateway involvement.
 
 ---
 
@@ -1409,40 +1328,44 @@ The caller only ever sends `adminToken`. The gateway handles obtaining and injec
 ```
 requests/
 ├── auth/
-│   ├── get-placer-token.bru       Fetches M2M token for placer-client (→ {{placerToken}})
-│   ├── get-fulfiller-token.bru    Fetches M2M token for fulfiller-client (→ {{fulfillerToken}})
-│   └── get-admin-token.bru        Fetches user token for admin-user (→ {{adminToken}})
+│   ├── get-placer-token.bru          M2M token for placer-client (→ {{placerToken}})
+│   ├── get-fulfiller-token.bru       M2M token for fulfiller-client (→ {{fulfillerToken}})
+│   ├── get-fulfiller-context-token.bru  M2M token + fhirContext for a ServiceRequest (→ {{fulfillerContextToken}})
+│   └── get-admin-token.bru           User token for admin-user (→ {{adminToken}})
 │
-├── placer/                         All calls to apisix-placer-internal :8080 — requires {{adminToken}}
-│   ├── 01-metadata.bru            FHIR /metadata (no auth)
-│   ├── 02-read-patient.bru        Read own Patient resource
+├── placer-internal/                  Own-partition calls to apisix-placer-internal :8080
+│   ├── 01-metadata.bru               FHIR /metadata (no auth)
+│   ├── 02-read-patient.bru           Read own Patient resource
 │   ├── 03-read-service-requests.bru  Read own ServiceRequests
-│   ├── 04-read-tasks.bru          Read own Tasks
-│   ├── 05-create-task-at-fulfiller.bru  Create Task at Fulfiller via /api/actions/create-task
-│   ├── 06-all-tasks.bru           Fetch merged Task list (local + remote) via /api/actions/all-tasks
-│   ├── 07-proxy-read-fulfiller-tasks.bru  Read Fulfiller Tasks via /proxy/fhir/* (consent-gated)
-│   └── 08-policy-check.bru        Direct OPA policy evaluation via /api/policy/check
+│   ├── 04-read-tasks.bru             Read own Tasks
+│   └── 05-policy-check.bru           Direct OPA policy evaluation via /api/policy/check
 │
-├── fulfiller/                      All calls to apisix-fulfiller-internal :8082 — requires {{adminToken}}
-│   ├── 01-read-tasks.bru          Read own Tasks
-│   ├── 02-proxy-read-placer-patient.bru  Read Placer Patient via /proxy/fhir/* (consent-gated)
-│   └── 03-all-tasks.bru           Fetch merged Task list (local + remote)
+├── fulfiller-internal/               Own-partition calls to apisix-fulfiller-internal :8082
+│   └── 01-read-tasks.bru             Read own Tasks
 │
-├── external/                       Direct calls to external gateways — requires party token
-│   ├── 01-placer-external-read-patient.bru   Fulfiller reads Placer Patient (→ {{fulfillerToken}})
-│   ├── 02-fulfiller-external-read-tasks.bru  Placer reads Fulfiller Tasks (→ {{placerToken}})
-│   └── 03-fulfiller-external-create-task.bru Placer creates Task at Fulfiller (→ {{placerToken}})
+├── placer-external/                  Cross-party: Fulfiller reads Placer data directly (:8081)
+│   ├── 01-read-patient.bru           Read Placer Patient (→ {{fulfillerContextToken}})
+│   └── 02-read-service-request.bru   Read Placer ServiceRequest + graph (→ {{fulfillerContextToken}})
 │
-├── policies/                       Direct OPA queries — no auth required (uses {{opaPlacerUrl}})
-│   ├── 01-allow-granted.bru       Resource in consent graph → true
-│   ├── 02-allow-denied.bru        Resource NOT in consent graph → false
-│   ├── 03-full-decision.bru       Full decision object with reason string
-│   ├── 04-package-eval.bru        Package-level query (same endpoint the gateway uses)
-│   └── 05-task-no-consent.bru     Task resource — Rule 1, no consent check
+├── fulfiller-external/               Cross-party: Placer reads/writes Fulfiller data directly (:8083)
+│   ├── 01-read-tasks.bru             List Fulfiller Tasks (→ {{placerToken}})
+│   └── 02-create-task.bru            Create Task at Fulfiller (→ {{placerToken}})
+│
+├── policies/                         Direct OPA queries — no auth required (uses {{opaPlacerUrl}})
+│   ├── 01-allow-granted.bru          Resource in consent graph → true
+│   ├── 02-allow-denied.bru           Resource NOT in consent graph → false
+│   ├── 03-full-decision.bru          Full decision object with reason string
+│   ├── 04-package-eval.bru           Package-level query (same endpoint the gateway uses)
+│   └── 05-task-no-consent.bru        Task resource — Rule 1, no consent check
 │
 └── environments/
-    └── local.bru                  Base URLs + consentId + OPA URLs for local Docker Compose setup
+    └── local.bru                     Base URLs + serviceRequestId + OPA URLs for local Docker Compose
 ```
+
+Cross-party requests are made **directly to the partner's external gateway** —
+there are no `/proxy/*` or `/api/actions/*` collections because those routes no
+longer exist. Clinical reads use `get-fulfiller-context-token` (carries the
+fhirContext the OPA gate checks); Task list/create use a plain party token.
 
 ---
 
@@ -1453,13 +1376,14 @@ requests/
 Always run the auth requests first in the same session before making API calls. Tokens are short-lived (5 minutes by default) and must be refreshed by re-running the auth requests.
 
 ```
-1. auth/get-placer-token       → sets {{placerToken}}
-2. auth/get-fulfiller-token    → sets {{fulfillerToken}}
-3. auth/get-admin-token        → sets {{adminToken}}
+1. auth/get-placer-token            → sets {{placerToken}}
+2. auth/get-fulfiller-token         → sets {{fulfillerToken}}
+3. auth/get-fulfiller-context-token → sets {{fulfillerContextToken}} (for clinical cross-party reads)
+4. auth/get-admin-token             → sets {{adminToken}}
 
-4. placer/*                    → use {{adminToken}}
-5. fulfiller/*                 → use {{adminToken}}
-6. external/*                  → use {{placerToken}} or {{fulfillerToken}}
+5. placer-internal/* , fulfiller-internal/*   → own-partition reads
+6. fulfiller-external/*   → Placer acts cross-party (use {{placerToken}})
+7. placer-external/*      → Fulfiller acts cross-party (use {{fulfillerContextToken}})
 ```
 
 #### Environment variables
@@ -1471,7 +1395,7 @@ Always run the auth requests first in the same session before making API calls. 
 | `placerExternalUrl` | `http://localhost:8081` | Placer external gateway |
 | `fulfillerUrl` | `http://localhost:8082` | Fulfiller internal gateway |
 | `fulfillerExternalUrl` | `http://localhost:8083` | Fulfiller external gateway |
-| `consentId` | `ConsentOrthopedicReferral` | Consent ID used when requesting scoped party tokens |
+| `serviceRequestId` | `ReferralOrthopedicSurgery` | ServiceRequest bound as fhirContext in the context token |
 
 ---
 

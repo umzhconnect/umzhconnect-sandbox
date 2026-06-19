@@ -1,0 +1,25 @@
+meta {
+  name: Placer External — Read ServiceRequest + graph (as Fulfiller)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{placerExternalUrl}}/fhir/ServiceRequest?_id={{serviceRequestId}}&_include=ServiceRequest:subject:Patient&_include=ServiceRequest:requester:Practitioner
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{fulfillerContextToken}}
+  Accept: application/fhir+json
+}
+
+docs {
+  The Fulfiller fetches the referenced ServiceRequest and its graph (Patient,
+  Practitioner) from the Placer's external gateway in one call. This is the read
+  the Kestra workflow and the web-app's "Load Content" step perform — directly,
+  with an M2M token bound to this ServiceRequest as fhirContext.
+
+  Run "Get Fulfiller Context Token" first.
+}

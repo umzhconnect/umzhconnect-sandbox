@@ -10,7 +10,6 @@ plugins:
   - openid-connect
   - opa
   - proxy-rewrite
-  - response-rewrite
   - serverless-pre-function
   - serverless-post-function
   - umzh-task-requester-inject

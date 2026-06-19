@@ -12,10 +12,10 @@ in `.env` — fine for a sandbox, never for a real deployment.
 
 | File                       | Holder                       | Used by                                                                           |
 |----------------------------|------------------------------|-----------------------------------------------------------------------------------|
-| `placer-l2.key`            | HospitalP (Placer)           | Signers: APISIX `umzh-m2m-token` plugin, browser (Web Crypto), test runner        |
-| `placer-l2.jwks.json`      | HospitalP (Placer) — public  | Published at `http://localhost:8081/jwks.json` by `apisix-placer-external`        |
-| `fulfiller-l2.key`         | HospitalF (Fulfiller)        | Signers: APISIX `umzh-m2m-token` plugin, browser (Web Crypto), test runner        |
-| `fulfiller-l2.jwks.json`   | HospitalF (Fulfiller) — public | Published at `http://localhost:8083/jwks.json` by `apisix-fulfiller-external`   |
+| `placer-l2.key`            | HospitalP (Placer)           | Held by `key-custodian-placer` (signs assertions); the browser (Web Crypto) and test runner fetch it to sign too |
+| `placer-l2.jwks.json`      | HospitalP (Placer) — public  | Served by `key-custodian-placer`; published at `http://localhost:8081/jwks.json` via `apisix-placer-external`     |
+| `fulfiller-l2.key`         | HospitalF (Fulfiller)        | Held by `key-custodian-fulfiller` (signs assertions); the browser (Web Crypto) and test runner fetch it to sign too |
+| `fulfiller-l2.jwks.json`   | HospitalF (Fulfiller) — public | Served by `key-custodian-fulfiller`; published at `http://localhost:8083/jwks.json` via `apisix-fulfiller-external` |
 
 Each hospital publishes its JWKS at the **same origin as its FHIR API** — the
 SMART Backend Services discovery shape. Behind the scenes the external APISIX
