@@ -23,7 +23,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   defaultSRId,
   onSuccessResource,
 }) => {
-  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownL2ClientId } = useRole();
+  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownOrgRegistryRef, ownL2ClientId } = useRole();
   const { addLog } = useLog();
   const getPartnerClient = usePartnerClient();
   const queryClient = useQueryClient();
@@ -112,9 +112,13 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       }),
       for: { reference: `${ownExternalBaseUrl}/${patientRef}`, display: patientDisplay },
       authoredOn: new Date().toISOString(),
+      // The IG profile (ch-umzh-connect-coordinationtask) constrains
+      // Task.requester to Reference(Organization) with an absolute URL, and the
+      // partner's external gateway filters Task searches by this organization
+      // reference — so it must be THIS party's registry Organization, not a
+      // PractitionerRole. See issue #24.
       requester: {
-        reference: `${ownExternalBaseUrl}/PractitionerRole/HansMusterRole`,
-        display: 'Dr. med. Hans Muster',
+        reference: ownOrgRegistryRef,
       },
       ...(partnerOrgRegistryRef && {
         owner: {

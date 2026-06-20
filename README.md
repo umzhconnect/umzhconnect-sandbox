@@ -631,6 +631,17 @@ docker compose up -d --build
 # The seed-loader runs once on first start and populates FHIR data.
 ```
 
+### Open the App
+
+1. Open http://localhost:3000
+2. Log in as `placer-user` / `placer123` (see [Default Credentials](#default-credentials) below)
+3. You start in the **Placer** role — the patient list shows
+   PetraMeier and her referrals. Switch role (Placer/Fulfiller/Registry)
+   from the header.
+
+The app requires login (Keycloak PKCE) — without it the patient list is
+empty even though the FHIR data is loaded.
+
 ### Verify Services
 
 | Service | URL | Check |
