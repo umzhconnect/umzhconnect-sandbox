@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useRole } from '../contexts/RoleContext';
 import { useFhirSearch, useRegistrySearch } from '../hooks/useFhirSearch';
 import WorkflowWizard from '../components/workflow/WorkflowWizard';
+import { env } from '../config/env';
 
 // ---------------------------------------------------------------------------
 // Health-check types & service definitions
@@ -19,80 +20,92 @@ interface ServiceDef {
   group: 'placer' | 'fulfiller' | 'shared' | 'internal';
 }
 
+// Display the URL's port when it has one (the docker-compose sandbox layout);
+// behind an ingress (paths/subdomains) there is no port and the chip is hidden.
+const portOf = (url: string): string | undefined => {
+  try {
+    return new URL(url).port || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// Service URLs come from config/env.ts so the dashboard reflects the actual
+// deployment rather than hardcoded localhost ports.
 const SERVICES: ServiceDef[] = [
   // HospitalP (Placer) party
   {
     name: 'APISIX Placer',
     desc: 'Internal API gateway',
-    url: 'http://localhost:8080',
-    port: '8080',
-    healthUrl: 'http://localhost:8080/__health',
+    url: env.placerUrl,
+    port: portOf(env.placerUrl),
+    healthUrl: `${env.placerUrl}/__health`,
     group: 'placer',
   },
   {
     name: 'APISIX Placer Ext',
     desc: 'External API gateway',
-    url: 'http://localhost:8081',
-    port: '8081',
-    healthUrl: 'http://localhost:8081/__health',
+    url: env.placerExternalUrl,
+    port: portOf(env.placerExternalUrl),
+    healthUrl: `${env.placerExternalUrl}/__health`,
     group: 'placer',
   },
   {
     name: 'OPA Placer',
     desc: 'Policy engine',
-    url: 'http://localhost:8181',
-    port: '8181',
-    healthUrl: 'http://localhost:8181/health',
+    url: env.opaPlacerUrl,
+    port: portOf(env.opaPlacerUrl),
+    healthUrl: `${env.opaPlacerUrl}/health`,
     group: 'placer',
   },
   // HospitalF (Fulfiller) party
   {
     name: 'APISIX Fulfiller',
     desc: 'Internal API gateway',
-    url: 'http://localhost:8082',
-    port: '8082',
-    healthUrl: 'http://localhost:8082/__health',
+    url: env.fulfillerUrl,
+    port: portOf(env.fulfillerUrl),
+    healthUrl: `${env.fulfillerUrl}/__health`,
     group: 'fulfiller',
   },
   {
     name: 'APISIX Fulfiller Ext',
     desc: 'External API gateway',
-    url: 'http://localhost:8083',
-    port: '8083',
-    healthUrl: 'http://localhost:8083/__health',
+    url: env.fulfillerExternalUrl,
+    port: portOf(env.fulfillerExternalUrl),
+    healthUrl: `${env.fulfillerExternalUrl}/__health`,
     group: 'fulfiller',
   },
   {
     name: 'OPA Fulfiller',
     desc: 'Policy engine',
-    url: 'http://localhost:8182',
-    port: '8182',
-    healthUrl: 'http://localhost:8182/health',
+    url: env.opaFulfillerUrl,
+    port: portOf(env.opaFulfillerUrl),
+    healthUrl: `${env.opaFulfillerUrl}/health`,
     group: 'fulfiller',
   },
   // Shared infrastructure
   {
     name: 'Keycloak',
     desc: 'Identity & access management',
-    url: 'http://localhost:8180',
-    port: '8180',
-    healthUrl: 'http://localhost:8180/health/ready',
+    url: env.keycloakUrl,
+    port: portOf(env.keycloakUrl),
+    healthUrl: `${env.keycloakUrl}/health/ready`,
     group: 'shared',
   },
   {
     name: 'HAPI FHIR',
     desc: 'FHIR R4 server',
-    url: 'http://localhost:8090',
-    port: '8090',
-    healthUrl: 'http://localhost:8090/fhir/metadata',
+    url: env.hapiUrl,
+    port: portOf(env.hapiUrl),
+    healthUrl: `${env.hapiUrl}/fhir/metadata`,
     group: 'shared',
   },
   {
     name: 'Web App',
     desc: 'React SPA (this app)',
-    url: 'http://localhost:3000',
-    port: '3000',
-    healthUrl: 'http://localhost:3000',
+    url: env.webAppUrl,
+    port: portOf(env.webAppUrl),
+    healthUrl: env.webAppUrl,
     group: 'shared',
   },
   // Internal Docker-only (no exposed port reachable from browser)

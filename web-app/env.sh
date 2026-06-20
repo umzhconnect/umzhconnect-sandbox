@@ -2,8 +2,10 @@
 # =============================================================================
 # Runtime environment variable injection for the SPA
 # =============================================================================
-# Replaces placeholder values in the built JS with runtime env vars.
-# This allows the Docker image to be configured at run time.
+# Writes window.__ENV__ to env-config.js, which index.html loads before the app
+# bundle (see web-app/src/config/env.ts). This lets a single built image be
+# reconfigured at run time per deployment. Defaults below match the
+# docker-compose sandbox port layout. Keep keys in sync with config/env.ts.
 # =============================================================================
 
 ENV_FILE="/usr/share/nginx/html/env-config.js"
@@ -19,6 +21,10 @@ window.__ENV__ = {
   VITE_FULFILLER_URL: "${VITE_FULFILLER_URL:-http://localhost:8082}",
   VITE_FULFILLER_EXTERNAL_URL: "${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}",
   VITE_REGISTRY_URL: "${VITE_REGISTRY_URL:-http://localhost:8084}",
+  VITE_OPA_PLACER_URL: "${VITE_OPA_PLACER_URL:-http://localhost:8181}",
+  VITE_OPA_FULFILLER_URL: "${VITE_OPA_FULFILLER_URL:-http://localhost:8182}",
+  VITE_HAPI_URL: "${VITE_HAPI_URL:-http://localhost:8090}",
+  VITE_WEB_APP_URL: "${VITE_WEB_APP_URL:-http://localhost:3000}",
 };
 EOF
 

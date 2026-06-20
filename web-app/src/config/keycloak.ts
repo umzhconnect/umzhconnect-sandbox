@@ -1,9 +1,10 @@
 import Keycloak from 'keycloak-js';
+import { env } from './env';
 
 const keycloakConfig = {
-  url: import.meta.env.VITE_KEYCLOAK_URL || 'http://localhost:8180',
-  realm: import.meta.env.VITE_KEYCLOAK_REALM || 'umzh-connect',
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'web-app',
+  url: env.keycloakUrl,
+  realm: env.keycloakRealm,
+  clientId: env.keycloakClientId,
 };
 
 const keycloak = new Keycloak(keycloakConfig);

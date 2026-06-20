@@ -1,19 +1,18 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { PartyRole } from '../types/fhir';
+import { env, keycloakTokenUrl } from '../config/env';
 
-// APISIX gateway base URLs (browser calls these directly via CORS).
-// Override at build time via VITE_* env vars, or at runtime via window.__ENV__
-// (injected by env.sh in the Docker image).
-const PLACER_URL             = import.meta.env.VITE_PLACER_URL             || 'http://localhost:8080';
-const PLACER_EXTERNAL_URL    = import.meta.env.VITE_PLACER_EXTERNAL_URL    || 'http://localhost:8081';
-const FULFILLER_URL          = import.meta.env.VITE_FULFILLER_URL          || 'http://localhost:8082';
-const FULFILLER_EXTERNAL_URL = import.meta.env.VITE_FULFILLER_EXTERNAL_URL || 'http://localhost:8083';
-const REGISTRY_URL           = import.meta.env.VITE_REGISTRY_URL           || 'http://localhost:8084';
-const KEYCLOAK_URL           = import.meta.env.VITE_KEYCLOAK_URL           || 'http://localhost:8180';
-const KEYCLOAK_REALM         = import.meta.env.VITE_KEYCLOAK_REALM         || 'umzh-connect';
+// APISIX gateway base URLs (browser calls these directly via CORS). Resolved
+// centrally in config/env.ts (runtime window.__ENV__ → build-time VITE_* →
+// localhost default).
+const PLACER_URL             = env.placerUrl;
+const PLACER_EXTERNAL_URL    = env.placerExternalUrl;
+const FULFILLER_URL          = env.fulfillerUrl;
+const FULFILLER_EXTERNAL_URL = env.fulfillerExternalUrl;
+const REGISTRY_URL           = env.registryUrl;
 
 // Keycloak token endpoint (published/frontend URL — also the assertion `aud`).
-const KEYCLOAK_TOKEN_URL = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`;
+const KEYCLOAK_TOKEN_URL = keycloakTokenUrl;
 
 interface RoleContextType {
   activeRole: PartyRole;

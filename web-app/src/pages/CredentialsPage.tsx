@@ -3,24 +3,24 @@ import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
 import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
 import type { AssertionParts } from '../services/l2-signing';
+import { env, keycloakTokenUrl } from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
 
-const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
+const KEYCLOAK_TOKEN_URL = keycloakTokenUrl;
 
 const CLIENT_CONFIG = {
   placer: {
     l1: { clientId: 'placer-client', clientSecret: 'placer-secret-2025' },
     l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key', kid: 'placer-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalP',
+    orgReference: `${env.registryUrl}/fhir/Organization/HospitalP`,
     label: 'HospitalP (Placer)',
   },
   fulfiller: {
     l1: { clientId: 'fulfiller-client', clientSecret: 'fulfiller-secret-2025' },
     l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key', kid: 'fulfiller-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalF',
+    orgReference: `${env.registryUrl}/fhir/Organization/HospitalF`,
     label: 'HospitalF (Fulfiller)',
   },
 } as const;
@@ -383,7 +383,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalP</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/placer-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8081/jwks.json" target="_blank" rel="noreferrer">localhost:8081/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${env.placerExternalUrl}/jwks.json`} target="_blank" rel="noreferrer">{`${env.placerExternalUrl}/jwks.json`}</a></span>
               </td>
             </tr>
             <tr>
@@ -392,7 +392,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalF</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/fulfiller-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8083/jwks.json" target="_blank" rel="noreferrer">localhost:8083/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${env.fulfillerExternalUrl}/jwks.json`} target="_blank" rel="noreferrer">{`${env.fulfillerExternalUrl}/jwks.json`}</a></span>
               </td>
             </tr>
           </tbody>
