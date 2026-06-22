@@ -278,29 +278,27 @@ chmod 444 /opt/umzhconnect-sandbox/services/keys/*.json
 
 ---
 
-## 10. Apply nginx-proxy public URL patch
+## 10. Configuration is environment-driven — no patching
 
-Run the `sed` command from [deployment.md](../deployment.md) (section 4b) to
-rewrite the self-link sub_filter values in `services/nginx-proxy/nginx.conf`
-from `localhost` to the public HTTPS URLs.
+Deployment-specific values come entirely from `.env` and are applied at
+container start — there are no repo files to edit:
 
-After patching, verify the change looks right:
+- **nginx-proxy self-link rewriting** uses
+  `services/nginx-proxy/templates/servers.conf.template`, rendered by `envsubst`
+  from the `VITE_*` URLs passed via `docker-compose.yml`. See deployment.md
+  section 4b.
+- **Keycloak realm values** — webOrigins, redirectUris, rootUrl, client secrets,
+  user passwords, and the L2 clients' `jwks.url` — use Keycloak `${VAR:default}`
+  placeholders resolved at realm-import time. See deployment.md section 4c.
 
-```bash
-grep "sub_filter " services/nginx-proxy/nginx.conf
-# Each line should now reference https://*.sandbox.umzh-connect.ch/fhir/
-```
-
----
-
-## 11. Patch Keycloak realm redirect URIs
-
-Run the Python one-liner from [deployment.md](../deployment.md) (section 4c)
-to add the public domain to `services/keycloak/realm-export.json`.
+Once `.env` is filled in (step 8) the setup is complete. The relevant production
+values are `WEB_APP_PUBLIC_URL`, the `VITE_*_URL` set, the L1 client secrets, the
+user passwords, and `PLACER_JWKS_URL` / `FULFILLER_JWKS_URL` — all present in
+`deployment/.env.prod.example`.
 
 ---
 
-## 12. Start the stack
+## 11. Start the stack
 
 ```bash
 cd /opt/umzhconnect-sandbox
@@ -320,7 +318,7 @@ docker compose logs -f seed-loader  # wait for "Seed complete"
 
 ---
 
-## 13. Verify permissions are intact after first run
+## 12. Verify permissions are intact after first run
 
 Docker Compose creates named volumes owned by root. The repo files themselves
 should not have changed ownership. Confirm:
@@ -340,7 +338,7 @@ docker ps
 
 ---
 
-## 14. Automatic startup on reboot
+## 13. Automatic startup on reboot
 
 Create a systemd service so the stack restarts automatically:
 
