@@ -112,11 +112,45 @@ set in `.env` above are passed automatically to the nginx-proxy container via
 `docker-compose.yml`, so self-link rewriting uses the correct public HTTPS URLs
 without any file edits.
 
-### 4c. Keycloak client URIs — no action needed
+### 4c. Keycloak realm values — driven by `.env`
 
-`services/keycloak/realm-export.json` already includes both `localhost` and
-`https://sandbox.umzh-connect.ch` in `redirectUris` and `webOrigins` for all
-clients. No modification is required at deploy time.
+`services/keycloak/realm-export.json` no longer hardcodes deployment-specific
+values. It uses Keycloak's native `${VAR:default}` placeholder substitution,
+resolved from the container environment **at realm-import time**:
+
+| Realm field(s) | Placeholder | `.env` variable |
+|----------------|-------------|-----------------|
+| web-app `rootUrl`, `redirectUris`, all clients' `webOrigins` | `${WEB_APP_PUBLIC_URL:http://localhost:3000}` | `WEB_APP_PUBLIC_URL` |
+| `placer-client` secret | `${PLACER_CLIENT_SECRET:…}` | `PLACER_CLIENT_SECRET` |
+| `fulfiller-client` secret | `${FULFILLER_CLIENT_SECRET:…}` | `FULFILLER_CLIENT_SECRET` |
+| `placer/fulfiller/admin-user` passwords | `${*_USER_PASSWORD:…}` | `PLACER_USER_PASSWORD`, `FULFILLER_USER_PASSWORD`, `ADMIN_USER_PASSWORD` |
+| `placer/fulfiller-client-l2` `jwks.url` | `${*_JWKS_URL:http://apisix-*-external:9080/jwks.json}` | `PLACER_JWKS_URL`, `FULFILLER_JWKS_URL` |
+
+These variables are passed to the Keycloak container in `docker-compose.yml`, so
+setting them in `.env` is all that's required — no edits to the realm file. The
+`:default` after each placeholder reproduces the original local-dev value when a
+variable is unset. Set `WEB_APP_PUBLIC_URL=https://sandbox.umzh-connect.ch` (and
+strong secrets/passwords) in your production `.env`.
+
+The L2 (`private_key_jwt`) clients authenticate by a signed assertion that
+Keycloak verifies against each party's **public** JWK Set. Locally the default is
+the internal Docker address (`http://apisix-*-external:9080/jwks.json`); in a
+deployed scenario set the public partner subdomains so Keycloak fetches over
+HTTPS — mirroring a real cross-org federation where each party hosts its own
+JWKS:
+
+```dotenv
+PLACER_JWKS_URL=https://placer.sandbox.umzh-connect.ch/jwks.json
+FULFILLER_JWKS_URL=https://fulfiller.sandbox.umzh-connect.ch/jwks.json
+```
+
+> Substitution happens **only at import time** (i.e. when the realm does not yet
+> exist). Changing one of these later means re-importing the realm — see Section
+> 10.
+
+The custom `umzh-fhir-context-mapper` referenced by the realm is built by the
+`keycloak-mapper-build` step into `services/keycloak/providers/` before Keycloak
+starts, so the import resolves it automatically.
 
 ## 5. Caddy configuration
 

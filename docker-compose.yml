@@ -57,6 +57,18 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Resolved into realm-export.json at import time via Keycloak ${VAR}
+      # placeholder substitution (single source of truth = .env).
+      WEB_APP_PUBLIC_URL: ${WEB_APP_PUBLIC_URL:-http://localhost:3000}
+      PLACER_CLIENT_SECRET: ${PLACER_CLIENT_SECRET:-placer-secret-2025}
+      FULFILLER_CLIENT_SECRET: ${FULFILLER_CLIENT_SECRET:-fulfiller-secret-2025}
+      PLACER_USER_PASSWORD: ${PLACER_USER_PASSWORD:-placer123}
+      FULFILLER_USER_PASSWORD: ${FULFILLER_USER_PASSWORD:-fulfiller123}
+      ADMIN_USER_PASSWORD: ${ADMIN_USER_PASSWORD:-admin123}
+      # L2 client JWKS endpoints Keycloak fetches to verify private_key_jwt.
+      # Internal Docker address by default; public partner subdomains in prod.
+      PLACER_JWKS_URL: ${PLACER_JWKS_URL:-http://apisix-placer-external:9080/jwks.json}
+      FULFILLER_JWKS_URL: ${FULFILLER_JWKS_URL:-http://apisix-fulfiller-external:9080/jwks.json}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
       KC_HOSTNAME: 'http://localhost:8180'
