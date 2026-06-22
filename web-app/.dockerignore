@@ -1,0 +1,15 @@
+# Dev-only symlink (-> ../../services/keys) used by `npm run dev` to serve
+# /l2-keys/ locally. It dangles inside the Docker build context and breaks
+# `vite build` (it copies public/ to dist). At runtime the image serves
+# /l2-keys/ from the compose bind-mount instead, so it is not needed here.
+public/l2-keys
+
+# Host build artifacts — re-created inside the image; copying the macOS
+# node_modules over the freshly `npm install`ed one can break native binaries
+# (esbuild/rollup) and bloats the context.
+node_modules
+dist
+
+# Misc
+.git
+*.log
