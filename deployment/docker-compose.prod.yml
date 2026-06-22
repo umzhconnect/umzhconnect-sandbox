@@ -1,0 +1,47 @@
+# =============================================================================
+# Production overlay — docker-compose.prod.yml
+#
+# Apply on top of the base compose file:
+#   docker compose -f docker-compose.yml -f deployment/docker-compose.prod.yml up -d
+#
+# Overrides that differ from the local-dev docker-compose.yml:
+#   - Keycloak: public HTTPS hostname
+#   - Key custodians: public token-endpoint audience (must match Keycloak's
+#     token-endpoint URL so private_key_jwt aud claim validates)
+# =============================================================================
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: "https://auth.sandbox.umzh-connect.ch"
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+
+  key-custodian-placer:
+    environment:
+      KEYCLOAK_AUDIENCE: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/protocol/openid-connect/token"
+
+  key-custodian-fulfiller:
+    environment:
+      KEYCLOAK_AUDIENCE: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/protocol/openid-connect/token"
+
+  # APISIX openid-connect plugin fetches the OIDC discovery document at startup.
+  # In production KC_HOSTNAME is the public HTTPS URL, so the discovery document
+  # returns public URLs for all endpoints (including jwks_uri). APISIX must
+  # fetch discovery via the same public URL so the JWKS URI it receives is also
+  # reachable (public → Caddy → Keycloak), otherwise the openid-connect plugin
+  # fails to load the /fhir/* route and all authenticated requests return 404.
+  apisix-placer-internal:
+    environment:
+      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+
+  apisix-placer-external:
+    environment:
+      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+
+  apisix-fulfiller-internal:
+    environment:
+      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+
+  apisix-fulfiller-external:
+    environment:
+      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"

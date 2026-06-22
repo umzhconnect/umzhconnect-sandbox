@@ -29,6 +29,8 @@ services:
   keycloak-mapper-build:
     image: maven:3.9-eclipse-temurin-17
     container_name: umzh-keycloak-mapper-build
+    environment:
+      MAVEN_OPTS: -Djava.net.preferIPv4Stack=true
     volumes:
       - ./services/keycloak/mapper:/app
       - ./services/keycloak/providers:/providers
@@ -55,6 +57,18 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Resolved into realm-export.json at import time via Keycloak ${VAR}
+      # placeholder substitution (single source of truth = .env).
+      WEB_APP_PUBLIC_URL: ${WEB_APP_PUBLIC_URL:-http://localhost:3000}
+      PLACER_CLIENT_SECRET: ${PLACER_CLIENT_SECRET:-placer-secret-2025}
+      FULFILLER_CLIENT_SECRET: ${FULFILLER_CLIENT_SECRET:-fulfiller-secret-2025}
+      PLACER_USER_PASSWORD: ${PLACER_USER_PASSWORD:-placer123}
+      FULFILLER_USER_PASSWORD: ${FULFILLER_USER_PASSWORD:-fulfiller123}
+      ADMIN_USER_PASSWORD: ${ADMIN_USER_PASSWORD:-admin123}
+      # L2 client JWKS endpoints Keycloak fetches to verify private_key_jwt.
+      # Internal Docker address by default; public partner subdomains in prod.
+      PLACER_JWKS_URL: ${PLACER_JWKS_URL:-http://apisix-placer-external:9080/jwks.json}
+      FULFILLER_JWKS_URL: ${FULFILLER_JWKS_URL:-http://apisix-fulfiller-external:9080/jwks.json}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
       KC_HOSTNAME: 'http://localhost:8180'
@@ -95,6 +109,9 @@ services:
     container_name: umzh-hapi-fhir
     environment:
       SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./services/hapi-fhir/application.yaml:/app/config/application.yaml
     ports:
@@ -118,6 +135,13 @@ services:
     container_name: umzh-nginx-proxy
     volumes:
       - ./services/nginx-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./services/nginx-proxy/templates:/etc/nginx/templates:ro
+    environment:
+      - VITE_PLACER_URL
+      - VITE_PLACER_EXTERNAL_URL
+      - VITE_FULFILLER_URL
+      - VITE_FULFILLER_EXTERNAL_URL
+      - VITE_REGISTRY_URL
     ports:
       - '${REGISTRY_PORT:-8084}:84'
     depends_on:
@@ -383,11 +407,20 @@ services:
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      PLACER_USER_PASSWORD: ${PLACER_USER_PASSWORD}
+      FULFILLER_USER_PASSWORD: ${FULFILLER_USER_PASSWORD}
+      ADMIN_USER_PASSWORD: ${ADMIN_USER_PASSWORD}
     volumes:
       - ./services/seed:/seed
     depends_on:
       hapi-fhir:
         condition: service_started
+      keycloak:
+        condition: service_healthy
     networks:
       - umzh-net
 
@@ -423,6 +456,16 @@ services:
       context: ./web-app
       dockerfile: Dockerfile
     container_name: umzh-web-app
+    environment:
+      - VITE_KEYCLOAK_URL
+      - VITE_KEYCLOAK_REALM
+      - VITE_KEYCLOAK_CLIENT_ID
+      - VITE_PLACER_URL
+      - VITE_PLACER_EXTERNAL_URL
+      - VITE_FULFILLER_URL
+      - VITE_FULFILLER_EXTERNAL_URL
+      - VITE_REGISTRY_URL
+      - VITE_API_BASE_URL
     ports:
       - '${WEB_APP_PORT}:80'
     volumes:

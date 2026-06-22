@@ -1,0 +1,107 @@
+# =============================================================================
+# nginx-proxy server blocks — processed by envsubst at container start.
+# Variables are resolved from the environment (see docker-compose.yml).
+#
+#   VITE_PLACER_URL          → placer   internal base URL  (port 80)
+#   VITE_PLACER_EXTERNAL_URL → placer   external base URL  (port 81)
+#   VITE_FULFILLER_URL       → fulfiller internal base URL (port 82)
+#   VITE_FULFILLER_EXTERNAL_URL → fulfiller external base URL (port 83)
+#   VITE_REGISTRY_URL        → registry base URL           (port 84)
+# =============================================================================
+
+# -----------------------------------------------------------------
+# Port 80 -- Placer internal gateway (APISIX port 8080)
+# -----------------------------------------------------------------
+server {
+    listen 80;
+
+    location / {
+        proxy_pass              http://hapi-fhir:8080;
+        proxy_set_header        Host               $host;
+        proxy_set_header        X-Real-IP          $remote_addr;
+        proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header        Accept-Encoding    "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        sub_filter "http://localhost:8090/fhir/placer/" "${VITE_PLACER_URL}/fhir/";
+    }
+}
+
+# -----------------------------------------------------------------
+# Port 81 -- Placer external gateway (APISIX port 8081)
+# -----------------------------------------------------------------
+server {
+    listen 81;
+
+    location / {
+        proxy_pass              http://hapi-fhir:8080;
+        proxy_set_header        Host               $host;
+        proxy_set_header        X-Real-IP          $remote_addr;
+        proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header        Accept-Encoding    "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        sub_filter "http://localhost:8090/fhir/placer/" "${VITE_PLACER_EXTERNAL_URL}/fhir/";
+    }
+}
+
+# -----------------------------------------------------------------
+# Port 82 -- Fulfiller internal gateway (APISIX port 8082)
+# -----------------------------------------------------------------
+server {
+    listen 82;
+
+    location / {
+        proxy_pass              http://hapi-fhir:8080;
+        proxy_set_header        Host               $host;
+        proxy_set_header        X-Real-IP          $remote_addr;
+        proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header        Accept-Encoding    "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        sub_filter "http://localhost:8090/fhir/fulfiller/" "${VITE_FULFILLER_URL}/fhir/";
+    }
+}
+
+# -----------------------------------------------------------------
+# Port 83 -- Fulfiller external gateway (APISIX port 8083)
+# -----------------------------------------------------------------
+server {
+    listen 83;
+
+    location / {
+        proxy_pass              http://hapi-fhir:8080;
+        proxy_set_header        Host               $host;
+        proxy_set_header        X-Real-IP          $remote_addr;
+        proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header        Accept-Encoding    "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        sub_filter "http://localhost:8090/fhir/fulfiller/" "${VITE_FULFILLER_EXTERNAL_URL}/fhir/";
+    }
+}
+
+# -----------------------------------------------------------------
+# Port 84 -- Registry gateway (public, no auth)
+# Rewrites /fhir/* → /fhir/registry/* on HAPI and fixes self-links.
+# -----------------------------------------------------------------
+server {
+    listen 84;
+
+    location /fhir/ {
+        rewrite ^/fhir/(.*)$ /fhir/registry/$1 break;
+        proxy_pass              http://hapi-fhir:8080;
+        proxy_set_header        Host               $host;
+        proxy_set_header        X-Real-IP          $remote_addr;
+        proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header        Accept-Encoding    "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        sub_filter "http://localhost:8090/fhir/registry/" "${VITE_REGISTRY_URL}/fhir/";
+    }
+}

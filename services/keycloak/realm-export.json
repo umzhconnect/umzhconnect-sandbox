@@ -187,14 +187,15 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
-      "rootUrl": "http://localhost:3000",
+      "rootUrl": "${WEB_APP_PUBLIC_URL:http://localhost:3000}",
       "baseUrl": "/",
       "redirectUris": [
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
-        "http://localhost:8080"
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
       "defaultClientScopes": [],
       "optionalClientScopes": [],
@@ -224,10 +225,11 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "placer-secret-2025",
+      "secret": "${PLACER_CLIENT_SECRET:placer-secret-2025}",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -308,10 +310,11 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "fulfiller-secret-2025",
+      "secret": "${FULFILLER_CLIENT_SECRET:fulfiller-secret-2025}",
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -396,11 +399,12 @@
       "clientAuthenticatorType": "client-jwt",
       "attributes": {
         "use.jwks.url": "true",
-        "jwks.url": "http://apisix-placer-external:9080/jwks.json"
+        "jwks.url": "${PLACER_JWKS_URL:http://apisix-placer-external:9080/jwks.json}"
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -483,11 +487,12 @@
       "clientAuthenticatorType": "client-jwt",
       "attributes": {
         "use.jwks.url": "true",
-        "jwks.url": "http://apisix-fulfiller-external:9080/jwks.json"
+        "jwks.url": "${FULFILLER_JWKS_URL:http://apisix-fulfiller-external:9080/jwks.json}"
       },
       "protocol": "openid-connect",
       "webOrigins": [
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
       "defaultClientScopes": [
         "system/Task.crus",
@@ -572,7 +577,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "placer123",
+          "value": "${PLACER_USER_PASSWORD:placer123}",
           "temporary": false
         }
       ],
@@ -590,7 +595,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "fulfiller123",
+          "value": "${FULFILLER_USER_PASSWORD:fulfiller123}",
           "temporary": false
         }
       ],
@@ -608,7 +613,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "admin123",
+          "value": "${ADMIN_USER_PASSWORD:admin123}",
           "temporary": false
         }
       ],

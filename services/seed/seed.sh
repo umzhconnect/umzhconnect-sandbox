@@ -20,7 +20,7 @@ FHIR_BASE_URL="${FHIR_BASE_URL:-http://hapi-fhir:8080/fhir}"
 PLACER_EXTERNAL_URL="${PLACER_EXTERNAL_URL:-http://localhost:8081}"
 FULFILLER_EXTERNAL_URL="${FULFILLER_EXTERNAL_URL:-http://localhost:8083}"
 REGISTRY_EXTERNAL_URL="${REGISTRY_EXTERNAL_URL:-http://localhost:8084}"
-MAX_RETRIES=60
+MAX_RETRIES=120
 RETRY_INTERVAL=5
 
 echo "============================================="
@@ -229,6 +229,61 @@ check_resource "registry"  "Endpoint"       "EndpointHospitalF"
 # Keycloak's `jwks.url` client attribute — no runtime provisioning required.
 # See services/keys/README.md for the trust model.
 
+# ---------------------------------------------------------------------------
+# [8/8] Reset Keycloak user passwords from environment variables
+# ---------------------------------------------------------------------------
+echo ""
+echo "[8/8] Resetting Keycloak user passwords..."
+
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak:8080}"
+KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-umzh-connect}"
+
+ADMIN_TOKEN=$(curl -sf \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "client_id=admin-cli" \
+    --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+    --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+    "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
+  | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+if [ -z "$ADMIN_TOKEN" ]; then
+    echo "  ERROR: Could not obtain Keycloak admin token. Skipping password reset."
+else
+    reset_kc_password() {
+        USERNAME=$1
+        PASSWORD=$2
+
+        USER_ID=$(curl -sf \
+            -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+            "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users?username=${USERNAME}&exact=true" \
+          | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+        if [ -z "$USER_ID" ]; then
+            echo "  WARNING: user '${USERNAME}' not found in realm '${KEYCLOAK_REALM}'"
+            return
+        fi
+
+        HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -X PUT \
+            -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"password\",\"value\":\"${PASSWORD}\",\"temporary\":false}" \
+            "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users/${USER_ID}/reset-password")
+
+        if [ "$HTTP_CODE" = "204" ]; then
+            echo "  Password set for '${USERNAME}'"
+        else
+            echo "  WARNING: password reset for '${USERNAME}' returned HTTP ${HTTP_CODE}"
+        fi
+    }
+
+    reset_kc_password "placer-user"    "${PLACER_USER_PASSWORD:-placer123}"
+    reset_kc_password "fulfiller-user" "${FULFILLER_USER_PASSWORD:-fulfiller123}"
+    reset_kc_password "admin-user"     "${ADMIN_USER_PASSWORD:-admin123}"
+fi
+
 echo ""
 echo "============================================="
 echo "Seed data loading complete!"
@@ -252,7 +307,7 @@ echo "  OPA (Fulfiller):              http://localhost:8182"
 echo "  Web App:                      http://localhost:3000"
 echo ""
 echo "Default users:"
-echo "  Placer:     placer-user / placer123"
-echo "  Fulfiller:  fulfiller-user / fulfiller123"
-echo "  Admin:      admin-user / admin123"
+echo "  Placer:     placer-user / ${PLACER_USER_PASSWORD}"
+echo "  Fulfiller:  fulfiller-user / ${FULFILLER_USER_PASSWORD}"
+echo "  Admin:      admin-user / ${ADMIN_USER_PASSWORD}"
 echo ""

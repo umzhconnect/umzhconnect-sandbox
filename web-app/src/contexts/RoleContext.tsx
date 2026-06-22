@@ -1,16 +1,15 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { PartyRole } from '../types/fhir';
 
-// APISIX gateway base URLs (browser calls these directly via CORS).
-// Override at build time via VITE_* env vars, or at runtime via window.__ENV__
-// (injected by env.sh in the Docker image).
-const PLACER_URL             = import.meta.env.VITE_PLACER_URL             || 'http://localhost:8080';
-const PLACER_EXTERNAL_URL    = import.meta.env.VITE_PLACER_EXTERNAL_URL    || 'http://localhost:8081';
-const FULFILLER_URL          = import.meta.env.VITE_FULFILLER_URL          || 'http://localhost:8082';
-const FULFILLER_EXTERNAL_URL = import.meta.env.VITE_FULFILLER_EXTERNAL_URL || 'http://localhost:8083';
-const REGISTRY_URL           = import.meta.env.VITE_REGISTRY_URL           || 'http://localhost:8084';
-const KEYCLOAK_URL           = import.meta.env.VITE_KEYCLOAK_URL           || 'http://localhost:8180';
-const KEYCLOAK_REALM         = import.meta.env.VITE_KEYCLOAK_REALM         || 'umzh-connect';
+import {
+  VITE_PLACER_URL          as PLACER_URL,
+  VITE_PLACER_EXTERNAL_URL as PLACER_EXTERNAL_URL,
+  VITE_FULFILLER_URL       as FULFILLER_URL,
+  VITE_FULFILLER_EXTERNAL_URL as FULFILLER_EXTERNAL_URL,
+  VITE_REGISTRY_URL        as REGISTRY_URL,
+  VITE_KEYCLOAK_URL        as KEYCLOAK_URL,
+  VITE_KEYCLOAK_REALM      as KEYCLOAK_REALM,
+} from '../config/env';
 
 // Keycloak token endpoint (published/frontend URL — also the assertion `aud`).
 const KEYCLOAK_TOKEN_URL = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`;
