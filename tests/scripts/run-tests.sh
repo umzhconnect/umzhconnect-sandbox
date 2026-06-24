@@ -110,6 +110,10 @@ APISIX_PLACER_URL="${APISIX_PLACER_URL:-http://localhost:8080}"
 APISIX_PLACER_EXT_URL="${APISIX_PLACER_EXT_URL:-http://localhost:8081}"
 APISIX_FULFILLER_URL="${APISIX_FULFILLER_URL:-http://localhost:8082}"
 APISIX_FULFILLER_EXT_URL="${APISIX_FULFILLER_EXT_URL:-http://localhost:8083}"
+# RFC 8707 resource URIs — must match Keycloak's registered resource_url values.
+# In CI these differ from APISIX_*_EXT_URL (Docker-internal vs public-facing).
+PLACER_RESOURCE_URL="${PLACER_RESOURCE_URL:-http://localhost:8081}"
+FULFILLER_RESOURCE_URL="${FULFILLER_RESOURCE_URL:-http://localhost:8083}"
 HAPI_FHIR_URL="${HAPI_FHIR_URL:-http://localhost:8090}"
 REGISTRY_URL="${REGISTRY_URL:-http://localhost:8084}"
 # Canonical URL for Organization FHIR references — matches seed data and KC token claim.
@@ -149,6 +153,8 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "placer_ext_url=$APISIX_PLACER_EXT_URL" \
         --variable "fulfiller_url=$APISIX_FULFILLER_URL" \
         --variable "fulfiller_ext_url=$APISIX_FULFILLER_EXT_URL" \
+        --variable "placer_resource_url=$PLACER_RESOURCE_URL" \
+        --variable "fulfiller_resource_url=$FULFILLER_RESOURCE_URL" \
         --variable "hapi_url=$HAPI_FHIR_URL" \
         --variable "registry_url=$REGISTRY_URL" \
         --variable "org_url=$ORG_CANONICAL_URL" \

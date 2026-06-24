@@ -103,6 +103,12 @@ export interface AcquireM2mTokenOptions {
    * are not fhirContext-gated.
    */
   fhirContextRef?: string;
+  /**
+   * RFC 8707 resource indicator — the base URL of the target resource server
+   * (e.g. "http://localhost:8083"). Restricts the token's aud claim to that
+   * resource server only.
+   */
+  resource?: string;
   onLog?: LogCallback;
 }
 
@@ -111,7 +117,7 @@ export interface AcquireM2mTokenOptions {
  * Fetch key → import → sign assertion → POST to Keycloak → access_token.
  */
 export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<string> {
-  const { keycloakTokenUrl, clientId, kid, keyUrl, fhirContextRef, onLog } = opts;
+  const { keycloakTokenUrl, clientId, kid, keyUrl, fhirContextRef, resource, onLog } = opts;
 
   onLog?.({ type: 'request', method: 'GET', url: keyUrl, message: 'Fetch L2 private key' });
   const keyRes = await fetch(keyUrl);
@@ -133,6 +139,9 @@ export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<str
     body.set('authorization_details',
       JSON.stringify([{ type: 'umzh-connect-context', identifier: fhirContextRef }]));
   }
+  if (resource) {
+    body.set('resource', resource);
+  }
 
   onLog?.({
     type: 'request', method: 'POST', url: keycloakTokenUrl,
@@ -143,6 +152,7 @@ export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<str
       client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
       client_assertion: `${assertion.jwt.slice(0, 40)}… (RS256-signed JWT)`,
       ...(fhirContextRef ? { authorization_details: `fhirContext=${fhirContextRef}` } : {}),
+      ...(resource ? { resource } : {}),
     },
   });
 

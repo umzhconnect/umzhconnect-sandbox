@@ -45,8 +45,14 @@ export function useRegistryClient(): FhirClient {
  * partner external gateway directly.
  */
 export function useM2mToken(): (fhirContextRef?: string) => Promise<string> {
-  const { keycloakTokenUrl, ownL2ClientId, ownL2Kid, ownL2KeyUrl } = useRole();
+  const { keycloakTokenUrl, ownL2ClientId, ownL2Kid, ownL2KeyUrl,
+          partnerExternalBaseUrl } = useRole();
   const { addLog } = useLog();
+
+  // Strip /fhir suffix to get the gateway base URL used as RFC 8707 resource indicator.
+  const partnerResource = partnerExternalBaseUrl
+    ? partnerExternalBaseUrl.replace(/\/fhir$/, '')
+    : undefined;
 
   return useCallback(
     (fhirContextRef?: string) =>
@@ -56,9 +62,10 @@ export function useM2mToken(): (fhirContextRef?: string) => Promise<string> {
         kid: ownL2Kid,
         keyUrl: ownL2KeyUrl,
         fhirContextRef,
+        resource: partnerResource,
         onLog: addLog,
       }),
-    [keycloakTokenUrl, ownL2ClientId, ownL2Kid, ownL2KeyUrl, addLog]
+    [keycloakTokenUrl, ownL2ClientId, ownL2Kid, ownL2KeyUrl, partnerResource, addLog]
   );
 }
 

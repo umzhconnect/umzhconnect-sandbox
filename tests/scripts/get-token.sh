@@ -19,6 +19,7 @@
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
 TOKEN_URL="${KEYCLOAK_URL}/realms/umzh-connect/protocol/openid-connect/token"
 
+
 # The L2 client assertion's `aud` must be Keycloak's *published* (frontend)
 # token endpoint — the URL it advertises under KC_HOSTNAME and validates the
 # assertion against. In CI we POST to the internal backchannel (keycloak:8080)
@@ -32,6 +33,14 @@ TOKEN_AUD="${TOKEN_AUD:-${KEYCLOAK_ISSUER}/protocol/openid-connect/token}"
 # ports; in CI (test-runner inside Docker) they're reachable by container name.
 KEY_CUSTODIAN_PLACER_URL="${KEY_CUSTODIAN_PLACER_URL:-http://localhost:8087}"
 KEY_CUSTODIAN_FULFILLER_URL="${KEY_CUSTODIAN_FULFILLER_URL:-http://localhost:8089}"
+
+# RFC 8707 resource URIs sent to Keycloak — must exactly match the resource_url
+# registered on each gateway's resource-server client (PLACER_EXTERNAL_URL /
+# FULFILLER_EXTERNAL_URL in docker-compose.yml). In CI these differ from the
+# Docker-internal APISIX URLs above, so they are configured separately.
+PLACER_RESOURCE_URL="${PLACER_RESOURCE_URL:-http://localhost:8081}"
+FULFILLER_RESOURCE_URL="${FULFILLER_RESOURCE_URL:-http://localhost:8083}"
+
 CLIENT_ASSERTION_TYPE="urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
 
 CLIENT_TYPE="$1"
@@ -64,11 +73,12 @@ url_encode() {
 #   $2 = custodian base URL  e.g. http://localhost:8087
 #   $3 = space-separated scope (may be empty)
 #   $4 = optional authorization_details JSON
+#   $5 = optional RFC 8707 resource URI  e.g. http://localhost:8083
 #
 # The custodian sets iss/sub/kid from its own env, so we only need to supply
 # the audience.
 fetch_l2_token() {
-    l2_cid="$1"; custodian_url="$2"; l2_scope="$3"; auth_details="$4"
+    l2_cid="$1"; custodian_url="$2"; l2_scope="$3"; auth_details="$4"; resource="$5"
 
     sign_resp=$(curl -sf -X POST \
         -H "Content-Type: application/json" \
@@ -91,6 +101,7 @@ fetch_l2_token() {
     # scopes come from defaultClientScopes regardless.
     [ -n "$l2_scope" ] && body="${body}&scope=$(echo "$l2_scope" | sed 's/ /+/g')"
     [ -n "$auth_details" ] && body="${body}&authorization_details=$(url_encode "$auth_details")"
+    [ -n "$resource" ] && body="${body}&resource=$(url_encode "$resource")"
 
     fetch_token "$body"
 }
@@ -103,11 +114,12 @@ case "$CLIENT_TYPE" in
     fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025"
     ;;
   fulfiller-context)
-    # RFC 9396 authorization_details token for cross-party reads
+    # RFC 9396 authorization_details token for cross-party reads (fulfiller → placer external)
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
     AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
-    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
+    RESOURCE_ENC=$(url_encode "$PLACER_RESOURCE_URL")
+    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&authorization_details=${AUTH_DETAILS_ENC}&resource=${RESOURCE_ENC}"
     ;;
   placer-context)
     # RFC 9396 authorization_details token — placer reading Task output resources
@@ -115,7 +127,8 @@ case "$CLIENT_TYPE" in
     TASK="${SR_ID:-TaskOrthopedicReferral}"
     AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
-    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
+    RESOURCE_ENC=$(url_encode "$FULFILLER_RESOURCE_URL")
+    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&authorization_details=${AUTH_DETAILS_ENC}&resource=${RESOURCE_ENC}"
     ;;
   placer-user)
     # User flow — openid IS appropriate here (authenticates a user; an ID token is meaningful)
@@ -125,20 +138,24 @@ case "$CLIENT_TYPE" in
     fetch_token "grant_type=password&client_id=web-app&username=fulfiller-user&password=fulfiller123&scope=openid"
     ;;
   placer-l2)
-    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" ""
+    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "" "" \
+      "$FULFILLER_RESOURCE_URL"
     ;;
   fulfiller-l2)
-    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" ""
+    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "" "" \
+      "$PLACER_RESOURCE_URL"
     ;;
   fulfiller-l2-context)
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
     fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "" \
-      '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
+      '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]' \
+      "$PLACER_RESOURCE_URL"
     ;;
   placer-l2-context)
     TASK="${SR_ID:-TaskOrthopedicReferral}"
     fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "" \
-      '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
+      '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]' \
+      "$FULFILLER_RESOURCE_URL"
     ;;
   *)
     echo "Usage: get-token.sh <placer|fulfiller|fulfiller-context|placer-context|placer-user|fulfiller-user|placer-l2|fulfiller-l2|fulfiller-l2-context|placer-l2-context> [resource_id]" >&2

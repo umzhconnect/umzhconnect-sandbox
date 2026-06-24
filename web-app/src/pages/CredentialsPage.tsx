@@ -3,24 +3,33 @@ import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
 import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
 import type { AssertionParts } from '../services/l2-signing';
+import {
+  VITE_KEYCLOAK_URL        as KEYCLOAK_URL,
+  VITE_KEYCLOAK_REALM      as KEYCLOAK_REALM,
+  VITE_PLACER_EXTERNAL_URL as PLACER_EXTERNAL_URL,
+  VITE_FULFILLER_EXTERNAL_URL as FULFILLER_EXTERNAL_URL,
+  VITE_REGISTRY_URL        as REGISTRY_URL,
+} from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
 
 const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
+  `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`;
 
 const CLIENT_CONFIG = {
   placer: {
     l1: { clientId: 'placer-client', clientSecret: 'placer-secret-2025' },
     l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key', kid: 'placer-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalP',
+    partnerExternalUrl: FULFILLER_EXTERNAL_URL,
+    orgReference: `${REGISTRY_URL}/fhir/Organization/HospitalP`,
     label: 'HospitalP (Placer)',
   },
   fulfiller: {
     l1: { clientId: 'fulfiller-client', clientSecret: 'fulfiller-secret-2025' },
     l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key', kid: 'fulfiller-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalF',
+    partnerExternalUrl: PLACER_EXTERNAL_URL,
+    orgReference: `${REGISTRY_URL}/fhir/Organization/HospitalF`,
     label: 'HospitalF (Fulfiller)',
   },
 } as const;
@@ -35,16 +44,23 @@ const CredentialsPage: React.FC = () => {
   const [activeParty, setActiveParty]       = useState<Party>('placer');
   const [activeLevel, setActiveLevel]       = useState<Level>('l1');
   const [contextRef, setContextRef]         = useState('');
+  const [resourceUri, setResourceUri]       = useState<string>(CLIENT_CONFIG.placer.partnerExternalUrl);
 
-  // Reset assertion inspector when switching party or level
-  const switchParty = (p: Party) => { setActiveParty(p); setAssertionData(null); setTokenResponse(null); };
+  // Reset assertion inspector when switching party or level; update resource default.
+  const switchParty = (p: Party) => {
+    setActiveParty(p);
+    setAssertionData(null);
+    setTokenResponse(null);
+    setResourceUri(CLIENT_CONFIG[p].partnerExternalUrl);
+  };
   const switchLevel = (l: Level) => { setActiveLevel(l); setAssertionData(null); setTokenResponse(null); };
 
   const handleRequestToken = async () => {
     setLoading(true);
     setAssertionData(null);
-    const cfg = CLIENT_CONFIG[activeParty];
-    const ref = contextRef.trim();
+    const cfg      = CLIENT_CONFIG[activeParty];
+    const ref      = contextRef.trim();
+    const resource = resourceUri.trim();
 
     try {
       let data: Record<string, unknown>;
@@ -60,6 +76,7 @@ const CredentialsPage: React.FC = () => {
         });
         if (ref) body.set('authorization_details',
           JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }]));
+        if (resource) body.set('resource', resource);
 
         addLog({ type: 'request', method: 'POST', url: KEYCLOAK_TOKEN_URL,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -99,6 +116,7 @@ const CredentialsPage: React.FC = () => {
         });
         if (ref) body.set('authorization_details',
           JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }]));
+        if (resource) body.set('resource', resource);
 
         addLog({ type: 'request', method: 'POST', url: KEYCLOAK_TOKEN_URL,
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -108,6 +126,7 @@ const CredentialsPage: React.FC = () => {
             client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
             client_assertion:      `${assertion.jwt.slice(0, 40)}… (RS256-signed JWT)`,
             ...(ref ? { authorization_details: '…' } : {}),
+            ...(resource ? { resource } : {}),
           },
         });
 
@@ -282,6 +301,27 @@ client_assertion=<signed JWT ↓>`
                   {`[{"type":"umzh-connect-context","identifier":"${contextRef.trim()}"}]`}
                 </code>
                 {' '}→ JWT will carry <code>fhirContext</code> claim for OPA consent lookup.
+              </p>
+            )}
+          </div>
+
+          {/* RFC 8707 Resource Indicator */}
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Resource <span className="font-normal text-gray-400 ml-1">(RFC 8707 — restricts <code>aud</code> to this URI; clear to omit, use an unknown URI to test rejection)</span>
+            </label>
+            <input
+              type="text"
+              value={resourceUri}
+              onChange={e => setResourceUri(e.target.value)}
+              placeholder="e.g. http://localhost:8083"
+              className="block w-full p-2 border border-gray-300 rounded font-mono text-sm
+                         focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            {resourceUri.trim() && (
+              <p className="mt-1 text-xs text-blue-600">
+                Adds <code className="bg-blue-50 px-1 rounded">resource={resourceUri.trim()}</code>
+                {' '}→ token <code>aud</code> will be restricted to this URI only.
               </p>
             )}
           </div>
