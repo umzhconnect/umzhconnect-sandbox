@@ -297,8 +297,21 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
           }
+        },
+        {
+          "name": "audience-fulfiller-external",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "fulfiller-external-gateway",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
         }
-      ]
+      ],
+      "attributes": {
+        "client_credentials.use_refresh_token": "true"
+      }
     },
     {
       "clientId": "fulfiller-client",
@@ -384,8 +397,21 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
           }
+        },
+        {
+          "name": "audience-placer-external",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "placer-external-gateway",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
         }
-      ]
+      ],
+      "attributes": {
+        "client_credentials.use_refresh_token": "true"
+      }
     },
     {
       "clientId": "placer-client-l2",
@@ -399,7 +425,8 @@
       "clientAuthenticatorType": "client-jwt",
       "attributes": {
         "use.jwks.url": "true",
-        "jwks.url": "${PLACER_JWKS_URL:http://apisix-placer-external:9080/jwks.json}"
+        "jwks.url": "${PLACER_JWKS_URL:http://apisix-placer-external:9080/jwks.json}",
+        "client_credentials.use_refresh_token": "true"
       },
       "protocol": "openid-connect",
       "webOrigins": [
@@ -472,6 +499,16 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
           }
+        },
+        {
+          "name": "audience-fulfiller-external",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "fulfiller-external-gateway",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
         }
       ]
     },
@@ -487,7 +524,8 @@
       "clientAuthenticatorType": "client-jwt",
       "attributes": {
         "use.jwks.url": "true",
-        "jwks.url": "${FULFILLER_JWKS_URL:http://apisix-fulfiller-external:9080/jwks.json}"
+        "jwks.url": "${FULFILLER_JWKS_URL:http://apisix-fulfiller-external:9080/jwks.json}",
+        "client_credentials.use_refresh_token": "true"
       },
       "protocol": "openid-connect",
       "webOrigins": [
@@ -562,8 +600,44 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "false"
           }
+        },
+        {
+          "name": "audience-placer-external",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "placer-external-gateway",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
         }
       ]
+    },
+    {
+      "clientId": "placer-external-gateway",
+      "name": "Placer External Gateway (Resource Server)",
+      "description": "RFC 8707 resource-server registration for the placer external APISIX gateway",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "resource_url": "${PLACER_EXTERNAL_URL:http://localhost:8081}"
+      }
+    },
+    {
+      "clientId": "fulfiller-external-gateway",
+      "name": "Fulfiller External Gateway (Resource Server)",
+      "description": "RFC 8707 resource-server registration for the fulfiller external APISIX gateway",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "resource_url": "${FULFILLER_EXTERNAL_URL:http://localhost:8083}"
+      }
     }
   ],
   "users": [

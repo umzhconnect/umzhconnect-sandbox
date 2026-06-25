@@ -26,6 +26,10 @@ services:
       APISIX_PLACER_EXT_URL: http://apisix-placer-external:9080
       APISIX_FULFILLER_URL: http://apisix-fulfiller-internal:9080
       APISIX_FULFILLER_EXT_URL: http://apisix-fulfiller-external:9080
+      # RFC 8707 resource URIs — must match Keycloak's registered resource_url
+      # (PLACER_EXTERNAL_URL / FULFILLER_EXTERNAL_URL in docker-compose.yml).
+      PLACER_RESOURCE_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
+      FULFILLER_RESOURCE_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       HAPI_FHIR_URL: http://hapi-fhir:8080
       REGISTRY_URL: http://nginx-proxy:84
       ORG_CANONICAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}

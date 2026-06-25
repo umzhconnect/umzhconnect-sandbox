@@ -49,7 +49,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.1
     container_name: umzh-keycloak
-    command: start-dev --import-realm
+    command: start-dev --import-realm --features=resource-indicators
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -69,6 +69,9 @@ services:
       # Internal Docker address by default; public partner subdomains in prod.
       PLACER_JWKS_URL: ${PLACER_JWKS_URL:-http://apisix-placer-external:9080/jwks.json}
       FULFILLER_JWKS_URL: ${FULFILLER_JWKS_URL:-http://apisix-fulfiller-external:9080/jwks.json}
+      # RFC 8707 resource_url attribute on the gateway resource-server clients.
+      PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
+      FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
       KC_HOSTNAME: 'http://localhost:8180'
