@@ -65,6 +65,11 @@ services:
       PLACER_USER_PASSWORD: ${PLACER_USER_PASSWORD:-placer123}
       FULFILLER_USER_PASSWORD: ${FULFILLER_USER_PASSWORD:-fulfiller123}
       ADMIN_USER_PASSWORD: ${ADMIN_USER_PASSWORD:-admin123}
+      # Public registry base URL used for the org-reference claim values. Must
+      # match what the seed loader writes into Organization references
+      # (REGISTRY_EXTERNAL_URL, same VITE_REGISTRY_URL source) or consent checks
+      # fail. A full URL, so it also works for subdomains (no port).
+      VITE_REGISTRY_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
       # L2 client JWKS endpoints Keycloak fetches to verify private_key_jwt.
       # Internal Docker address by default; public partner subdomains in prod.
       PLACER_JWKS_URL: ${PLACER_JWKS_URL:-http://apisix-placer-external:9080/jwks.json}
