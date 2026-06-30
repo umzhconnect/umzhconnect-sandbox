@@ -14,7 +14,12 @@ interface TaggedTask extends Task {
   _source: TaskSource;
 }
 
-const TaskList: React.FC = () => {
+interface TaskListProps {
+  remoteBaseUrl?: string | null;
+  remoteOrgName?: string | null;
+}
+
+const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName }) => {
   const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
@@ -35,7 +40,7 @@ const TaskList: React.FC = () => {
   const searchParams: Record<string, string> = {};
   if (statusFilter) searchParams['status'] = statusFilter;
 
-  const { data: allTasksData, isLoading, error } = useAllTasks(searchParams);
+  const { data: allTasksData, isLoading, error } = useAllTasks(searchParams, remoteBaseUrl);
 
   const tasks: TaggedTask[] = [
     ...((allTasksData?.local?.entry?.map((e) => e.resource).filter(Boolean) as Task[]) || [])
@@ -162,7 +167,7 @@ const TaskList: React.FC = () => {
                         : 'bg-purple-100 text-purple-700'
                     }`}
                   >
-                    {task._source}
+                    {task._source === 'local' ? 'local' : (remoteOrgName ?? 'remote')}
                   </span>
                   <StatusBadge status={task.status} />
                 </div>
@@ -194,7 +199,7 @@ const TaskList: React.FC = () => {
                       : 'bg-purple-100 text-purple-700'
                   }`}
                 >
-                  {selectedTask._source === 'local' ? 'Local' : 'Remote'}
+                  {selectedTask._source === 'local' ? 'Local' : (remoteOrgName ?? 'Remote')}
                 </span>
               </div>
               {selectedTask._source === 'remote' && (

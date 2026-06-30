@@ -117,7 +117,7 @@ REGISTRY_URL="${REGISTRY_URL:-http://localhost:8084}"
 ORG_CANONICAL_URL="${ORG_CANONICAL_URL:-http://localhost:8084}"
 OPA_PLACER_URL="${OPA_PLACER_URL:-http://localhost:8181}"
 OPA_FULFILLER_URL="${OPA_FULFILLER_URL:-http://localhost:8182}"
-RESEED_API_URL="${RESEED_API_URL:-http://localhost:9001}"
+ADMIN_API_URL="${ADMIN_API_URL:-http://localhost:9000}"
 
 # Consent validity window: now + 3 months (tests always refresh end dates)
 # Tries GNU date (Linux/CI), then BSD date (macOS), then falls back.
@@ -154,7 +154,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "org_url=$ORG_CANONICAL_URL" \
         --variable "opa_placer_url=$OPA_PLACER_URL" \
         --variable "opa_fulfiller_url=$OPA_FULFILLER_URL" \
-        --variable "reseed_url=$RESEED_API_URL" \
+        --variable "reseed_url=$ADMIN_API_URL" \
         --variable "placer_token=$EFFECTIVE_PLACER_TOKEN" \
         --variable "fulfiller_token=$EFFECTIVE_FULFILLER_TOKEN" \
         --variable "fulfiller_context_token=$EFFECTIVE_FULFILLER_CONTEXT_TOKEN" \

@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useFhirClient, useRegistryClient, usePartnerClient } from './useFhirClient';
+import { useFhirClient, useRegistryClient, useM2mToken } from './useFhirClient';
+import { FhirClient } from '../services/fhir-client';
+import { useLog } from '../contexts/LogContext';
 import type { Bundle, FhirResource } from '../types/fhir';
 import { useRole } from '../contexts/RoleContext';
 
@@ -66,27 +68,26 @@ export function useFhirRead<T extends FhirResource>(
 /**
  * Hook to fetch all tasks, grouped as { local, remote }.
  *
- * The fan-out is now done client-side (no internal-gateway action endpoint):
- *   * local  — this party's own partition, via the internal gateway (user token)
- *   * remote — the partner's external gateway /fhir/Task, with an in-browser
- *              M2M token (Task list is not fhirContext-gated, so no fhirContext).
- * Registry role has no partner; remote resolves to an empty bundle.
+ * Pass remoteBaseUrl (an Endpoint.address from the registry) to fetch tasks
+ * from a specific remote org. When omitted or null, only local tasks are
+ * returned — the remote half stays empty until the caller has an org selected.
  */
-export function useAllTasks(params?: Record<string, string>) {
+export function useAllTasks(params?: Record<string, string>, remoteBaseUrl?: string | null) {
   const client = useFhirClient();
-  const getPartnerClient = usePartnerClient();
+  const getM2mToken = useM2mToken();
+  const { addLog } = useLog();
   const { activeRole } = useRole();
 
   return useQuery<AllTasksResponse>({
-    queryKey: ['all-tasks', activeRole, params],
+    queryKey: ['all-tasks', activeRole, params, remoteBaseUrl ?? null],
     queryFn: async () => {
       const localPromise = client.search('Task', params).catch(() => EMPTY_BUNDLE);
 
       const remotePromise =
-        activeRole === 'registry'
+        activeRole === 'registry' || !remoteBaseUrl
           ? Promise.resolve(EMPTY_BUNDLE)
-          : getPartnerClient()
-              .then((partner) => partner.search('Task', params))
+          : getM2mToken()
+              .then((token) => new FhirClient(remoteBaseUrl, token, addLog).search('Task', params))
               .catch(() => EMPTY_BUNDLE);
 
       const [local, remote] = await Promise.all([localPromise, remotePromise]);

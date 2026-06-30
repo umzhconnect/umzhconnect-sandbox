@@ -147,6 +147,12 @@ services:
     depends_on:
       hapi-fhir:
         condition: service_started
+      # nginx resolves every upstream host when it loads its config; the port-85
+      # onboarding block proxies to admin-api, so admin-api must be resolvable
+      # (started) first or nginx aborts and takes down all server blocks
+      # (registry + the 80-83 self-link rewriters the APISIX gateways proxy through).
+      admin-api:
+        condition: service_started
     networks:
       - umzh-net
 
@@ -425,23 +431,37 @@ services:
       - umzh-net
 
   # ===========================================================================
-  # Reseed API - Admin utility to expunge + reload all FHIR seed data
+  # Admin API - Merged admin surface (formerly onboarding-api + reseed-api)
+  #   POST /reseed                expunge + reload all FHIR seed data
+  #   POST /invites, /register    self-service user onboarding
+  #   GET/POST /clients           M2M client provisioning
+  # Privileged routes are gated by Keycloak introspection + the `admin` role.
   # ===========================================================================
-  reseed-api:
+  admin-api:
     build:
-      context: ./services/reseed-api
+      context: ./services/admin-api
       dockerfile: Dockerfile
-    container_name: umzh-reseed-api
+    container_name: umzh-admin-api
     environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      # Public Keycloak URL used in token-endpoint values returned to clients.
+      KEYCLOAK_PUBLIC_URL: ${VITE_KEYCLOAK_URL:-http://localhost:8180}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      ONBOARDING_CLIENT_ID: onboarding-client
+      ONBOARDING_CLIENT_SECRET: ${ONBOARDING_CLIENT_SECRET}
       FHIR_BASE_URL: http://hapi-fhir:8080/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      PORT: 9000
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro
+      - admin_data:/data
     ports:
-      - '9001:9001'
+      - '${ADMIN_API_PORT:-9000}:9000'
     depends_on:
+      keycloak:
+        condition: service_healthy
       hapi-fhir:
         condition: service_started
     networks:
@@ -466,6 +486,7 @@ services:
       - VITE_FULFILLER_EXTERNAL_URL
       - VITE_REGISTRY_URL
       - VITE_API_BASE_URL
+      - VITE_ADMIN_API_URL
     ports:
       - '${WEB_APP_PORT}:80'
     volumes:
@@ -491,6 +512,7 @@ services:
 volumes:
   postgres_data:
   keycloak_m2_cache:
+  admin_data:
 
 networks:
   umzh-net:

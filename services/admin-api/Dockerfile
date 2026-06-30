@@ -4,6 +4,8 @@ WORKDIR /app
 
 COPY index.js .
 
-EXPOSE 9001
+RUN mkdir -p /data
+
+EXPOSE 9000
 
 CMD ["node", "index.js"]

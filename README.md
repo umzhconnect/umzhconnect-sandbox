@@ -125,7 +125,7 @@ Built on the [UMZH Connect FHIR Implementation Guide](https://build.fhir.org/ig/
 | `apisix-fulfiller-internal` | `apache/apisix:3.9.0-debian` | 8082 | Internal API gateway for HospitalF |
 | `apisix-fulfiller-external` | `apache/apisix:3.9.0-debian` | 8083 | External API gateway for HospitalF |
 | `seed-loader` | custom | — | Init container (loads FHIR data) |
-| `reseed-api` | Node.js | 9001 | Admin HTTP API to expunge + reload FHIR seed data |
+| `admin-api` | Node.js | 9000 | Admin HTTP API: reseed FHIR data + self-service user/M2M-client onboarding |
 | `web-app` | Node 20 + Nginx | 3000 | React SPA |
 
 ---
@@ -1532,7 +1532,7 @@ Each file is executed with `hurl --test`, injecting all URL variables and tokens
 | `APISIX_FULFILLER_EXT_URL` | `http://localhost:8083` | Fulfiller external gateway |
 | `HAPI_FHIR_URL` | `http://localhost:8090` | HAPI FHIR direct access |
 | `REGISTRY_URL` | `http://localhost:8084` | Registry public gateway |
-| `RESEED_API_URL` | `http://localhost:9001` | Reseed API |
+| `ADMIN_API_URL` | `http://localhost:9000` | Admin API (reseed + onboarding) |
 | `OPA_PLACER_URL` | `http://localhost:8181` | OPA Placer |
 | `OPA_FULFILLER_URL` | `http://localhost:8182` | OPA Fulfiller |
 | `MAX_WAIT` | `120` | Max seconds to wait for services before timing out |
@@ -1631,7 +1631,7 @@ Sandbox/
 │   │   └── application.yaml        # URL-partitioned FHIR R4 config
 │   │
 │   ├── keycloak/
-│   │   └── realm-export.json       # Realm, clients, scopes (incl. dynamic consent scope)
+│   │   └── realm-export.json       # Realm, clients, scopes
 │   │
 │   ├── nginx-proxy/
 │   │   └── nginx.conf              # 5 server blocks (ports 80–84), one sub_filter each
@@ -1656,9 +1656,10 @@ Sandbox/
 │   │   ├── config-placer.json      # Per-party OPA data (fhir_base, required_role)
 │   │   └── config-fulfiller.json
 │   │
-│   ├── reseed-api/
+│   ├── admin-api/
 │   │   ├── Dockerfile
-│   │   └── index.js                # Express API: POST /reseed → expunge + reload all bundles
+│   │   ├── openapi.yaml            # OpenAPI spec for onboarding + reseed endpoints
+│   │   └── index.js                # Admin API: /reseed + /invites /register /clients
 │   │
 │   └── seed/
 │       ├── Dockerfile

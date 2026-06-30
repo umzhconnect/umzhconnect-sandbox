@@ -1,0 +1,566 @@
+openapi: 3.1.0
+info:
+  title: UMZH Connect Sandbox – Admin API
+  version: 1.0.0
+  license:
+    name: MIT
+  description: |
+    Internal admin surface for the sandbox (formerly the separate onboarding-api
+    and reseed-api). Self-service access provisioning plus seed-data management.
+
+    Two distinct use cases:
+
+    1. **User registration** (`POST /register`) — public endpoint that creates a
+       Keycloak account with `admin`, `placer`, and `fulfiller` realm roles.
+       No authentication required.
+
+    2. **M2M client onboarding** (`POST /clients`) — creates a Keycloak
+       confidential client (L1 `client_secret` or L2 `private_key_jwt`) and
+       registers the caller's organisation in the FHIR registry.
+       Requires a valid Keycloak Bearer token with the `admin` realm role.
+
+    The resulting M2M client carries both `placer` and `fulfiller` realm roles
+    so it can reach either party's external APISIX gateway.  The token's
+    `extensions.umzhconnect.organization_reference` claim is set to the newly
+    created FHIR `Organization` URL in the public registry partition.
+
+servers:
+  - url: http://localhost:9000
+    description: Local sandbox
+  - url: https://admin.sandbox.umzh-connect.ch
+    description: Hosted sandbox
+
+tags:
+  - name: Registration
+    description: Self-service sandbox user accounts
+  - name: Clients
+    description: M2M client and organisation provisioning
+  - name: Seed
+    description: FHIR seed-data management
+  - name: Ops
+    description: Operational endpoints
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # POST /reseed
+  # ---------------------------------------------------------------------------
+  /reseed:
+    post:
+      operationId: reseed
+      tags: [Seed]
+      summary: Expunge and reload all FHIR seed data
+      description: |
+        Expunges every FHIR partition (placer, fulfiller, registry) and reloads
+        the seed bundles. Partition-scoped delete + `$expunge` keeps the IG
+        package (SearchParameters) intact.
+
+        Requires a valid Keycloak Bearer token with the `admin` realm role.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reseed completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  log:
+                    type: array
+                    items: { type: string }
+        '401': { description: Missing or inactive token }
+        '403': { description: Caller lacks the admin role }
+        '500': { description: Reseed failed }
+
+  # ---------------------------------------------------------------------------
+  # POST /register
+  # ---------------------------------------------------------------------------
+  /register:
+    post:
+      operationId: registerUser
+      tags: [Registration]
+      security: []
+      summary: Create a sandbox user account
+      description: |
+        Creates a Keycloak user in the `umzh-connect` realm and assigns the
+        `admin`, `placer`, and `fulfiller` realm roles, giving the new account
+        the same privileges as the built-in `admin-user`.
+
+        This endpoint is intentionally **public** so that new sandbox users can
+        sign up without needing an existing account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              typical:
+                summary: Typical registration
+                value:
+                  firstName: Alice
+                  lastName: Muster
+                  email: alice@hospital-z.example.org
+                  password: Sandbox2025!
+                  inviteToken: a3f8c2e1d4b7690f5e2a1c3d8b4f7e90a2c5d1e3
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              examples:
+                created:
+                  value:
+                    userId: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    email: alice@hospital-z.example.org
+                    message: User created with admin, placer, and fulfiller roles
+        '400':
+          description: Missing or invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  value:
+                    error: email, password, firstName, lastName, inviteToken are required
+        '409':
+          description: A user with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicate:
+                  value:
+                    error: A user with this email already exists
+        '500':
+          description: Unexpected server error (e.g. Keycloak unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # POST /invites
+  # ---------------------------------------------------------------------------
+  /invites:
+    post:
+      operationId: createInvite
+      tags: [Registration]
+      summary: Generate a single-use registration token
+      description: |
+        Creates a single-use, time-limited invite token that an admin can share
+        out-of-band (e.g. by email) with a prospective sandbox user.
+
+        The token must be supplied as `inviteToken` in the `POST /register`
+        request.  It expires after 48 hours and becomes invalid after first use.
+
+        **Required role:** The Bearer token must contain `admin` in `realm_roles`.
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Invite token created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteResponse'
+              examples:
+                created:
+                  value:
+                    token: a3f8c2e1d4b7690f5e2a1c3d8b4f7e90a2c5d1e3
+                    expiresAt: '2026-06-20T10:00:00.000Z'
+                    message: Share this token out-of-band. It is single-use and expires in 48 hours.
+        '401':
+          description: Missing or inactive Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller does not have the `admin` realm role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # POST /clients
+  # ---------------------------------------------------------------------------
+  /clients:
+    post:
+      operationId: createClient
+      tags: [Clients]
+      summary: Onboard a new M2M client
+      description: |
+        Provisions a Keycloak confidential client and creates a matching
+        `Organization` resource in the FHIR registry partition.
+
+        **What gets created:**
+        - A Keycloak client with `serviceAccountsEnabled: true`
+        - Service account assigned `placer` + `fulfiller` realm roles
+        - Four protocol mappers on the client:
+          - `extensions.umzhconnect.organization_reference` (hardcoded to the new org URL)
+          - `tenant` (hardcoded to a slug derived from `orgName`)
+          - `fhir-context` (dynamic `authorization_details` → `fhirContext` claim)
+          - `realm_roles` (multivalued claim)
+        - Default SMART scopes: `system/Task.crus`, `system/ServiceRequest.rs`,
+          and read-only scopes for Patient, Condition, MedicationStatement,
+          AllergyIntolerance, Coverage, Observation, Procedure, Immunization,
+          DiagnosticReport, QuestionnaireResponse, ImagingStudy, Appointment
+        - An `Organization` FHIR resource in `/fhir/registry/` tagged with
+          `sandbox-onboarded`
+
+        **L1 clients:** Keycloak generates and stores the client secret; it is
+        returned once in the response.
+
+        **L2 clients:** The caller supplies a `jwksUrl` that must be reachable
+        from inside the Docker network at token-request time (Keycloak fetches
+        the JWKS to verify `private_key_jwt` assertions).
+
+        **Required role:** The Bearer token must contain `admin` in `realm_roles`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClientRequest'
+            examples:
+              l1:
+                summary: L1 client (client_secret)
+                value:
+                  orgName: Hospital Z AG
+                  orgIdentifier: '7601000000000'
+                  level: l1
+              l2:
+                summary: L2 client (private_key_jwt)
+                value:
+                  orgName: Hospital Z AG
+                  orgIdentifier: '7601000000000'
+                  level: l2
+                  jwksUrl: http://hospital-z-custodian:8000/jwks.json
+      responses:
+        '201':
+          description: Client and organisation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateClientResponse'
+              examples:
+                l1Result:
+                  summary: L1 result
+                  value:
+                    clientId: hospital-z-ag-l1-k3j9x
+                    level: l1
+                    orgName: Hospital Z AG
+                    orgId: 4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                    orgReference: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                    tokenEndpoint: http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token
+                    clientSecret: Xk9mP2rQwL8nVjZ5
+                l2Result:
+                  summary: L2 result
+                  value:
+                    clientId: hospital-z-ag-l2-k3j9x
+                    level: l2
+                    orgName: Hospital Z AG
+                    orgId: 4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                    orgReference: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                    tokenEndpoint: http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token
+                    jwksUrl: http://hospital-z-custodian:8000/jwks.json
+        '400':
+          description: Missing or invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingOrg:
+                  value:
+                    error: orgName and level (l1|l2) are required
+                invalidLevel:
+                  value:
+                    error: level must be 'l1' or 'l2'
+                missingJwks:
+                  value:
+                    error: jwksUrl is required for l2 clients
+        '401':
+          description: Missing or inactive Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                noToken:
+                  value:
+                    error: Authorization header required
+                inactive:
+                  value:
+                    error: Token is not active
+        '403':
+          description: Caller does not have the `admin` realm role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden:
+                  value:
+                    error: admin role required
+        '500':
+          description: Unexpected server error (Keycloak or FHIR unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------------
+  # GET /health
+  # ---------------------------------------------------------------------------
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [Ops]
+      security: []
+      summary: Liveness check
+      description: Returns `{"status":"ok"}` when the service is running.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                ok:
+                  value:
+                    status: ok
+
+# =============================================================================
+# Components
+# =============================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Keycloak access token obtained via the `web-app` OIDC client or any
+        M2M `client_credentials` flow.  The token must contain `admin` in the
+        `realm_roles` claim.
+
+  schemas:
+
+    # ── POST /register ──────────────────────────────────────────────────────
+
+    RegisterRequest:
+      type: object
+      required: [firstName, lastName, email, password, inviteToken]
+      additionalProperties: false
+      properties:
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Given name of the new user
+          example: Alice
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Family name of the new user
+          example: Muster
+        email:
+          type: string
+          format: email
+          description: Email address; used as both username and login credential
+          example: alice@hospital-z.example.org
+        password:
+          type: string
+          minLength: 8
+          description: Initial password. Keycloak enforces its own realm password policy on top.
+          example: Sandbox2025!
+        inviteToken:
+          type: string
+          minLength: 40
+          maxLength: 40
+          description: |
+            Single-use token generated by an admin via `POST /invites` and shared
+            out-of-band.  The token is validated before any Keycloak call is made
+            and is consumed (invalidated) on successful registration.
+          example: a3f8c2e1d4b7690f5e2a1c3d8b4f7e90a2c5d1e3
+
+    RegisterResponse:
+      type: object
+      required: [userId, email, message]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Keycloak internal user ID
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        email:
+          type: string
+          format: email
+          description: Email address of the created user
+          example: alice@hospital-z.example.org
+        message:
+          type: string
+          description: Human-readable confirmation
+          example: User created with admin, placer, and fulfiller roles
+
+    # ── POST /invites ────────────────────────────────────────────────────────
+
+    InviteResponse:
+      type: object
+      required: [token, expiresAt, message]
+      properties:
+        token:
+          type: string
+          minLength: 40
+          maxLength: 40
+          description: |
+            Hex-encoded 20-byte random token.  Share this value with the
+            prospective user via a secure out-of-band channel (e.g. email).
+          example: a3f8c2e1d4b7690f5e2a1c3d8b4f7e90a2c5d1e3
+        expiresAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the token expires (48 hours from creation)
+          example: '2026-06-20T10:00:00.000Z'
+        message:
+          type: string
+          description: Human-readable reminder about token usage
+          example: Share this token out-of-band. It is single-use and expires in 48 hours.
+
+    # ── POST /clients ───────────────────────────────────────────────────────
+
+    CreateClientRequest:
+      type: object
+      required: [orgName, level]
+      additionalProperties: false
+      properties:
+        orgName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: |
+            Display name of the organisation. Also used to derive the Keycloak
+            `clientId` slug (lowercased, non-alphanumeric characters replaced
+            with `-`, truncated to 32 characters) and the `tenant` claim value.
+          example: Hospital Z AG
+        orgIdentifier:
+          type: string
+          description: |
+            Optional GLN (Global Location Number) or other identifier for the
+            organisation.  Stored as an `identifier` on the FHIR `Organization`
+            resource with system `urn:oid:2.51.1.3`.
+          example: '7601000000000'
+        level:
+          type: string
+          enum: [l1, l2]
+          description: |
+            Authentication level for the Keycloak client:
+            - `l1` — `client_secret` (shared secret, `client_credentials` grant)
+            - `l2` — `private_key_jwt` (RFC 7523, asymmetric assertion)
+          example: l1
+        jwksUrl:
+          type: string
+          format: uri
+          description: |
+            **Required when `level` is `l2`.**  The URL from which Keycloak
+            fetches the public JWKS to verify `private_key_jwt` client
+            assertions.  Must be reachable from inside the Docker network
+            (e.g. `http://my-custodian:8000/jwks.json`).
+          example: http://hospital-z-custodian:8000/jwks.json
+
+    CreateClientResponse:
+      type: object
+      required: [clientId, level, orgName, orgId, orgReference, tokenEndpoint]
+      properties:
+        clientId:
+          type: string
+          description: |
+            Keycloak `client_id` for this M2M client.  Composed of the org
+            slug, the level, and a short Base-36 timestamp suffix to guarantee
+            uniqueness (e.g. `hospital-z-ag-l1-k3j9x`).
+          example: hospital-z-ag-l1-k3j9x
+        level:
+          type: string
+          enum: [l1, l2]
+          description: Authentication level of the created client
+          example: l1
+        orgName:
+          type: string
+          description: Organisation display name as supplied in the request
+          example: Hospital Z AG
+        orgId:
+          type: string
+          description: |
+            HAPI FHIR-assigned ID of the `Organization` resource created in
+            the registry partition
+          example: 4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+        orgReference:
+          type: string
+          format: uri
+          description: |
+            Absolute URL of the `Organization` resource in the public registry.
+            This value is baked into the client's `organization_reference`
+            protocol mapper so every token the client obtains carries
+            `extensions.umzhconnect.organization_reference` set to this URL.
+          example: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+        tokenEndpoint:
+          type: string
+          format: uri
+          description: Keycloak token endpoint to use when requesting M2M tokens
+          example: http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token
+        clientSecret:
+          type: string
+          description: |
+            **Present only for `level: l1`.**  The generated client secret.
+            Store this value securely — it is returned only once and cannot
+            be retrieved again (only reset via the Keycloak admin UI).
+          example: Xk9mP2rQwL8nVjZ5
+        jwksUrl:
+          type: string
+          format: uri
+          description: |
+            **Present only for `level: l2`.**  The JWKS URL that was
+            registered on the Keycloak client, echoed back for confirmation.
+          example: http://hospital-z-custodian:8000/jwks.json
+
+    # ── GET /health ─────────────────────────────────────────────────────────
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+
+    # ── Shared ──────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: orgName and level (l1|l2) are required
