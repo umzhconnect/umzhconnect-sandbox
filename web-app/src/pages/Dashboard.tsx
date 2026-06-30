@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { useRole } from '../contexts/RoleContext';
 import { useFhirSearch, useRegistrySearch } from '../hooks/useFhirSearch';
 import WorkflowWizard from '../components/workflow/WorkflowWizard';
+import { hostUrl, env } from '../config/env';
+
+// Resolve a service's host port from .env (falling back to its default).
+const port = (key: string, def: number): string => env(key, String(def));
 
 // ---------------------------------------------------------------------------
 // Health-check types & service definitions
@@ -24,75 +28,75 @@ const SERVICES: ServiceDef[] = [
   {
     name: 'APISIX Placer',
     desc: 'Internal API gateway',
-    url: 'http://localhost:8080',
-    port: '8080',
-    healthUrl: 'http://localhost:8080/__health',
+    url: hostUrl(port('APISIX_PLACER_PORT', 8080)),
+    port: port('APISIX_PLACER_PORT', 8080),
+    healthUrl: `${hostUrl(port('APISIX_PLACER_PORT', 8080))}/__health`,
     group: 'placer',
   },
   {
     name: 'APISIX Placer Ext',
     desc: 'External API gateway',
-    url: 'http://localhost:8081',
-    port: '8081',
-    healthUrl: 'http://localhost:8081/__health',
+    url: hostUrl(port('APISIX_PLACER_EXTERNAL_PORT', 8081)),
+    port: port('APISIX_PLACER_EXTERNAL_PORT', 8081),
+    healthUrl: `${hostUrl(port('APISIX_PLACER_EXTERNAL_PORT', 8081))}/__health`,
     group: 'placer',
   },
   {
     name: 'OPA Placer',
     desc: 'Policy engine',
-    url: 'http://localhost:8181',
-    port: '8181',
-    healthUrl: 'http://localhost:8181/health',
+    url: hostUrl(port('OPA_PLACER_PORT', 8181)),
+    port: port('OPA_PLACER_PORT', 8181),
+    healthUrl: `${hostUrl(port('OPA_PLACER_PORT', 8181))}/health`,
     group: 'placer',
   },
   // HospitalF (Fulfiller) party
   {
     name: 'APISIX Fulfiller',
     desc: 'Internal API gateway',
-    url: 'http://localhost:8082',
-    port: '8082',
-    healthUrl: 'http://localhost:8082/__health',
+    url: hostUrl(port('APISIX_FULFILLER_PORT', 8082)),
+    port: port('APISIX_FULFILLER_PORT', 8082),
+    healthUrl: `${hostUrl(port('APISIX_FULFILLER_PORT', 8082))}/__health`,
     group: 'fulfiller',
   },
   {
     name: 'APISIX Fulfiller Ext',
     desc: 'External API gateway',
-    url: 'http://localhost:8083',
-    port: '8083',
-    healthUrl: 'http://localhost:8083/__health',
+    url: hostUrl(port('APISIX_FULFILLER_EXTERNAL_PORT', 8083)),
+    port: port('APISIX_FULFILLER_EXTERNAL_PORT', 8083),
+    healthUrl: `${hostUrl(port('APISIX_FULFILLER_EXTERNAL_PORT', 8083))}/__health`,
     group: 'fulfiller',
   },
   {
     name: 'OPA Fulfiller',
     desc: 'Policy engine',
-    url: 'http://localhost:8182',
-    port: '8182',
-    healthUrl: 'http://localhost:8182/health',
+    url: hostUrl(port('OPA_FULFILLER_PORT', 8182)),
+    port: port('OPA_FULFILLER_PORT', 8182),
+    healthUrl: `${hostUrl(port('OPA_FULFILLER_PORT', 8182))}/health`,
     group: 'fulfiller',
   },
   // Shared infrastructure
   {
     name: 'Keycloak',
     desc: 'Identity & access management',
-    url: 'http://localhost:8180',
-    port: '8180',
-    healthUrl: 'http://localhost:8180/health/ready',
+    url: hostUrl(port('KEYCLOAK_PORT', 8180)),
+    port: port('KEYCLOAK_PORT', 8180),
+    healthUrl: `${hostUrl(port('KEYCLOAK_PORT', 8180))}/health/ready`,
     group: 'shared',
   },
   {
     name: 'HAPI FHIR',
     desc: 'FHIR R4 server',
-    url: 'http://localhost:8090',
-    port: '8090',
-    healthUrl: 'http://localhost:8090/fhir/metadata',
+    url: hostUrl(port('HAPI_FHIR_PORT', 8090)),
+    port: port('HAPI_FHIR_PORT', 8090),
+    healthUrl: `${hostUrl(port('HAPI_FHIR_PORT', 8090))}/fhir/metadata`,
     group: 'shared',
   },
   {
     name: 'Web App',
     desc: 'React SPA (this app)',
-    url: 'http://localhost:3000',
-    port: '3000',
-    healthUrl: 'http://localhost:3000',
+    url: hostUrl(port('WEB_APP_PORT', 3000)),
+    port: port('WEB_APP_PORT', 3000),
+    healthUrl: hostUrl(port('WEB_APP_PORT', 3000)),
     group: 'shared',
   },
   // Internal Docker-only (no exposed port reachable from browser)

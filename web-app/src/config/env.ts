@@ -1,18 +1,40 @@
-declare global {
-  interface Window {
-    __ENV__?: Record<string, string>;
-  }
+// =============================================================================
+// Runtime environment resolution
+// =============================================================================
+// Browser URLs are built from the host the app was served from (localhost, a
+// tunnelled localhost, or the server's hostname) plus a port supplied via .env.
+// This lets one build work over http://localhost:3001 and http://<server>:3001
+// alike, with no per-environment rebuild.
+//
+// Resolution order:
+//   1. window.__ENV__  — written by env.sh at container start (see env.sh)
+//   2. import.meta.env — Vite build-time vars (local `npm run dev`)
+//   3. fallback default
+//
+// serviceUrl() additionally derives the host dynamically: an explicit full-URL
+// override wins (handy behind a reverse proxy / HTTPS), otherwise it's the
+// current page's host on the configured port.
+// =============================================================================
+
+const runtimeEnv: Record<string, string> =
+  (window as unknown as { __ENV__?: Record<string, string> }).__ENV__ ?? {};
+
+const buildEnv = import.meta.env as unknown as Record<string, string | undefined>;
+
+export function env(key: string, fallback = ''): string {
+  return runtimeEnv[key] || buildEnv[key] || fallback;
 }
 
-function env(key: string, fallback: string): string {
-  return window.__ENV__?.[key] || import.meta.env[key] || fallback;
+/** Build a URL on the host that served the app, for the given port. */
+export function hostUrl(port: string | number): string {
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:${port}`;
 }
 
-export const VITE_KEYCLOAK_URL        = env('VITE_KEYCLOAK_URL',        'http://localhost:8180');
-export const VITE_KEYCLOAK_REALM      = env('VITE_KEYCLOAK_REALM',      'umzh-connect');
-export const VITE_KEYCLOAK_CLIENT_ID  = env('VITE_KEYCLOAK_CLIENT_ID',  'web-app');
-export const VITE_PLACER_URL          = env('VITE_PLACER_URL',          'http://localhost:8080');
-export const VITE_PLACER_EXTERNAL_URL = env('VITE_PLACER_EXTERNAL_URL', 'http://localhost:8081');
-export const VITE_FULFILLER_URL       = env('VITE_FULFILLER_URL',       'http://localhost:8082');
-export const VITE_FULFILLER_EXTERNAL_URL = env('VITE_FULFILLER_EXTERNAL_URL', 'http://localhost:8083');
-export const VITE_REGISTRY_URL        = env('VITE_REGISTRY_URL',        'http://localhost:8084');
+/**
+ * Resolve a browser-facing service URL: an explicit full-URL override
+ * (urlKey) wins; otherwise same-host on the port from portKey (or default).
+ */
+export function serviceUrl(urlKey: string, portKey: string, defaultPort: number): string {
+  return env(urlKey) || hostUrl(env(portKey, String(defaultPort)));
+}
