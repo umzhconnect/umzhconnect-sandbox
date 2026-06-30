@@ -24,6 +24,12 @@ registry.sandbox.umzh-connect.ch {
     reverse_proxy localhost:8084
 }
 
+# Admin API (reseed + onboarding). Privileged routes are gated by Keycloak
+# token introspection + the `admin` realm role inside the service itself.
+admin.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:9000
+}
+
 # Placer hospital — external gateway (cross-party, used by fulfiller)
 placer.sandbox.umzh-connect.ch {
     reverse_proxy localhost:8081
