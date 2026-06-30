@@ -453,6 +453,8 @@ services:
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      # Restricts CORS to the SPA origin — must match the public web-app URL.
+      WEB_APP_PUBLIC_URL: ${WEB_APP_PUBLIC_URL:-http://localhost:3000}
       PORT: 9000
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro

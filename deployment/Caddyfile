@@ -11,8 +11,11 @@ sandbox.umzh-connect.ch {
     reverse_proxy localhost:3000
 }
 
-# Keycloak authorization server
+# Keycloak authorization server — /admin console and admin REST API blocked
 auth.sandbox.umzh-connect.ch {
+    @admin path /admin* /admin
+    respond @admin 403
+
     reverse_proxy localhost:8180 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host {host}

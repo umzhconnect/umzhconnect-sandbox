@@ -186,8 +186,12 @@ request. Ensure DNS is resolving to the VPS before reloading Caddy.
 
 ## 6. Start the stack
 
-Use the production compose overlay which sets the public Keycloak hostname and
-the correct `private_key_jwt` audience for the key custodians:
+Use the production compose overlay, which sets the public Keycloak hostname,
+the correct `private_key_jwt` audience for the key custodians, and — critically
+— rebinds every Docker port to `127.0.0.1` so that only Caddy (running on the
+host) can reach them. Without the overlay, Docker binds to `0.0.0.0`, making
+raw HAPI (port 8090), OPA (8181/8182), Postgres (5431), and the key-custodian
+ports world-reachable on the VPS, bypassing Caddy and all authentication.
 
 ```bash
 docker compose \
@@ -590,15 +594,48 @@ migrations have somewhere to build their tables.
 
 ## Security notes
 
+**Secrets and keys**
+
 - Change all default passwords in `.env` before first start (Postgres, Keycloak
-  admin, client secrets).
+  admin, client secrets, `ONBOARDING_CLIENT_SECRET`).
 - The L2 private keys in `services/keys/` are committed demo material — they are
   intentionally public for sandbox teaching purposes. Do not use these keys in any
   non-sandbox environment.
-- The admin API (`admin.sandbox.umzh-connect.ch`, port 9000) exposes reseed and
-  onboarding. Its privileged routes require a Keycloak `admin`-role Bearer token,
-  enforced in-service via token introspection. Drop the `admin.` Caddy block to
-  keep it internal-only.
-- Keycloak admin console (`/admin`) is accessible at
-  `https://auth.sandbox.umzh-connect.ch/admin` — consider restricting it with a
-  Caddy `basicauth` block or IP allowlist if the server is internet-facing.
+
+**Port exposure**
+
+- Always deploy with `deployment/docker-compose.prod.yml`. It rebinds every
+  service port to `127.0.0.1`, so raw HAPI, OPA, Postgres, and key-custodian
+  ports are only reachable from the host (where Caddy listens). The base
+  `docker-compose.yml` binds to `0.0.0.0` for local dev convenience — without
+  the prod overlay those ports would be world-open on the VPS.
+
+**Keycloak**
+
+- The Keycloak admin console and admin REST API (`/admin/*`) are blocked at the
+  Caddy layer — `auth.sandbox.umzh-connect.ch/admin` returns `403`. If you ever
+  need to use the admin UI remotely, do it via an SSH tunnel to `localhost:8180`
+  rather than exposing it through Caddy.
+- Brute-force protection is enabled in the realm: accounts lock after 10 failures
+  with an escalating wait up to 15 minutes. Unlocking requires a Keycloak admin
+  action (console or `kcadm`).
+- The realm enforces a minimum password policy (`length(12) and notUsername() and
+  notEmail()`). This applies to Keycloak's own login form and password-reset flow.
+  The admin-api `POST /register` endpoint enforces the same 12-character minimum
+  independently before creating the user.
+
+**Admin API**
+
+- The admin API (`admin.sandbox.umzh-connect.ch`, port 9000) is publicly routed
+  through Caddy. All privileged routes (`POST /reseed`, `POST /invites`,
+  `GET /clients`, `POST /clients`) require a Keycloak Bearer token with the
+  `admin` realm role, verified via token introspection on every request.
+- `POST /register` is the only unauthenticated route; it is rate-limited to
+  2 requests/minute per IP by nginx-proxy (port 85 → admin-api), with a burst
+  of 3, and requires a valid single-use invite token.
+- CORS on the admin API is restricted to `WEB_APP_PUBLIC_URL`
+  (`https://sandbox.umzh-connect.ch`). Cross-origin requests from other origins
+  are rejected by the browser.
+- Request bodies are capped at 64 KB. Oversized requests are dropped immediately.
+- To keep the admin API internal-only, remove the `admin.` block from the
+  Caddyfile and access reseed via SSH tunnel (`-L 9000:localhost:9000`).

@@ -41,11 +41,12 @@ hapi:
     defer_indexing_for_codesystems_of_size: 0
     # Narrative generation
     narrative_enabled: false
-    # CORS settings
+    # CORS disabled — the APISIX gateways are the only public entry points for
+    # browser traffic and they handle CORS themselves. All gateway→HAPI calls
+    # are server-to-server and do not require CORS headers.
     cors:
-      allow_credentials: true
-      allowed_origin:
-        - "*"
+      allow_credentials: false
+      allowed_origin: []
     # Paging
     default_page_size: 20
     max_page_size: 200

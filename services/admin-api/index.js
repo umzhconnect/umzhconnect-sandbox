@@ -42,6 +42,8 @@ const PLACER_URL            = process.env.PLACER_EXTERNAL_URL    || 'http://loca
 const FULFILLER_URL         = process.env.FULFILLER_EXTERNAL_URL || 'http://localhost:8083';
 const REGISTRY_EXTERNAL_URL  = process.env.REGISTRY_EXTERNAL_URL  || 'http://localhost:8084';
 const PORT                   = parseInt(process.env.PORT || '9000', 10);
+// Origin allowed for CORS — must match the public SPA URL in production.
+const ALLOWED_ORIGIN         = process.env.WEB_APP_PUBLIC_URL || 'http://localhost:3000';
 
 const INVITE_FILE   = '/data/invites.json';
 const CLIENTS_FILE  = '/data/clients.json';
@@ -284,6 +286,9 @@ async function handleRegister(body) {
   if (!email || !password || !firstName || !lastName || !inviteToken) {
     return { status: 400, body: { error: 'email, password, firstName, lastName, inviteToken are required' } };
   }
+  if (password.length < 12) {
+    return { status: 400, body: { error: 'Password must be at least 12 characters' } };
+  }
 
   // Validate invite token before touching Keycloak
   const invites = loadInvites();
@@ -340,10 +345,12 @@ async function handleRegister(body) {
   };
 }
 
-// GET /clients
+// GET /clients  (admin-only)
 async function handleListClients(bearerToken) {
   const tokenInfo = await introspectToken(bearerToken);
   if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
+  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
+  if (!roles.includes('admin')) return { status: 403, body: { error: 'admin role required' } };
   return { status: 200, body: loadClients() };
 }
 
@@ -665,10 +672,18 @@ async function reseed() {
 // ===========================================================================
 // HTTP server
 // ===========================================================================
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', chunk => { data += chunk; });
+    req.on('data', chunk => {
+      data += chunk;
+      if (data.length > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error('Request body too large (max 64 KB)'));
+      }
+    });
     req.on('end', () => {
       try { resolve(data ? JSON.parse(data) : {}); }
       catch { reject(new Error('Invalid JSON body')); }
@@ -683,8 +698,8 @@ function bearerFrom(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  // CORS — wide open for sandbox use
-  res.setHeader('Access-Control-Allow-Origin',  '*');
+  // CORS — restricted to the SPA origin
+  res.setHeader('Access-Control-Allow-Origin',  ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
