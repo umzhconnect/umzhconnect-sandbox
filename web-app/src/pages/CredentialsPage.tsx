@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
 import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
@@ -7,6 +7,8 @@ import {
   VITE_KEYCLOAK_URL,
   VITE_KEYCLOAK_REALM,
   VITE_REGISTRY_URL,
+  VITE_PLACER_EXTERNAL_URL,
+  VITE_FULFILLER_EXTERNAL_URL,
 } from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
@@ -30,6 +32,42 @@ const CLIENT_CONFIG = {
   },
 } as const;
 
+function buildCurlCommand(party: Party, level: Level, tokenUrl: string, ref: string): string {
+  const cfg = CLIENT_CONFIG[party];
+  const trimmedRef = ref.trim();
+  const authDetails = trimmedRef
+    ? `\\\n  -d 'authorization_details=[{"type":"umzh-connect-context","identifier":"${trimmedRef}"}]'`
+    : '';
+
+  if (level === 'l1') {
+    return (
+`curl -s -X POST \\
+  '${tokenUrl}' \\
+  -H 'Content-Type: application/x-www-form-urlencoded' \\
+  -d 'grant_type=client_credentials' \\
+  -d 'client_id=${cfg.l1.clientId}' \\
+  -d 'client_secret=${cfg.l1.clientSecret}'${authDetails}`
+    );
+  }
+
+  return (
+`# Step 1 — sign a client assertion (this page does this in-browser via Web Crypto)
+# curl -s -X POST \\
+#   '${VITE_PLACER_EXTERNAL_URL.replace('placer', party)}/sign' \\   # key-custodian /sign (demo only)
+#   -H 'Content-Type: application/json' \\
+#   -d '{"audience":"${tokenUrl}"}'
+
+# Step 2 — exchange assertion for access token
+curl -s -X POST \\
+  '${tokenUrl}' \\
+  -H 'Content-Type: application/x-www-form-urlencoded' \\
+  -d 'grant_type=client_credentials' \\
+  -d 'client_id=${cfg.l2.clientId}' \\
+  -d 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \\
+  -d 'client_assertion=<signed-JWT-from-step-1>'${authDetails}`
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const CredentialsPage: React.FC = () => {
@@ -40,10 +78,17 @@ const CredentialsPage: React.FC = () => {
   const [activeParty, setActiveParty]       = useState<Party>('placer');
   const [activeLevel, setActiveLevel]       = useState<Level>('l1');
   const [contextRef, setContextRef]         = useState('');
+  const [copied, setCopied]                 = useState(false);
 
   // Reset assertion inspector when switching party or level
   const switchParty = (p: Party) => { setActiveParty(p); setAssertionData(null); setTokenResponse(null); };
   const switchLevel = (l: Level) => { setActiveLevel(l); setAssertionData(null); setTokenResponse(null); };
+
+  const copyCurl = useCallback(() => {
+    navigator.clipboard.writeText(buildCurlCommand(activeParty, activeLevel, KEYCLOAK_TOKEN_URL, contextRef));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [activeParty, activeLevel, contextRef]);
 
   const handleRequestToken = async () => {
     setLoading(true);
@@ -292,6 +337,20 @@ client_assertion=<signed JWT ↓>`
           </div>
         </div>
 
+        {/* curl equivalent */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-medium text-gray-500">Equivalent curl command</label>
+            <button onClick={copyCurl}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-0.5 rounded border border-gray-200 hover:border-gray-400">
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+          <pre className="p-3 bg-gray-900 text-green-300 rounded text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto">
+            {buildCurlCommand(activeParty, activeLevel, KEYCLOAK_TOKEN_URL, contextRef)}
+          </pre>
+        </div>
+
         <div className="mt-4">
           <button onClick={handleRequestToken} disabled={loading}
             className="btn-primary disabled:opacity-50">
@@ -388,7 +447,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalP</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/placer-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8081/jwks.json" target="_blank" rel="noreferrer">localhost:8081/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${VITE_PLACER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{VITE_PLACER_EXTERNAL_URL}/jwks.json</a></span>
               </td>
             </tr>
             <tr>
@@ -397,7 +456,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalF</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/fulfiller-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8083/jwks.json" target="_blank" rel="noreferrer">localhost:8083/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${VITE_FULFILLER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{VITE_FULFILLER_EXTERNAL_URL}/jwks.json</a></span>
               </td>
             </tr>
           </tbody>
