@@ -136,8 +136,6 @@ services:
       - VITE_FULFILLER_URL
       - VITE_FULFILLER_EXTERNAL_URL
       - VITE_REGISTRY_URL
-    ports:
-      - '${REGISTRY_PORT:-8084}:84'
     depends_on:
       hapi-fhir:
         condition: service_started
