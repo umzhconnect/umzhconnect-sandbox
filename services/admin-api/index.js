@@ -138,7 +138,10 @@ async function introspectToken(bearerToken) {
       client_secret: ADMIN_CLIENT_SECRET,
     }),
   });
-  if (!res.ok) throw new Error('Introspection request failed');
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Introspection request failed (${res.status}): ${text}`);
+  }
   return res.json(); // { active, realm_access, ... }
 }
 
