@@ -3,24 +3,29 @@ import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
 import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
 import type { AssertionParts } from '../services/l2-signing';
+import {
+  VITE_KEYCLOAK_URL,
+  VITE_KEYCLOAK_REALM,
+  VITE_REGISTRY_URL,
+} from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
 
 const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
+  `${VITE_KEYCLOAK_URL}/realms/${VITE_KEYCLOAK_REALM}/protocol/openid-connect/token`;
 
 const CLIENT_CONFIG = {
   placer: {
     l1: { clientId: 'placer-client', clientSecret: 'placer-secret-2025' },
     l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key', kid: 'placer-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalP',
+    orgReference: `${VITE_REGISTRY_URL}/fhir/Organization/HospitalP`,
     label: 'HospitalP (Placer)',
   },
   fulfiller: {
     l1: { clientId: 'fulfiller-client', clientSecret: 'fulfiller-secret-2025' },
     l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key', kid: 'fulfiller-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalF',
+    orgReference: `${VITE_REGISTRY_URL}/fhir/Organization/HospitalF`,
     label: 'HospitalF (Fulfiller)',
   },
 } as const;
