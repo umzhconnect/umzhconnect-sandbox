@@ -69,7 +69,7 @@ services:
       FULFILLER_JWKS_URL: ${FULFILLER_JWKS_URL:-http://apisix-fulfiller-external:9080/jwks.json}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
-      KC_HOSTNAME: 'http://localhost:8180'
+      KC_HOSTNAME: '${VITE_KEYCLOAK_URL:-http://localhost:8180}'
       KC_HOSTNAME_STRICT: 'false'
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
@@ -169,7 +169,7 @@ services:
       PARTY: placer
       CLIENT_ID: ${PLACER_L2_CLIENT_ID}
       KID: placer-l2
-      KEYCLOAK_AUDIENCE: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
+      KEYCLOAK_AUDIENCE: "${VITE_KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/keys/placer-l2.key:/keys/private.key:ro
       - ./services/keys/placer-l2.jwks.json:/keys/jwks.json:ro
@@ -185,7 +185,7 @@ services:
       PARTY: fulfiller
       CLIENT_ID: ${FULFILLER_L2_CLIENT_ID}
       KID: fulfiller-l2
-      KEYCLOAK_AUDIENCE: "http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
+      KEYCLOAK_AUDIENCE: "${VITE_KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
     volumes:
       - ./services/keys/fulfiller-l2.key:/keys/private.key:ro
       - ./services/keys/fulfiller-l2.jwks.json:/keys/jwks.json:ro
