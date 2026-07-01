@@ -4,9 +4,13 @@
 # Apply on top of the base compose file:
 #   docker compose -f docker-compose.yml -f deployment/docker-compose.prod.yml up -d
 #
+# Using explicit -f flags suppresses auto-loading of docker-compose.override.yml
+# (the local-dev port bindings), so this file is the sole source of port
+# definitions. All ports are bound to 127.0.0.1 — only Caddy (running on the
+# host) can reach them; no service is reachable from the public internet.
+#
 # Overrides that differ from the local-dev docker-compose.yml:
-#   - All ports bound to 127.0.0.1 — only Caddy (on the host) can reach them.
-#     The raw HAPI, OPA, Postgres, and key-custodian ports are not world-open.
+#   - All ports bound to 127.0.0.1
 #   - Keycloak: public HTTPS hostname
 #   - APISIX: public Keycloak discovery URL (so JWKS URI in the discovery doc
 #     resolves via Caddy, not the internal Docker address)

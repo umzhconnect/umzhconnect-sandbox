@@ -12,8 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./services/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
-    ports:
-      - '5431:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
@@ -78,8 +76,6 @@ services:
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
       - ./services/keycloak/providers:/opt/keycloak/providers
-    ports:
-      - '${KEYCLOAK_PORT}:8080'
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,8 +110,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./services/hapi-fhir/application.yaml:/app/config/application.yaml
-    ports:
-      - '${HAPI_FHIR_PORT}:8080'
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,8 +175,6 @@ services:
     volumes:
       - ./services/keys/placer-l2.key:/keys/private.key:ro
       - ./services/keys/placer-l2.jwks.json:/keys/jwks.json:ro
-    ports:
-      - '${KEY_CUSTODIAN_PLACER_PORT}:8000'
     networks:
       - umzh-net
 
@@ -199,8 +191,6 @@ services:
     volumes:
       - ./services/keys/fulfiller-l2.key:/keys/private.key:ro
       - ./services/keys/fulfiller-l2.jwks.json:/keys/jwks.json:ro
-    ports:
-      - '${KEY_CUSTODIAN_FULFILLER_PORT}:8000'
     networks:
       - umzh-net
 
@@ -221,8 +211,6 @@ services:
     volumes:
       - ./services/opa/policies:/policies
       - ./services/opa/config-placer.json:/config.json
-    ports:
-      - '${OPA_PLACER_PORT}:8181'
     networks:
       - umzh-net
 
@@ -243,8 +231,6 @@ services:
     volumes:
       - ./services/opa/policies:/policies
       - ./services/opa/config-fulfiller.json:/config.json
-    ports:
-      - '${OPA_FULFILLER_PORT}:8181'
     networks:
       - umzh-net
 
@@ -277,8 +263,6 @@ services:
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
-    ports:
-      - '${APISIX_PLACER_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -309,8 +293,6 @@ services:
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
       - ./services/apisix/plugins/umzh-capability-guard.lua:/usr/local/apisix/apisix/plugins/umzh-capability-guard.lua:ro
-    ports:
-      - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -346,8 +328,6 @@ services:
       - ./services/apisix/internal/apisix.yaml:/templates/apisix.yaml:ro
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-role-check.lua:/usr/local/apisix/apisix/plugins/umzh-role-check.lua:ro
-    ports:
-      - '${APISIX_FULFILLER_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -378,8 +358,6 @@ services:
       - ./services/apisix/entrypoint.sh:/entrypoint.sh:ro
       - ./services/apisix/plugins/umzh-task-requester-inject.lua:/usr/local/apisix/apisix/plugins/umzh-task-requester-inject.lua:ro
       - ./services/apisix/plugins/umzh-capability-guard.lua:/usr/local/apisix/apisix/plugins/umzh-capability-guard.lua:ro
-    ports:
-      - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -459,8 +437,6 @@ services:
     volumes:
       - ./services/seed/bundles:/seed/bundles:ro
       - admin_data:/data
-    ports:
-      - '${ADMIN_API_PORT:-9000}:9000'
     depends_on:
       keycloak:
         condition: service_healthy
@@ -489,8 +465,6 @@ services:
       - VITE_REGISTRY_URL
       - VITE_API_BASE_URL
       - VITE_ADMIN_API_URL
-    ports:
-      - '${WEB_APP_PORT}:80'
     volumes:
       # Bind-mount the committed demo private keys (see services/keys/README.md).
       # The web-app's nginx serves these at /l2-keys/ so the browser (Web Crypto)
