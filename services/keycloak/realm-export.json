@@ -598,7 +598,7 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "onboarding-secret-2025",
+      "secret": "${ONBOARDING_CLIENT_SECRET:onboarding-secret-2025}",
       "protocol": "openid-connect",
       "defaultClientScopes": [],
       "optionalClientScopes": []
