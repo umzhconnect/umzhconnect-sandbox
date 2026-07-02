@@ -292,7 +292,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "extensions.umzhconnect.organization_reference",
-            "claim.value": "http://localhost:8084/fhir/Organization/HospitalP",
+            "claim.value": "${REGISTRY_PUBLIC_URL:http://localhost:8084}/fhir/Organization/HospitalP",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -379,7 +379,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "extensions.umzhconnect.organization_reference",
-            "claim.value": "http://localhost:8084/fhir/Organization/HospitalF",
+            "claim.value": "${REGISTRY_PUBLIC_URL:http://localhost:8084}/fhir/Organization/HospitalF",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -467,7 +467,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "extensions.umzhconnect.organization_reference",
-            "claim.value": "http://localhost:8084/fhir/Organization/HospitalP",
+            "claim.value": "${REGISTRY_PUBLIC_URL:http://localhost:8084}/fhir/Organization/HospitalP",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -557,7 +557,7 @@
           "protocolMapper": "oidc-hardcoded-claim-mapper",
           "config": {
             "claim.name": "extensions.umzhconnect.organization_reference",
-            "claim.value": "http://localhost:8084/fhir/Organization/HospitalF",
+            "claim.value": "${REGISTRY_PUBLIC_URL:http://localhost:8084}/fhir/Organization/HospitalF",
             "jsonType.label": "String",
             "id.token.claim": "false",
             "access.token.claim": "true",

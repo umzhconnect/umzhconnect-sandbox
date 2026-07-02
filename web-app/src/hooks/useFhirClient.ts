@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { FhirClient } from '../services/fhir-client';
+import { readBodyForLog } from '../services/http';
 import { acquireM2mToken } from '../services/l2-signing';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
@@ -108,7 +109,7 @@ export function useCrossPartyFetch(
         message: 'Cross-party read (direct to partner external gateway)' });
       const start = Date.now();
       const res = await fetch(absoluteUrl, { headers });
-      const body = await res.json();
+      const body = await readBodyForLog(res);
       addLog({ type: res.ok ? 'response' : 'error', method: 'GET', url: absoluteUrl,
         status: res.status, body, duration: Date.now() - start });
       if (!res.ok) throw new Error(`Cross-party fetch failed: ${res.status}`);

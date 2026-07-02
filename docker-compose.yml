@@ -67,6 +67,11 @@ services:
       # Internal Docker address by default; public partner subdomains in prod.
       PLACER_JWKS_URL: ${PLACER_JWKS_URL:-http://apisix-placer-external:9080/jwks.json}
       FULFILLER_JWKS_URL: ${FULFILLER_JWKS_URL:-http://apisix-fulfiller-external:9080/jwks.json}
+      # Public registry base baked into each M2M client's organization_reference
+      # claim. MUST equal the registry URL used in stored org references (consent
+      # actors, Task.requester) so OPA/requester-inject match. Localhost for dev;
+      # the public registry subdomain in prod.
+      REGISTRY_PUBLIC_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:8084}
       KC_HEALTH_ENABLED: 'true'
       KC_HTTP_PORT: 8080
       KC_HOSTNAME: '${VITE_KEYCLOAK_URL:-http://localhost:8180}'
@@ -135,7 +140,7 @@ services:
       - VITE_PLACER_EXTERNAL_URL
       - VITE_FULFILLER_URL
       - VITE_FULFILLER_EXTERNAL_URL
-      - VITE_REGISTRY_URL
+      - VITE_REGISTRY_URL=${REGISTRY_PUBLIC_URL:-http://localhost:8084}
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -388,7 +393,7 @@ services:
       FHIR_BASE_URL: http://hapi-fhir:8080/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
-      REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      REGISTRY_EXTERNAL_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:8084}
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -428,7 +433,7 @@ services:
       FHIR_BASE_URL: http://hapi-fhir:8080/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
-      REGISTRY_EXTERNAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      REGISTRY_EXTERNAL_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:8084}
       # Restricts CORS to the SPA origin — must match the public web-app URL.
       WEB_APP_PUBLIC_URL: ${WEB_APP_PUBLIC_URL:-http://localhost:3000}
       PORT: 9000
@@ -460,7 +465,7 @@ services:
       - VITE_PLACER_EXTERNAL_URL
       - VITE_FULFILLER_URL
       - VITE_FULFILLER_EXTERNAL_URL
-      - VITE_REGISTRY_URL
+      - VITE_REGISTRY_URL=${REGISTRY_PUBLIC_URL:-http://localhost:8084}
       - VITE_API_BASE_URL
       - VITE_ADMIN_API_URL
     volumes:

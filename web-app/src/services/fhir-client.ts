@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { Bundle, FhirResource, LogEntry } from '../types/fhir';
+import { readBodyForLog } from './http';
 
 type LogCallback = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 
@@ -63,7 +64,7 @@ export class FhirClient {
     const start = Date.now();
     try {
       const response = await fetch(url, { headers });
-      const body = await response.json();
+      const body = await readBodyForLog(response);
       const duration = Date.now() - start;
 
       this.log({
@@ -112,7 +113,7 @@ export class FhirClient {
     const start = Date.now();
     try {
       const response = await fetch(url, { headers });
-      const body = await response.json();
+      const body = await readBodyForLog(response);
       const duration = Date.now() - start;
 
       this.log({
@@ -162,7 +163,7 @@ export class FhirClient {
         headers,
         body: JSON.stringify(resource),
       });
-      const body = await response.json();
+      const body = await readBodyForLog(response);
       const duration = Date.now() - start;
 
       this.log({
@@ -212,7 +213,7 @@ export class FhirClient {
         headers,
         body: JSON.stringify(resource),
       });
-      const body = await response.json();
+      const body = await readBodyForLog(response);
       const duration = Date.now() - start;
 
       this.log({
@@ -260,7 +261,7 @@ export class FhirClient {
         headers,
         body: JSON.stringify(ops),
       });
-      const body = await response.json();
+      const body = await readBodyForLog(response);
       const duration = Date.now() - start;
 
       this.log({
