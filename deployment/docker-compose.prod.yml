@@ -4,25 +4,30 @@
 # Apply on top of the base compose file:
 #   docker compose -f docker-compose.yml -f deployment/docker-compose.prod.yml up -d
 #
-# Overrides that differ from the local-dev docker-compose.yml:
-#   - Keycloak: public HTTPS hostname
-#   - Key custodians: public token-endpoint audience (must match Keycloak's
-#     token-endpoint URL so private_key_jwt aud claim validates)
+# Using explicit -f flags suppresses auto-loading of docker-compose.override.yml
+# (the local-dev port bindings), so this file is the sole source of port
+# definitions. All ports are bound to 127.0.0.1 — only Caddy (running on the
+# host) can reach them; no service is reachable from the public internet.
+#
+# Public URLs come from .env (VITE_KEYCLOAK_URL, VITE_PLACER_URL, etc.).
+# web-app and nginx-proxy pick them up automatically via the passthrough
+# env entries in docker-compose.yml — no override needed here for those.
 # =============================================================================
 services:
+  postgres:
+    ports:
+      - "127.0.0.1:5431:5432"
+
+  hapi-fhir:
+    ports:
+      - "127.0.0.1:${HAPI_FHIR_PORT}:8080"
+
   keycloak:
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT}:8080"
     environment:
-      KC_HOSTNAME: "https://auth.sandbox.umzh-connect.ch"
       KC_HOSTNAME_STRICT: "true"
       KC_PROXY_HEADERS: xforwarded
-
-  key-custodian-placer:
-    environment:
-      KEYCLOAK_AUDIENCE: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/protocol/openid-connect/token"
-
-  key-custodian-fulfiller:
-    environment:
-      KEYCLOAK_AUDIENCE: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/protocol/openid-connect/token"
 
   # APISIX openid-connect plugin fetches the OIDC discovery document at startup.
   # In production KC_HOSTNAME is the public HTTPS URL, so the discovery document
@@ -31,17 +36,53 @@ services:
   # reachable (public → Caddy → Keycloak), otherwise the openid-connect plugin
   # fails to load the /fhir/* route and all authenticated requests return 404.
   apisix-placer-internal:
+    ports:
+      - "127.0.0.1:${APISIX_PLACER_PORT}:9080"
     environment:
-      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+      KEYCLOAK_DISCOVERY_URL: "${VITE_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
 
   apisix-placer-external:
+    ports:
+      - "127.0.0.1:${APISIX_PLACER_EXTERNAL_PORT}:9080"
     environment:
-      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+      KEYCLOAK_DISCOVERY_URL: "${VITE_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
 
   apisix-fulfiller-internal:
+    ports:
+      - "127.0.0.1:${APISIX_FULFILLER_PORT}:9080"
     environment:
-      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+      KEYCLOAK_DISCOVERY_URL: "${VITE_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
 
   apisix-fulfiller-external:
+    ports:
+      - "127.0.0.1:${APISIX_FULFILLER_EXTERNAL_PORT}:9080"
     environment:
-      KEYCLOAK_DISCOVERY_URL: "https://auth.sandbox.umzh-connect.ch/realms/umzh-connect/.well-known/openid-configuration"
+      KEYCLOAK_DISCOVERY_URL: "${VITE_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
+
+  opa-placer:
+    ports:
+      - "127.0.0.1:${OPA_PLACER_PORT}:8181"
+
+  opa-fulfiller:
+    ports:
+      - "127.0.0.1:${OPA_FULFILLER_PORT}:8181"
+
+  nginx-proxy:
+    ports:
+      - "127.0.0.1:${REGISTRY_PORT:-8084}:84"
+
+  key-custodian-placer:
+    ports:
+      - "127.0.0.1:${KEY_CUSTODIAN_PLACER_PORT}:8000"
+
+  key-custodian-fulfiller:
+    ports:
+      - "127.0.0.1:${KEY_CUSTODIAN_FULFILLER_PORT}:8000"
+
+  web-app:
+    ports:
+      - "127.0.0.1:${WEB_APP_PORT}:80"
+
+  admin-api:
+    ports:
+      - "127.0.0.1:${ADMIN_API_PORT:-9000}:9000"

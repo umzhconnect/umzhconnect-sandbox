@@ -1,0 +1,68 @@
+# =============================================================================
+# Local-dev port overlay — auto-loaded by Docker Compose alongside
+# docker-compose.yml when no explicit -f flags are given.
+#
+# All host ports are bound to 0.0.0.0 (accessible from localhost) which is
+# safe on a developer machine behind its own firewall.
+#
+# In production this file is NOT loaded: the deploy command uses explicit -f
+# flags, which suppresses auto-loading:
+#   docker compose -f docker-compose.yml -f deployment/docker-compose.prod.yml up -d
+# The prod overlay binds all ports to 127.0.0.1 (Caddy-only access).
+# =============================================================================
+services:
+  postgres:
+    ports:
+      - '5431:5432'
+
+  keycloak:
+    ports:
+      - '${KEYCLOAK_PORT}:8080'
+
+  hapi-fhir:
+    ports:
+      - '${HAPI_FHIR_PORT}:8080'
+
+  nginx-proxy:
+    ports:
+      - '${REGISTRY_PORT:-8084}:84'
+
+  key-custodian-placer:
+    ports:
+      - '${KEY_CUSTODIAN_PLACER_PORT}:8000'
+
+  key-custodian-fulfiller:
+    ports:
+      - '${KEY_CUSTODIAN_FULFILLER_PORT}:8000'
+
+  opa-placer:
+    ports:
+      - '${OPA_PLACER_PORT}:8181'
+
+  opa-fulfiller:
+    ports:
+      - '${OPA_FULFILLER_PORT}:8181'
+
+  apisix-placer-internal:
+    ports:
+      - '${APISIX_PLACER_PORT}:9080'
+
+  apisix-placer-external:
+    ports:
+      - '${APISIX_PLACER_EXTERNAL_PORT}:9080'
+
+  apisix-fulfiller-internal:
+    ports:
+      - '${APISIX_FULFILLER_PORT}:9080'
+
+  apisix-fulfiller-external:
+    ports:
+      - '${APISIX_FULFILLER_EXTERNAL_PORT}:9080'
+
+  admin-api:
+    ports:
+      - '${ADMIN_API_PORT:-9000}:9000'
+
+  web-app:
+    ports:
+      - '${WEB_APP_PORT}:80'

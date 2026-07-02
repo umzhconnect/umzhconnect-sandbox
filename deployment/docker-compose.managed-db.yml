@@ -1,0 +1,47 @@
+# =============================================================================
+# Managed-database overlay — docker-compose.managed-db.yml
+#
+# Use when HAPI FHIR and Keycloak connect to an EXTERNAL managed PostgreSQL
+# service instead of the bundled `postgres` container — e.g. a provider where
+# CREATE DATABASE / DROP DATABASE are not available and the databases (or
+# schemas) are provisioned out-of-band through the provider's console.
+#
+# Apply on top of the base + prod files (order matters):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f deployment/docker-compose.prod.yml \
+#     -f deployment/docker-compose.managed-db.yml \
+#     up -d --build
+#
+# Requires Docker Compose with the `!reset` / `!override` YAML tags (added in
+# v2.24; present in all v5.x). Check with `docker compose version`.
+#
+# Set these in .env (see deployment/.env.prod.example):
+#   DB_HOST, DB_PORT, DB_SSLMODE
+#   KEYCLOAK_DB_NAME, KEYCLOAK_DB_USER, KEYCLOAK_DB_PASSWORD
+#   HAPI_DB_NAME,     HAPI_DB_USER,     HAPI_DB_PASSWORD
+# =============================================================================
+services:
+  # Do not start the bundled Postgres — the managed service replaces it.
+  postgres:
+    profiles: ["bundled-db-disabled"]
+
+  keycloak:
+    # Drop the dependency on the bundled postgres; keep the mapper build.
+    depends_on: !override
+      keycloak-mapper-build:
+        condition: service_completed_successfully
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://${DB_HOST}:${DB_PORT}/${KEYCLOAK_DB_NAME}?sslmode=${DB_SSLMODE:-require}"
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+
+  hapi-fhir:
+    # hapi-fhir only depended on postgres — remove it entirely.
+    depends_on: !reset null
+    environment:
+      # Spring relaxed binding overrides spring.datasource.* from application.yaml.
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${DB_HOST}:${DB_PORT}/${HAPI_DB_NAME}?sslmode=${DB_SSLMODE:-require}"
+      SPRING_DATASOURCE_USERNAME: ${HAPI_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${HAPI_DB_PASSWORD}

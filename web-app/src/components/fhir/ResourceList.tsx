@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFhirSearch } from '../../hooks/useFhirSearch';
 import { useRole } from '../../contexts/RoleContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { RESOURCE_TYPES } from '../../types/fhir';
 import type { FhirResource, Bundle } from '../../types/fhir';
 import StatusBadge from '../common/StatusBadge';
@@ -10,6 +11,9 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ResourceEditForm, { SUPPORTED_EDIT_TYPES } from './ResourceEditForm';
 import CreateResourceModal from './CreateResourceModal';
 
+// Resource types a 'user' role (without placer/fulfiller) may POST
+const USER_WRITE_TYPES = ['ServiceRequest', 'Consent'];
+
 interface ResourceListProps {
   onSelectResource?: (resource: FhirResource) => void;
   defaultType?: string;
@@ -17,12 +21,18 @@ interface ResourceListProps {
 
 const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultType = 'Patient' }) => {
   const { activeRole } = useRole();
+  const { roles } = useAuth();
   const queryClient = useQueryClient();
+
+  const hasPartyRole = roles.includes('placer') || roles.includes('fulfiller');
+  const hasUserRole  = roles.includes('user');
+  const isRegistry   = activeRole === 'registry';
 
   const [selectedType, setSelectedType] = useState<string>(defaultType);
   const [patientFilter, setPatientFilter] = useState('');
   const [selectedResource, setSelectedResource] = useState<FhirResource | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [jsonModalOpen, setJsonModalOpen] = useState(false);
 
   const searchParams: Record<string, string> = {};
   if (
@@ -59,7 +69,10 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultTy
     setSelectedResource(null);
   };
 
-  const canCreate = SUPPORTED_EDIT_TYPES.includes(selectedType);
+  const canCreate =
+    !isRegistry &&
+    SUPPORTED_EDIT_TYPES.includes(selectedType) &&
+    (hasPartyRole || (hasUserRole && USER_WRITE_TYPES.includes(selectedType)));
 
   const getResourceSummary = (resource: FhirResource): string => {
     const r = resource as unknown as Record<string, unknown>;
@@ -97,8 +110,8 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultTy
       <div className="grid grid-cols-2 gap-4 h-full">
         {/* Left: List */}
         <div className="flex flex-col min-w-0">
-          {/* Filters + Create button */}
-          <div className="flex gap-2 mb-4">
+          {/* Row 1: Type selector + Patient ID filter */}
+          <div className="flex gap-2 mb-2">
             <select
               value={selectedType}
               onChange={(e) => handleTypeChange(e.target.value)}
@@ -117,19 +130,19 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultTy
               onChange={(e) => setPatientFilter(e.target.value)}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
-            <button
-              onClick={() => setCreateModalOpen(true)}
-              disabled={!canCreate}
-              title={
-                canCreate
-                  ? `Create new ${selectedType}`
-                  : `Creating ${selectedType} is not supported`
-              }
-              className="btn-primary text-sm px-3 py-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              + Create New
-            </button>
           </div>
+
+          {/* Row 2: Create button (role-gated) */}
+          {canCreate && (
+            <div className="mb-4">
+              <button
+                onClick={() => setCreateModalOpen(true)}
+                className="btn-primary text-sm px-3 py-2 whitespace-nowrap"
+              >
+                + Create New {selectedType}
+              </button>
+            </div>
+          )}
 
           {/* Results */}
           <div className="flex-1 overflow-auto border border-gray-200 rounded-lg">
@@ -180,14 +193,19 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultTy
         {/* Right: Detail */}
         <div className="flex flex-col min-w-0 overflow-y-auto">
           {selectedResource ? (
-            <div className="space-y-4">
-              <div className="card">
-                <ResourceEditForm
-                  resource={selectedResource}
-                  onSaved={handleSaved}
-                />
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-mono text-gray-400">
+                  {selectedResource.resourceType}/{selectedResource.id}
+                </span>
+                <button
+                  onClick={() => setJsonModalOpen(true)}
+                  className="text-xs px-2.5 py-1 border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Show JSON
+                </button>
               </div>
-              <JsonViewer data={selectedResource} title="JSON View" maxHeight="300px" />
+              <ResourceEditForm resource={selectedResource} onSaved={handleSaved} />
             </div>
           ) : (
             <div className="card flex items-center justify-center h-64 text-gray-400 text-sm">
@@ -196,6 +214,28 @@ const ResourceList: React.FC<ResourceListProps> = ({ onSelectResource, defaultTy
           )}
         </div>
       </div>
+
+      {/* JSON modal */}
+      {jsonModalOpen && selectedResource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setJsonModalOpen(false)}>
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">
+                {selectedResource.resourceType}/{selectedResource.id}
+              </h2>
+              <button
+                onClick={() => setJsonModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <JsonViewer data={selectedResource} collapsed={false} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create New modal */}
       <CreateResourceModal

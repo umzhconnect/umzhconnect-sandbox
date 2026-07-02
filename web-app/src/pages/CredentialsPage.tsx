@@ -1,44 +1,208 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
+import { useAuth } from '../contexts/AuthContext';
 import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
 import type { AssertionParts } from '../services/l2-signing';
+import { listMyClients, type OnboardedClient } from '../services/onboarding-api';
+import {
+  VITE_KEYCLOAK_URL,
+  VITE_KEYCLOAK_REALM,
+  VITE_REGISTRY_URL,
+  VITE_PLACER_EXTERNAL_URL,
+  VITE_FULFILLER_EXTERNAL_URL,
+} from '../config/env';
 
 type Party = 'placer' | 'fulfiller';
 type Level = 'l1' | 'l2';
 
 const KEYCLOAK_TOKEN_URL =
-  'http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token';
+  `${VITE_KEYCLOAK_URL}/realms/${VITE_KEYCLOAK_REALM}/protocol/openid-connect/token`;
 
 const CLIENT_CONFIG = {
   placer: {
     l1: { clientId: 'placer-client', clientSecret: 'placer-secret-2025' },
     l2: { clientId: 'placer-client-l2', keyUrl: '/l2-keys/placer-l2.key', kid: 'placer-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalP',
+    orgReference: `${VITE_REGISTRY_URL}/fhir/Organization/HospitalP`,
     label: 'HospitalP (Placer)',
   },
   fulfiller: {
     l1: { clientId: 'fulfiller-client', clientSecret: 'fulfiller-secret-2025' },
     l2: { clientId: 'fulfiller-client-l2', keyUrl: '/l2-keys/fulfiller-l2.key', kid: 'fulfiller-l2' },
-    orgReference: 'http://localhost:8084/fhir/Organization/HospitalF',
+    orgReference: `${VITE_REGISTRY_URL}/fhir/Organization/HospitalF`,
     label: 'HospitalF (Fulfiller)',
   },
 } as const;
 
+function buildCurlCommand(party: Party, level: Level, tokenUrl: string, ref: string): string {
+  const cfg = CLIENT_CONFIG[party];
+  const trimmedRef = ref.trim();
+  const authDetails = trimmedRef
+    ? `\\\n  -d 'authorization_details=[{"type":"umzh-connect-context","identifier":"${trimmedRef}"}]'`
+    : '';
+
+  if (level === 'l1') {
+    return (
+`curl -s -X POST \\
+  '${tokenUrl}' \\
+  -H 'Content-Type: application/x-www-form-urlencoded' \\
+  -d 'grant_type=client_credentials' \\
+  -d 'client_id=${cfg.l1.clientId}' \\
+  -d 'client_secret=${cfg.l1.clientSecret}'${authDetails}`
+    );
+  }
+
+  return (
+`# Step 1 — sign a client assertion (this page does this in-browser via Web Crypto)
+# curl -s -X POST \\
+#   '${VITE_PLACER_EXTERNAL_URL.replace('placer', party)}/sign' \\   # key-custodian /sign (demo only)
+#   -H 'Content-Type: application/json' \\
+#   -d '{"audience":"${tokenUrl}"}'
+
+# Step 2 — exchange assertion for access token
+curl -s -X POST \\
+  '${tokenUrl}' \\
+  -H 'Content-Type: application/x-www-form-urlencoded' \\
+  -d 'grant_type=client_credentials' \\
+  -d 'client_id=${cfg.l2.clientId}' \\
+  -d 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \\
+  -d 'client_assertion=<signed-JWT-from-step-1>'${authDetails}`
+  );
+}
+
+// ─── My Clients card ──────────────────────────────────────────────────────────
+
+const MyClientsCard: React.FC = () => {
+  const { getToken } = useAuth();
+  const [clients, setClients]   = useState<OnboardedClient[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const data = await listMyClients(token);
+        if (!cancelled) setClients(data);
+      } catch {
+        // silently ignore — user may have no clients yet
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return null;
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold">My Clients</h3>
+        {clients.length === 0 && (
+          <a href="/onboarding" className="text-xs text-blue-600 hover:underline">
+            Onboard a client →
+          </a>
+        )}
+      </div>
+
+      {clients.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          No M2M clients onboarded yet. Go to the{' '}
+          <a href="/onboarding" className="text-blue-600 hover:underline">Onboarding</a>{' '}
+          page to create one.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {clients.map(c => {
+            const isOpen = expanded === c.clientId;
+            return (
+              <div key={c.clientId} className="border border-gray-200 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(v => v === c.clientId ? null : c.clientId)}
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${
+                      c.level === 'l2' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {c.level.toUpperCase()}
+                    </span>
+                    <span className="font-mono text-sm text-gray-800 truncate">{c.clientId}</span>
+                    <span className="text-xs text-gray-400 shrink-0 hidden sm:block">· {c.orgName}</span>
+                  </div>
+                  <svg
+                    className={`w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+                    <div className="grid grid-cols-1 gap-2 text-xs">
+                      {[
+                        ['Organisation', c.orgName],
+                        ['Client ID', c.clientId],
+                        ['Org Reference', c.orgReference],
+                        ['Token Endpoint', c.tokenEndpoint],
+                        ['Created', new Date(c.createdAt).toLocaleString()],
+                      ].map(([label, val]) => (
+                        <div key={label} className="flex items-start gap-2">
+                          <span className="font-medium text-gray-500 w-32 shrink-0">{label}</span>
+                          <code className="font-mono text-gray-700 break-all">{val}</code>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* curl snippet */}
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        {c.level === 'l1' ? 'curl (fill in your secret)' : 'curl (fill in your signed assertion)'}
+                      </p>
+                      <pre className="text-xs font-mono bg-gray-900 text-green-300 rounded p-3 whitespace-pre-wrap overflow-x-auto">{
+                        c.level === 'l1'
+                          ? `curl -s -X POST "${c.tokenEndpoint}" \\\n  -d "grant_type=client_credentials" \\\n  -d "client_id=${c.clientId}" \\\n  -d "client_secret=<YOUR_SECRET>"`
+                          : `curl -s -X POST "${c.tokenEndpoint}" \\\n  -d "grant_type=client_credentials" \\\n  -d "client_id=${c.clientId}" \\\n  -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \\\n  -d "client_assertion=<YOUR_SIGNED_JWT>"`
+                      }</pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const CredentialsPage: React.FC = () => {
-  const { addLog } = useLog();
+  const { addLog }                          = useLog();
+  const { authenticated }                   = useAuth();
   const [tokenResponse, setTokenResponse]   = useState<Record<string, unknown> | null>(null);
   const [assertionData, setAssertionData]   = useState<AssertionParts | null>(null);
   const [loading, setLoading]               = useState(false);
   const [activeParty, setActiveParty]       = useState<Party>('placer');
   const [activeLevel, setActiveLevel]       = useState<Level>('l1');
   const [contextRef, setContextRef]         = useState('');
+  const [copied, setCopied]                 = useState(false);
 
   // Reset assertion inspector when switching party or level
   const switchParty = (p: Party) => { setActiveParty(p); setAssertionData(null); setTokenResponse(null); };
   const switchLevel = (l: Level) => { setActiveLevel(l); setAssertionData(null); setTokenResponse(null); };
+
+  const copyCurl = useCallback(() => {
+    navigator.clipboard.writeText(buildCurlCommand(activeParty, activeLevel, KEYCLOAK_TOKEN_URL, contextRef));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [activeParty, activeLevel, contextRef]);
 
   const handleRequestToken = async () => {
     setLoading(true);
@@ -153,6 +317,9 @@ const CredentialsPage: React.FC = () => {
           Both call Keycloak directly; L2 signs a client-assertion JWT in the browser via Web Crypto API.
         </p>
       </div>
+
+      {/* User's own onboarded clients */}
+      {authenticated && <MyClientsCard />}
 
       {/* Party + Level selectors */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -287,6 +454,20 @@ client_assertion=<signed JWT ↓>`
           </div>
         </div>
 
+        {/* curl equivalent */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-medium text-gray-500">Equivalent curl command</label>
+            <button onClick={copyCurl}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-0.5 rounded border border-gray-200 hover:border-gray-400">
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+          <pre className="p-3 bg-gray-900 text-green-300 rounded text-xs font-mono leading-relaxed whitespace-pre overflow-x-auto">
+            {buildCurlCommand(activeParty, activeLevel, KEYCLOAK_TOKEN_URL, contextRef)}
+          </pre>
+        </div>
+
         <div className="mt-4">
           <button onClick={handleRequestToken} disabled={loading}
             className="btn-primary disabled:opacity-50">
@@ -383,7 +564,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalP</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/placer-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8081/jwks.json" target="_blank" rel="noreferrer">localhost:8081/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${VITE_PLACER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{VITE_PLACER_EXTERNAL_URL}/jwks.json</a></span>
               </td>
             </tr>
             <tr>
@@ -392,7 +573,7 @@ client_assertion=<signed JWT ↓>`
               <td className="py-2">HospitalF</td>
               <td className="py-2 font-mono text-amber-700">
                 /l2-keys/fulfiller-l2.key
-                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href="http://localhost:8083/jwks.json" target="_blank" rel="noreferrer">localhost:8083/jwks.json</a></span>
+                <span className="text-xs text-gray-500 block">JWKS: <a className="underline" href={`${VITE_FULFILLER_EXTERNAL_URL}/jwks.json`} target="_blank" rel="noreferrer">{VITE_FULFILLER_EXTERNAL_URL}/jwks.json</a></span>
               </td>
             </tr>
           </tbody>

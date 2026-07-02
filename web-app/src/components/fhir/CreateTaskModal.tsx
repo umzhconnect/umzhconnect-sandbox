@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
-import type { AllTasksResponse } from '../../hooks/useFhirSearch';
-import { usePartnerClient } from '../../hooks/useFhirClient';
+import { useM2mToken } from '../../hooks/useFhirClient';
+import { FhirClient } from '../../services/fhir-client';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import type { FhirResource, Task, ServiceRequest, Organization, Endpoint } from '../../types/fhir';
 import LoadingSpinner from '../common/LoadingSpinner';
+import ManualCredentialForm, {
+  ManualClientToggle,
+  acquireTokenWithCredential,
+  manualCredIsReady,
+  EMPTY_MANUAL_CREDENTIAL,
+  type ManualCredential,
+} from '../common/ManualCredentialForm';
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -23,17 +30,22 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   defaultSRId,
   onSuccessResource,
 }) => {
-  const { activeRole, apiBasePath, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownOrgRegistryRef, ownL2ClientId } = useRole();
+  const { activeRole, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownL2ClientId, keycloakTokenUrl } = useRole();
   const { addLog } = useLog();
-  const getPartnerClient = usePartnerClient();
+  const getM2mToken = useM2mToken();
   const queryClient = useQueryClient();
 
-  // Form state — initialise SR from default so it's correct on the very first render
+  // Form state
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('routine');
   const [selectedSRId, setSelectedSRId] = useState(defaultSRId ?? '');
+  const [selectedTargetOrgId, setSelectedTargetOrgId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Manual client state
+  const [manualMode, setManualMode] = useState(false);
+  const [manualCred, setManualCred] = useState<ManualCredential>(EMPTY_MANUAL_CREDENTIAL);
 
   // Fetch local resources (only when modal is open)
   const { data: srBundle, isLoading: srLoading } = useFhirSearch<ServiceRequest>(
@@ -43,7 +55,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   );
   const { data: registryBundle, isLoading: orgLoading } = useRegistrySearch<FhirResource>(
     'Organization',
-    { '_include': 'Organization:endpoint' },
+    { '_revinclude': 'Endpoint:organization' },
     open
   );
 
@@ -56,36 +68,55 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     ?.map((e) => e.resource)
     .filter((r): r is Endpoint => r?.resourceType === 'Endpoint')) ?? [];
 
-  // Discover partner organization and its FHIR endpoint from the registry.
+  // Own org alias — exclude self from target list
+  const ownAlias = activeRole === 'placer' ? 'HospitalP' : 'HospitalF';
   const partnerAlias = activeRole === 'placer' ? 'HospitalF' : 'HospitalP';
-  const partnerOrg = organizations.find((org) => org.alias?.includes(partnerAlias));
-  const partnerEndpoint = endpoints.find((ep) =>
-    ep.managingOrganization?.reference?.endsWith(`/Organization/${partnerAlias}`)
-  );
-  const partnerApiHost = partnerEndpoint?.address ?? partnerExternalBaseUrl;
 
-  // Build the owner reference using the registry URL and the Organisation's canonical
-  // alias (e.g. "HospitalF"), which is the stable ID in the registry partition.
-  // Using a registry URL keeps the reference neutral — neither party's own server.
-  const partnerOrgRegistryRef =
-    partnerOrg?.alias?.[0] ? `${registryBaseUrl}/Organization/${partnerOrg.alias[0]}` : undefined;
+  // Build list of orgs that have a resolvable Endpoint (potential task targets)
+  const targetableOrgs = organizations
+    .filter((org) => !org.alias?.includes(ownAlias))
+    .flatMap((org) => {
+      const endpoint = endpoints.find(
+        (ep) =>
+          ep.managingOrganization?.reference?.endsWith(`/Organization/${org.id}`) ||
+          ep.managingOrganization?.reference?.endsWith(`Organization/${org.id}`)
+      );
+      return endpoint ? [{ org, endpoint }] : [];
+    });
+
+  // Seed partner entry (always first / default)
+  const partnerEntry = targetableOrgs.find((t) => t.org.alias?.includes(partnerAlias));
+
+  // Selected target: explicit selection, or fall back to seed partner
+  const selectedEntry =
+    targetableOrgs.find((t) => t.org.id === selectedTargetOrgId) ?? partnerEntry ?? null;
+
+  const effectiveApiHost  = selectedEntry?.endpoint.address ?? partnerExternalBaseUrl;
+  const effectiveOwnerRef = selectedEntry
+    ? `${registryBaseUrl}/Organization/${selectedEntry.org.id}`
+    : undefined;
+  const effectiveOwnerName = selectedEntry?.org.name ?? selectedEntry?.org.alias?.[0];
 
   // Derive patient from selected ServiceRequest, fallback to PetraMeier
   const selectedSR = serviceRequests.find((sr) => sr.id === selectedSRId) ?? null;
-  const patientRef = selectedSR?.subject?.reference ?? 'Patient/PetraMeier';
-  const patientDisplay = selectedSR?.subject?.display ?? 'Petra Meier';
+  const patientRef    = selectedSR?.subject?.reference ?? 'Patient/PetraMeier';
+  const patientDisplay = selectedSR?.subject?.display  ?? 'Petra Meier';
 
-  // Reset / initialise form on open/close
+  // Reset form on open/close
   useEffect(() => {
     if (open) {
       setSelectedSRId(defaultSRId ?? '');
+      setSelectedTargetOrgId('');
       setDescription('');
       setPriority('routine');
       setError(null);
+      setManualMode(false);
+      setManualCred(EMPTY_MANUAL_CREDENTIAL);
     } else {
       setDescription('');
       setPriority('routine');
       setSelectedSRId('');
+      setSelectedTargetOrgId('');
       setError(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -94,8 +125,6 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setSubmitting(true);
     setError(null);
 
-    // All references inside the Task body must use ownExternalBaseUrl (this
-    // party's external gateway) so the receiving party can resolve them.
     const srRef = selectedSRId
       ? `${ownExternalBaseUrl}/ServiceRequest/${selectedSRId}`
       : undefined;
@@ -108,70 +137,30 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       description: description || undefined,
       ...(srRef && {
         basedOn: [{ reference: srRef }],
-        focus: { reference: srRef },
+        focus:   { reference: srRef },
       }),
       for: { reference: `${ownExternalBaseUrl}/${patientRef}`, display: patientDisplay },
       authoredOn: new Date().toISOString(),
-      // The IG profile (ch-umzh-connect-coordinationtask) constrains
-      // Task.requester to Reference(Organization) with an absolute URL, and the
-      // partner's external gateway filters Task searches by this organization
-      // reference — so it must be THIS party's registry Organization, not a
-      // PractitionerRole. See issue #24.
       requester: {
-        reference: ownOrgRegistryRef,
+        reference: `${ownExternalBaseUrl}/PractitionerRole/HansMusterRole`,
+        display:   'Dr. med. Hans Muster',
       },
-      ...(partnerOrgRegistryRef && {
-        owner: {
-          reference: partnerOrgRegistryRef,
-          display: partnerOrg?.name ?? partnerOrg?.alias?.[0],
-        },
+      ...(effectiveOwnerRef && {
+        owner: { reference: effectiveOwnerRef, display: effectiveOwnerName },
       }),
     };
 
-    addLog({ type: 'info', message: `Creating Task → ${partnerApiHost}/fhir/Task (direct, in-browser M2M token)` });
+    const credReady = manualMode && manualCredIsReady(manualCred);
+    addLog({ type: 'info', message: `Creating Task → ${effectiveApiHost}/fhir/Task (${credReady ? `manual ${manualCred.level.toUpperCase()} client` : 'in-browser M2M token'})` });
 
     try {
-      // Authenticate the cross-party write ourselves: mint an M2M token (no
-      // fhirContext — Task create is not fhirContext-gated) and POST directly
-      // to the partner's external gateway. No internal-gateway proxy involved.
-      const partner = await getPartnerClient();
-      const result = await partner.create<Task>(task);
+      const m2mToken = credReady
+        ? await acquireTokenWithCredential(keycloakTokenUrl, manualCred)
+        : await getM2mToken();
+      const client   = new FhirClient(effectiveApiHost, m2mToken, addLog);
+      const result   = await client.create<Task>(task);
 
-      // Await invalidation so any CURRENTLY-ACTIVE all-tasks subscriber
-      // completes its refetch first (same post-fetch injection pattern as SR).
       await queryClient.invalidateQueries({ queryKey: ['all-tasks'] });
-
-      // The task was created on the PARTNER's FHIR partition ('local' from
-      // their perspective). Inject it into the partner's all-tasks cache after
-      // the invalidation refetch, so switching to their view shows the task
-      // immediately even if the FHIR server hasn't indexed it yet.
-      // setQueryData also resets isInvalidated=false, preventing a background
-      // refetch from silently removing the injected task.
-      const partnerRole = activeRole === 'placer' ? 'fulfiller' : 'placer';
-      queryClient.setQueryData<AllTasksResponse>(
-        ['all-tasks', partnerRole, {}],
-        (old): AllTasksResponse => {
-          const newEntry = { resource: result };
-          const emptyBundle = {
-            resourceType: 'Bundle' as const,
-            type: 'searchset' as const,
-            total: 0,
-            entry: [] as { resource: Task }[],
-          };
-          if (!old) {
-            return { local: { ...emptyBundle, total: 1, entry: [newEntry] }, remote: emptyBundle };
-          }
-          if (old.local?.entry?.some((e) => e.resource?.id === result.id)) return old;
-          return {
-            ...old,
-            local: {
-              ...old.local,
-              total: (old.local?.total ?? 0) + 1,
-              entry: [...(old.local?.entry ?? []), newEntry],
-            },
-          };
-        }
-      );
 
       onSuccessResource?.(result);
       onSuccess();
@@ -188,19 +177,12 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const isLoading = srLoading || orgLoading;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      {/* Modal */}
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">Create New Task</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">
             ×
           </button>
         </div>
@@ -211,27 +193,61 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             <LoadingSpinner message="Loading clinical data…" />
           ) : (
             <>
-              {/* Routing panel — tag-based partner discovery */}
-              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
-                <p className="font-medium text-blue-800 mb-1">Direct cross-party create (in-browser M2M token)</p>
-                {partnerOrg ? (
-                  <div className="text-blue-700 space-y-0.5">
+              {/* Routing panel */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm space-y-3">
+                <p className="font-medium text-blue-800">Direct cross-party create (in-browser M2M token)</p>
+
+                {/* Target org selector */}
+                <div>
+                  <label className="block text-xs font-medium text-blue-700 mb-1">
+                    Target organisation
+                  </label>
+                  {targetableOrgs.length === 0 ? (
+                    <p className="text-blue-600 italic text-xs">No organisations with endpoints found in registry.</p>
+                  ) : (
+                    <select
+                      value={selectedTargetOrgId}
+                      onChange={(e) => setSelectedTargetOrgId(e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                      {targetableOrgs.map(({ org }) => (
+                        <option key={org.id} value={org.id!}>
+                          {org.name ?? org.alias?.[0] ?? org.id}
+                          {org.alias?.includes(partnerAlias) ? ' (sandbox partner)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Resolved routing info */}
+                {selectedEntry && (
+                  <div className="text-blue-700 space-y-0.5 text-xs">
                     <p>
-                      <span className="font-medium">Target:</span>{' '}
-                      {partnerOrg.name ?? partnerOrg.alias?.[0] ?? partnerOrg.id}
+                      <span className="font-medium">External host:</span>{' '}
+                      <code className="bg-blue-100 px-1 rounded">{effectiveApiHost}</code>
                     </p>
                     <p>
                       <span className="font-medium">Authenticating client:</span>{' '}
-                      <code className="bg-blue-100 px-1 rounded">{ownL2ClientId || '—'}</code>
-                    </p>
-                    <p>
-                      <span className="font-medium">External host:</span>{' '}
-                      <code className="bg-blue-100 px-1 rounded">{partnerApiHost ?? '—'}</code>
+                      <code className="bg-blue-100 px-1 rounded">
+                        {manualMode && manualCred.clientId ? manualCred.clientId : (ownL2ClientId || '—')}
+                      </code>
                     </p>
                   </div>
-                ) : (
-                  <p className="text-blue-600 italic">Partner organization not found in local partition.</p>
                 )}
+
+                {/* Manual client toggle */}
+                <div className="pt-1">
+                  <ManualClientToggle
+                    enabled={manualMode}
+                    onToggle={() => setManualMode(v => !v)}
+                    ready={manualMode && manualCredIsReady(manualCred)}
+                    level={manualCred.level}
+                  />
+                  {manualMode && (
+                    <ManualCredentialForm cred={manualCred} onChange={setManualCred} />
+                  )}
+                </div>
               </div>
 
               {/* Task Details */}
@@ -241,9 +257,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 </h3>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -254,9 +268,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Priority
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
@@ -308,7 +320,6 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 </p>
               </div>
 
-              {/* Error */}
               {error && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                   {error}
@@ -325,7 +336,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || isLoading || !partnerOrgRegistryRef}
+            disabled={submitting || isLoading || !effectiveOwnerRef}
             className="btn-primary disabled:opacity-50"
           >
             {submitting ? 'Creating…' : 'Create Task'}

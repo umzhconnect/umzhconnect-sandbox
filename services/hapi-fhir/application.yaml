@@ -41,9 +41,12 @@ hapi:
     defer_indexing_for_codesystems_of_size: 0
     # Narrative generation
     narrative_enabled: false
-    # CORS settings
+    # CORS wildcard — HAPI FHIR is not internet-accessible (127.0.0.1 binding,
+    # only reachable via APISIX). APISIX forwards the browser Origin header
+    # transparently, so HAPI must accept it. Actual security enforcement (JWT
+    # validation, OPA consent) happens at the APISIX layer.
     cors:
-      allow_credentials: true
+      allow_credentials: false
       allowed_origin:
         - "*"
     # Paging
