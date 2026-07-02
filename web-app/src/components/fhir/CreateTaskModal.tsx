@@ -7,6 +7,13 @@ import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
 import type { FhirResource, Task, ServiceRequest, Organization, Endpoint } from '../../types/fhir';
 import LoadingSpinner from '../common/LoadingSpinner';
+import ManualCredentialForm, {
+  ManualClientToggle,
+  acquireTokenWithCredential,
+  manualCredIsReady,
+  EMPTY_MANUAL_CREDENTIAL,
+  type ManualCredential,
+} from '../common/ManualCredentialForm';
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -23,7 +30,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   defaultSRId,
   onSuccessResource,
 }) => {
-  const { activeRole, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownL2ClientId } = useRole();
+  const { activeRole, partnerExternalBaseUrl, ownExternalBaseUrl, registryBaseUrl, ownL2ClientId, keycloakTokenUrl } = useRole();
   const { addLog } = useLog();
   const getM2mToken = useM2mToken();
   const queryClient = useQueryClient();
@@ -35,6 +42,10 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [selectedTargetOrgId, setSelectedTargetOrgId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Manual client state
+  const [manualMode, setManualMode] = useState(false);
+  const [manualCred, setManualCred] = useState<ManualCredential>(EMPTY_MANUAL_CREDENTIAL);
 
   // Fetch local resources (only when modal is open)
   const { data: srBundle, isLoading: srLoading } = useFhirSearch<ServiceRequest>(
@@ -99,6 +110,8 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       setDescription('');
       setPriority('routine');
       setError(null);
+      setManualMode(false);
+      setManualCred(EMPTY_MANUAL_CREDENTIAL);
     } else {
       setDescription('');
       setPriority('routine');
@@ -137,10 +150,13 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       }),
     };
 
-    addLog({ type: 'info', message: `Creating Task → ${effectiveApiHost}/fhir/Task (direct, in-browser M2M token)` });
+    const credReady = manualMode && manualCredIsReady(manualCred);
+    addLog({ type: 'info', message: `Creating Task → ${effectiveApiHost}/fhir/Task (${credReady ? `manual ${manualCred.level.toUpperCase()} client` : 'in-browser M2M token'})` });
 
     try {
-      const m2mToken = await getM2mToken();
+      const m2mToken = credReady
+        ? await acquireTokenWithCredential(keycloakTokenUrl, manualCred)
+        : await getM2mToken();
       const client   = new FhirClient(effectiveApiHost, m2mToken, addLog);
       const result   = await client.create<Task>(task);
 
@@ -213,10 +229,25 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                     </p>
                     <p>
                       <span className="font-medium">Authenticating client:</span>{' '}
-                      <code className="bg-blue-100 px-1 rounded">{ownL2ClientId || '—'}</code>
+                      <code className="bg-blue-100 px-1 rounded">
+                        {manualMode && manualCred.clientId ? manualCred.clientId : (ownL2ClientId || '—')}
+                      </code>
                     </p>
                   </div>
                 )}
+
+                {/* Manual client toggle */}
+                <div className="pt-1">
+                  <ManualClientToggle
+                    enabled={manualMode}
+                    onToggle={() => setManualMode(v => !v)}
+                    ready={manualMode && manualCredIsReady(manualCred)}
+                    level={manualCred.level}
+                  />
+                  {manualMode && (
+                    <ManualCredentialForm cred={manualCred} onChange={setManualCred} />
+                  )}
+                </div>
               </div>
 
               {/* Task Details */}

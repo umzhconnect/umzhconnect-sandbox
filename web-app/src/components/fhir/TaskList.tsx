@@ -17,13 +17,14 @@ interface TaggedTask extends Task {
 interface TaskListProps {
   remoteBaseUrl?: string | null;
   remoteOrgName?: string | null;
+  customGetToken?: (fhirContextRef?: string) => Promise<string>;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName }) => {
+const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName, customGetToken }) => {
   const { activeRole, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
-  const crossPartyFetch = useCrossPartyFetch();
+  const crossPartyFetch = useCrossPartyFetch(customGetToken);
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState('');
@@ -40,7 +41,7 @@ const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName }) => 
   const searchParams: Record<string, string> = {};
   if (statusFilter) searchParams['status'] = statusFilter;
 
-  const { data: allTasksData, isLoading, error } = useAllTasks(searchParams, remoteBaseUrl);
+  const { data: allTasksData, isLoading, error } = useAllTasks(searchParams, remoteBaseUrl, customGetToken);
 
   const tasks: TaggedTask[] = [
     ...((allTasksData?.local?.entry?.map((e) => e.resource).filter(Boolean) as Task[]) || [])
@@ -322,9 +323,8 @@ const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName }) => 
       </div>
       {/* ServiceRequest Content Modal */}
       {srModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSrModalOpen(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setSrModalOpen(false)}>
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
             {/* Header */}
             <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">

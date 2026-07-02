@@ -1,12 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   registerUser,
   createInvite,
   createClient,
+  listMyOrganisations,
+  listOrgHealthcareServices,
+  addHealthcareService,
   type CreateClientResponse,
   type InviteResponse,
+  type MyOrganisation,
+  type HealthcareService,
 } from '../services/onboarding-api';
+
+// ─── Healthcare service type catalogue ───────────────────────────────────────
+
+const HC_SERVICE_TYPES = [
+  { code: '124', display: 'General Practice' },
+  { code: '147', display: 'Pathology / Laboratory' },
+  { code: '177', display: 'Pharmacy' },
+  { code: '310', display: 'Diagnostic Imaging / Radiology' },
+  { code: '411', display: 'Surgical' },
+  { code: '27',  display: 'Specialist — Cardiology' },
+  { code: '52',  display: 'Specialist — Neurology' },
+  { code: '276', display: 'Specialist — Orthopaedics' },
+] as const;
 
 // ─── Registration form ────────────────────────────────────────────────────────
 
@@ -198,15 +216,15 @@ const ResultCard: React.FC<{ result: CreateClientResponse; onReset: () => void }
 
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
       <dl className="space-y-4">
-        <CopyField label="Client ID"         value={result.clientId} mono />
+        <CopyField label="Client ID"                  value={result.clientId}    mono />
         {result.clientSecret && (
-          <CopyField label="Client Secret"   value={result.clientSecret} mono />
+          <CopyField label="Client Secret"            value={result.clientSecret} mono />
         )}
         {result.jwksUrl && (
-          <CopyField label="JWKS URL (configured)" value={result.jwksUrl} mono />
+          <CopyField label="JWKS URL (configured)"   value={result.jwksUrl}     mono />
         )}
-        <CopyField label="Organisation reference" value={result.orgReference} mono />
-        <CopyField label="Token endpoint"    value={result.tokenEndpoint} mono />
+        <CopyField label="Organisation reference"     value={result.orgReference} mono />
+        <CopyField label="Token endpoint"             value={result.tokenEndpoint} mono />
       </dl>
     </div>
 
@@ -334,11 +352,208 @@ const InvitePanel: React.FC = () => {
   );
 };
 
+// ─── Healthcare services panel ────────────────────────────────────────────────
+
+const HealthcareServicesPanel: React.FC<{ org: MyOrganisation }> = ({ org }) => {
+  const { getToken } = useAuth();
+  const [services, setServices]     = useState<HealthcareService[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [adding, setAdding]         = useState(false);
+  const [showForm, setShowForm]     = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [form, setForm]             = useState<{ name: string; typeCode: string }>({ name: '', typeCode: HC_SERVICE_TYPES[0].code });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const svcs = await listOrgHealthcareServices(org.orgId, token);
+        if (!cancelled) setServices(svcs);
+      } catch {
+        // ignore — org may have no services yet
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [org.orgId]);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdding(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('No auth token');
+      const type    = HC_SERVICE_TYPES.find(t => t.code === form.typeCode)!;
+      const created = await addHealthcareService(
+        org.orgId,
+        { name: form.name, typeCode: type.code, typeDisplay: type.display },
+        token,
+      );
+      setServices(prev => [...prev, created]);
+      setForm({ name: '', typeCode: HC_SERVICE_TYPES[0].code });
+      setShowForm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add service');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border border-gray-100 rounded-lg bg-gray-50 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+          Healthcare Services
+        </h3>
+        <button
+          onClick={() => setShowForm(v => !v)}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {showForm ? 'Cancel' : '+ Add service'}
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : services.length === 0 ? (
+        <p className="text-xs text-gray-400">No services registered yet.</p>
+      ) : (
+        <ul className="space-y-1">
+          {services.map(s => (
+            <li key={s.id} className="flex items-center gap-2 text-xs">
+              <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+              <span className="font-medium text-gray-700">{s.name}</span>
+              <span className="text-gray-400">— {s.typeDisplay || s.typeCode}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showForm && (
+        <form onSubmit={handleAdd} className="space-y-3 pt-2 border-t border-gray-200">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Service name</label>
+            <input
+              required
+              placeholder="e.g. Radiology Department"
+              value={form.name}
+              onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Service type</label>
+            <select
+              value={form.typeCode}
+              onChange={e => setForm(prev => ({ ...prev, typeCode: e.target.value }))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {HC_SERVICE_TYPES.map(t => (
+                <option key={t.code} value={t.code}>{t.display}</option>
+              ))}
+            </select>
+          </div>
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={adding}
+            className="px-4 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {adding ? 'Adding…' : 'Add service'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+};
+
+// ─── My organisations section (standalone — no client creation) ───────────────
+
+const MyOrganisationsSection: React.FC = () => {
+  const { getToken } = useAuth();
+  const [orgs, setOrgs]             = useState<MyOrganisation[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const data = await listMyOrganisations(token);
+        if (!cancelled) setOrgs(data);
+      } catch {
+        // user may have no orgs yet — silently skip
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading || orgs.length === 0) return null;
+
+  return (
+    <div className="max-w-xl mx-auto">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-700">My Organisations</h2>
+
+        <div className="space-y-2">
+          {orgs.map(org => (
+            <div key={org.orgId} className="border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setExpandedId(v => v === org.orgId ? null : org.orgId)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+              >
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-gray-900">{org.orgName}</span>
+                  {org.orgIdentifier && (
+                    <span className="ml-2 text-xs text-gray-400">GLN {org.orgIdentifier}</span>
+                  )}
+                </div>
+                <svg
+                  className={`w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform ${expandedId === org.orgId ? 'rotate-90' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {expandedId === org.orgId && (
+                <div className="px-4 pb-4 border-t border-gray-100">
+                  <HealthcareServicesPanel org={org} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Client onboarding wizard ─────────────────────────────────────────────────
 
 const OnboardingWizard: React.FC = () => {
   const { getToken } = useAuth();
 
+  // Org mode
+  const [orgMode, setOrgMode]           = useState<'new' | 'existing'>('new');
+  const [myOrgs, setMyOrgs]             = useState<MyOrganisation[]>([]);
+  const [orgsLoading, setOrgsLoading]   = useState(false);
+  const [orgsError, setOrgsError]       = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState('');
+
+  // New-org fields
   const [form, setForm] = useState({
     orgName:       '',
     orgIdentifier: '',
@@ -346,12 +561,37 @@ const OnboardingWizard: React.FC = () => {
     level:         'l1' as 'l1' | 'l2',
     jwksUrl:       '',
   });
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
-  const [result, setResult]     = useState<CreateClientResponse | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [result, setResult]   = useState<CreateClientResponse | null>(null);
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [field]: e.target.value }));
+
+  // Load user's orgs when switching to "existing" mode
+  useEffect(() => {
+    if (orgMode !== 'existing') return;
+    let cancelled = false;
+    (async () => {
+      setOrgsLoading(true);
+      setOrgsError(null);
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const orgs = await listMyOrganisations(token);
+        if (!cancelled) {
+          setMyOrgs(orgs);
+          if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].orgId);
+        }
+      } catch (err) {
+        if (!cancelled) setOrgsError(err instanceof Error ? err.message : 'Failed to load organisations');
+      } finally {
+        if (!cancelled) setOrgsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orgMode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,14 +600,21 @@ const OnboardingWizard: React.FC = () => {
     try {
       const token = await getToken();
       if (!token) throw new Error('No auth token — please log in again');
+
       const res = await createClient(
-        {
-          orgName:        form.orgName,
-          orgIdentifier:  form.orgIdentifier || undefined,
-          fhirBaseUrl:    form.fhirBaseUrl   || undefined,
-          level:          form.level,
-          jwksUrl:        form.level === 'l2' ? form.jwksUrl : undefined,
-        },
+        orgMode === 'existing'
+          ? {
+              existingOrgId: selectedOrgId,
+              level:   form.level,
+              jwksUrl: form.level === 'l2' ? form.jwksUrl : undefined,
+            }
+          : {
+              orgName:       form.orgName,
+              orgIdentifier: form.orgIdentifier || undefined,
+              fhirBaseUrl:   form.fhirBaseUrl   || undefined,
+              level:         form.level,
+              jwksUrl:       form.level === 'l2' ? form.jwksUrl : undefined,
+            },
         token,
       );
       setResult(res);
@@ -382,6 +629,8 @@ const OnboardingWizard: React.FC = () => {
     return <ResultCard result={result} onReset={() => setResult(null)} />;
   }
 
+  const selectedOrg = myOrgs.find(o => o.orgId === selectedOrgId) ?? null;
+
   return (
     <div className="max-w-xl mx-auto space-y-6">
       <div>
@@ -394,49 +643,119 @@ const OnboardingWizard: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 space-y-5">
 
-        {/* Organisation details */}
+        {/* Organisation section */}
         <section className="space-y-4">
           <h2 className="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-2">
             Organisation
           </h2>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Organisation name <span className="text-red-500">*</span>
-            </label>
-            <input
-              required
-              placeholder="e.g. Hospital Z AG"
-              value={form.orgName}
-              onChange={set('orgName')}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          {/* Mode toggle */}
+          <div className="grid grid-cols-2 gap-2">
+            {(['new', 'existing'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setOrgMode(mode)}
+                className={`py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  orgMode === mode
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {mode === 'new' ? 'Create new organisation' : 'Use existing organisation'}
+              </button>
+            ))}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              GLN identifier <span className="text-gray-400">(optional)</span>
-            </label>
-            <input
-              placeholder="e.g. 7601000000000"
-              value={form.orgIdentifier}
-              onChange={set('orgIdentifier')}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          {orgMode === 'new' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Organisation name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required={orgMode === 'new'}
+                  placeholder="e.g. Hospital Z AG"
+                  value={form.orgName}
+                  onChange={set('orgName')}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              FHIR API Base URL <span className="text-gray-400">(optional — creates an Endpoint resource)</span>
-            </label>
-            <input
-              type="url"
-              placeholder="https://fhir.example.org/fhir"
-              value={form.fhirBaseUrl}
-              onChange={set('fhirBaseUrl')}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  GLN identifier <span className="text-gray-400">(optional)</span>
+                </label>
+                <input
+                  placeholder="e.g. 7601000000000"
+                  value={form.orgIdentifier}
+                  onChange={set('orgIdentifier')}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  FHIR API Base URL <span className="text-gray-400">(optional — creates an Endpoint resource)</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://fhir.example.org/fhir"
+                  value={form.fhirBaseUrl}
+                  onChange={set('fhirBaseUrl')}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {orgMode === 'existing' && (
+            <div className="space-y-3">
+              {orgsLoading && (
+                <p className="text-sm text-gray-400">Loading your organisations…</p>
+              )}
+              {orgsError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{orgsError}</p>
+              )}
+              {!orgsLoading && !orgsError && myOrgs.length === 0 && (
+                <div className="text-sm text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg px-4 py-3">
+                  You have no organisations yet.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setOrgMode('new')}
+                    className="text-blue-600 hover:underline"
+                  >
+                    Create one first.
+                  </button>
+                </div>
+              )}
+              {!orgsLoading && myOrgs.length > 0 && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-gray-700">Select organisation</label>
+                  <select
+                    value={selectedOrgId}
+                    onChange={e => setSelectedOrgId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {myOrgs.map(org => (
+                      <option key={org.orgId} value={org.orgId}>{org.orgName}</option>
+                    ))}
+                  </select>
+
+                  {selectedOrg && (
+                    <div className="text-xs text-gray-500 space-y-0.5 px-1">
+                      <p><span className="font-medium text-gray-600">Reference:</span>{' '}
+                        <code className="font-mono">{selectedOrg.orgReference}</code>
+                      </p>
+                      {selectedOrg.orgIdentifier && (
+                        <p><span className="font-medium text-gray-600">GLN:</span> {selectedOrg.orgIdentifier}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Auth level */}
@@ -510,7 +829,7 @@ const OnboardingWizard: React.FC = () => {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || (orgMode === 'existing' && !selectedOrgId)}
           className="w-full py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? 'Creating client…' : 'Create client'}
@@ -529,7 +848,7 @@ const OnboardingPage: React.FC = () => {
     return <RegistrationPanel />;
   }
 
-  const isAdmin = roles.includes('admin');
+  const isAdmin    = roles.includes('admin');
   const canOnboard = isAdmin || roles.includes('user');
 
   if (!canOnboard) {
@@ -542,8 +861,9 @@ const OnboardingPage: React.FC = () => {
   }
 
   return (
-    <div className="py-6">
+    <div className="py-6 space-y-8">
       {isAdmin && <InvitePanel />}
+      <MyOrganisationsSection />
       <OnboardingWizard />
     </div>
   );

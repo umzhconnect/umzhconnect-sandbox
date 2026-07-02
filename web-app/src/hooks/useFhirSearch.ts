@@ -72,21 +72,26 @@ export function useFhirRead<T extends FhirResource>(
  * from a specific remote org. When omitted or null, only local tasks are
  * returned — the remote half stays empty until the caller has an org selected.
  */
-export function useAllTasks(params?: Record<string, string>, remoteBaseUrl?: string | null) {
+export function useAllTasks(
+  params?: Record<string, string>,
+  remoteBaseUrl?: string | null,
+  overrideGetToken?: (fhirContextRef?: string) => Promise<string>,
+) {
   const client = useFhirClient();
   const getM2mToken = useM2mToken();
   const { addLog } = useLog();
   const { activeRole } = useRole();
+  const effectiveGetToken = overrideGetToken ?? getM2mToken;
 
   return useQuery<AllTasksResponse>({
-    queryKey: ['all-tasks', activeRole, params, remoteBaseUrl ?? null],
+    queryKey: ['all-tasks', activeRole, params, remoteBaseUrl ?? null, !!overrideGetToken],
     queryFn: async () => {
       const localPromise = client.search('Task', params).catch(() => EMPTY_BUNDLE);
 
       const remotePromise =
         activeRole === 'registry' || !remoteBaseUrl
           ? Promise.resolve(EMPTY_BUNDLE)
-          : getM2mToken()
+          : effectiveGetToken()
               .then((token) => new FhirClient(remoteBaseUrl, token, addLog).search('Task', params))
               .catch(() => EMPTY_BUNDLE);
 

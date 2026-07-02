@@ -5,15 +5,20 @@
 // Merged admin surface (formerly the separate reseed-api + onboarding-api).
 //
 //   Seed management:
-//     POST /reseed       Expunge all FHIR partitions, then reload seed bundles
+//     POST /reseed                                      Expunge + reload seed bundles  (admin)
 //
-//   Onboarding:
-//     POST /invites      Generate a single-use registration token (admin-only)
-//     POST /register     Create a Keycloak user from a valid invite token
-//     GET  /clients      List onboarded M2M clients
-//     POST /clients      Onboard a new M2M client (L1 or L2) + FHIR org
+//   Registration:
+//     POST /invites                                     Generate single-use invite token (admin)
+//     POST /register                                    Create Keycloak user from invite (public)
 //
-//   GET  /health         Liveness check
+//   M2M client & organisation management:
+//     GET  /my-clients                                  Caller's own M2M clients        (admin|user)
+//     POST /my-clients                                  Onboard new M2M client + FHIR org (admin|user)
+//     GET  /my-organisations                            Caller's own organisations       (admin|user)
+//     GET  /organisations/:orgId/healthcare-services    List HealthcareService resources  (admin|user)
+//     POST /organisations/:orgId/healthcare-services    Add HealthcareService resource    (admin|user)
+//
+//   GET  /health                                        Liveness check                   (public)
 //
 // Intended as an internal sandbox utility; CORS is wide-open. Privileged
 // routes are gated by Keycloak token introspection + realm-role checks.
@@ -46,7 +51,6 @@ const PORT                   = parseInt(process.env.PORT || '9000', 10);
 const ALLOWED_ORIGIN         = process.env.WEB_APP_PUBLIC_URL || 'http://localhost:3000';
 
 const INVITE_FILE   = '/data/invites.json';
-const CLIENTS_FILE  = '/data/clients.json';
 const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
 
 const ADMIN_API      = `${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}`;
@@ -80,7 +84,8 @@ const DEFAULT_SCOPES = [
   'system/Appointment.r',
 ];
 
-const FHIR_BASE_URL_EXT = 'https://umzhconnect.ch/ext/fhir-base-url';
+const FHIR_BASE_URL_EXT    = 'https://umzhconnect.ch/ext/fhir-base-url';
+const CREATOR_USER_ID_EXT  = 'https://umzhconnect.ch/ext/creator-user-id';
 
 // ===========================================================================
 // Keycloak helpers
@@ -203,6 +208,33 @@ async function fhirPatch(partition, resourcePath, patch) {
   return res.json();
 }
 
+// Throwing helper: GET a resource from a partition, returns parsed JSON.
+async function fhirGet(partition, resourcePath) {
+  const url = `${FHIR_BASE}/${partition}/${resourcePath}`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/fhir+json' },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`FHIR GET /${partition}/${resourcePath} failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+// Throwing helper: search a partition, returns parsed Bundle JSON.
+async function fhirSearch(partition, resourceType, params) {
+  const qs  = new URLSearchParams(params).toString();
+  const url = `${FHIR_BASE}/${partition}/${resourceType}${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/fhir+json' },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`FHIR search /${partition}/${resourceType} failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
 // Non-throwing helper for the reseed flow: POST raw JSON to an arbitrary FHIR
 // path and return { status, body } so the caller can log/branch on the status.
 async function fhirPostRaw(path, body) {
@@ -213,6 +245,31 @@ async function fhirPostRaw(path, body) {
   });
   const text = await res.text();
   return { status: res.status, body: text };
+}
+
+// Validate an incoming Bearer token and require admin OR user realm role.
+// Returns { tokenInfo } on success or { error: { status, message } } on failure.
+async function requireUser(req) {
+  const authHeader = req.headers['authorization'] || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return { error: { status: 401, message: 'Authorization: Bearer <token> required' } };
+  }
+  const token = authHeader.slice(7);
+  let info;
+  try {
+    info = await introspectToken(token);
+  } catch (err) {
+    console.error('Token introspection failed:', err.message);
+    return { error: { status: 503, message: 'Auth service unavailable' } };
+  }
+  if (!info || !info.active) {
+    return { error: { status: 401, message: 'Token is not active' } };
+  }
+  const roles = info.realm_access?.roles || info.realm_roles || [];
+  if (!roles.includes('admin') && !roles.includes('user')) {
+    return { error: { status: 403, message: 'admin or user role required' } };
+  }
+  return { tokenInfo: info };
 }
 
 // ===========================================================================
@@ -247,13 +304,22 @@ function saveInvites(invites) {
   fs.writeFileSync(INVITE_FILE, JSON.stringify(invites, null, 2));
 }
 
-function loadClients() {
-  try { return JSON.parse(fs.readFileSync(CLIENTS_FILE, 'utf8')); }
-  catch { return []; }
+// ===========================================================================
+// Keycloak: owner-scoped client queries
+// ===========================================================================
+
+// Returns all Keycloak clients whose creator.user.id attribute matches userId.
+async function kcGetClientsByCreator(userId, adminToken) {
+  return kcGet(
+    `/clients?q=creator.user.id:${encodeURIComponent(userId)}&max=200`,
+    adminToken,
+  );
 }
 
-function saveClients(clients) {
-  fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
+// Returns true if the user owns at least one client linked to orgId.
+async function userOwnsOrg(userId, orgId, adminToken) {
+  const clients = await kcGetClientsByCreator(userId, adminToken);
+  return clients.some(kc => (kc.attributes || {})['org.id'] === orgId);
 }
 
 // ===========================================================================
@@ -348,16 +414,7 @@ async function handleRegister(body) {
   };
 }
 
-// GET /clients  (admin-only)
-async function handleListClients(bearerToken) {
-  const tokenInfo = await introspectToken(bearerToken);
-  if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
-  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
-  if (!roles.includes('admin')) return { status: 403, body: { error: 'admin role required' } };
-  return { status: 200, body: loadClients() };
-}
-
-// POST /clients
+// POST /my-clients
 async function handleCreateClient(body, bearerToken) {
   // Validate caller
   const tokenInfo = await introspectToken(bearerToken);
@@ -368,10 +425,11 @@ async function handleCreateClient(body, bearerToken) {
   if (!callerRoles.includes('admin') && !callerRoles.includes('user')) {
     return { status: 403, body: { error: 'admin or user role required' } };
   }
+  const creatorUserId = tokenInfo.sub;
 
-  const { orgName, orgIdentifier, fhirBaseUrl, level, jwksUrl } = body;
-  if (!orgName || !level) {
-    return { status: 400, body: { error: 'orgName and level (l1|l2) are required' } };
+  const { orgName: bodyOrgName, orgIdentifier, fhirBaseUrl, level, jwksUrl, existingOrgId } = body;
+  if (!level) {
+    return { status: 400, body: { error: 'level (l1|l2) is required' } };
   }
   if (level !== 'l1' && level !== 'l2') {
     return { status: 400, body: { error: "level must be 'l1' or 'l2'" } };
@@ -379,62 +437,82 @@ async function handleCreateClient(body, bearerToken) {
   if (level === 'l2' && !jwksUrl) {
     return { status: 400, body: { error: 'jwksUrl is required for l2 clients' } };
   }
+  if (!existingOrgId && !bodyOrgName) {
+    return { status: 400, body: { error: 'orgName is required when not using an existing organisation' } };
+  }
 
-  const slug      = toSlug(orgName);
-  const clientId  = `${slug}-${level}-${Date.now().toString(36)}`;
   const adminToken = await getAdminToken();
-
-  // ── 1. Create Organization in FHIR registry ──────────────────────────────
-  const orgResource = {
-    resourceType: 'Organization',
-    active:       true,
-    name:         orgName,
-    ...(orgIdentifier ? {
-      identifier: [{ system: 'urn:oid:2.51.1.3', value: orgIdentifier }],
-    } : {}),
-    ...(fhirBaseUrl ? {
-      extension: [{ url: FHIR_BASE_URL_EXT, valueUrl: fhirBaseUrl }],
-    } : {}),
-    meta: {
-      tag: [{ system: 'https://umzhconnect.ch/tags', code: 'sandbox-onboarded' }],
-    },
-  };
-
-  const createdOrg   = await fhirPost('registry', orgResource);
-  const orgId        = createdOrg.id;
-  const orgReference = `${REGISTRY_EXTERNAL_URL}/fhir/Organization/${orgId}`;
-
-  // ── 1b. Create associated Endpoint (if fhirBaseUrl provided) ─────────────
+  let orgId, orgName, orgReference;
   let endpointId = null;
-  if (fhirBaseUrl) {
-    const endpointResource = {
-      resourceType: 'Endpoint',
-      status:       'active',
-      connectionType: {
-        system: 'http://terminology.hl7.org/CodeSystem/endpoint-connection-type',
-        code:   'hl7-fhir-rest',
-      },
-      name:                 `${orgName} FHIR Endpoint`,
-      managingOrganization: { reference: `Organization/${orgId}` },
-      payloadType: [{
-        coding: [{
-          system: 'http://terminology.hl7.org/CodeSystem/endpoint-payload-type',
-          code:   'any',
-        }],
-      }],
-      address: fhirBaseUrl,
+
+  if (existingOrgId) {
+    // ── Use existing organisation ────────────────────────────────────────
+    if (!callerRoles.includes('admin')) {
+      if (!await userOwnsOrg(creatorUserId, existingOrgId, adminToken)) {
+        return { status: 403, body: { error: 'You do not own this organisation' } };
+      }
+    }
+    const existingOrg = await fhirGet('registry', `Organization/${existingOrgId}`);
+    orgId        = existingOrgId;
+    orgName      = existingOrg.name;
+    orgReference = `${REGISTRY_EXTERNAL_URL}/fhir/Organization/${orgId}`;
+  } else {
+    // ── 1. Create Organization in FHIR registry ──────────────────────────
+    orgName = bodyOrgName;
+    const orgResource = {
+      resourceType: 'Organization',
+      active:       true,
+      name:         orgName,
+      ...(orgIdentifier ? {
+        identifier: [{ system: 'urn:oid:2.51.1.3', value: orgIdentifier }],
+      } : {}),
+      extension: [
+        ...(fhirBaseUrl ? [{ url: FHIR_BASE_URL_EXT, valueUrl: fhirBaseUrl }] : []),
+        { url: CREATOR_USER_ID_EXT, valueString: creatorUserId },
+      ],
       meta: {
         tag: [{ system: 'https://umzhconnect.ch/tags', code: 'sandbox-onboarded' }],
       },
     };
-    const createdEndpoint = await fhirPost('registry', endpointResource);
-    endpointId = createdEndpoint.id;
 
-    // Patch Organization.endpoint so _include=Organization:endpoint also resolves
-    await fhirPatch('registry', `Organization/${orgId}`, [
-      { op: 'add', path: '/endpoint', value: [{ reference: `Endpoint/${endpointId}` }] },
-    ]);
+    const createdOrg = await fhirPost('registry', orgResource);
+    orgId            = createdOrg.id;
+    orgReference     = `${REGISTRY_EXTERNAL_URL}/fhir/Organization/${orgId}`;
+
+    // ── 1b. Create associated Endpoint (if fhirBaseUrl provided) ─────────
+    if (fhirBaseUrl) {
+      const endpointResource = {
+        resourceType: 'Endpoint',
+        status:       'active',
+        connectionType: {
+          system: 'http://terminology.hl7.org/CodeSystem/endpoint-connection-type',
+          code:   'hl7-fhir-rest',
+        },
+        name:                 `${orgName} FHIR Endpoint`,
+        managingOrganization: { reference: `Organization/${orgId}` },
+        payloadType: [{
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/endpoint-payload-type',
+            code:   'any',
+          }],
+        }],
+        address: fhirBaseUrl,
+        meta: {
+          tag: [{ system: 'https://umzhconnect.ch/tags', code: 'sandbox-onboarded' }],
+        },
+      };
+      const createdEndpoint = await fhirPost('registry', endpointResource);
+      endpointId = createdEndpoint.id;
+
+      // Patch Organization.endpoint so _include=Organization:endpoint also resolves
+      await fhirPatch('registry', `Organization/${orgId}`, [
+        { op: 'add', path: '/endpoint', value: [{ reference: `Endpoint/${endpointId}` }] },
+      ]);
+    }
   }
+
+  const slug     = toSlug(orgName);
+  const clientId = `${slug}-${level}-${Date.now().toString(36)}`;
 
   // ── 2. Create Keycloak client ─────────────────────────────────────────────
   const clientPayload = {
@@ -502,12 +580,24 @@ async function handleCreateClient(body, bearerToken) {
     ],
   };
 
+  // Custom attributes — Keycloak is the authoritative store for ownership + org metadata
+  const customAttrs = {
+    'creator.user.id': creatorUserId,
+    'org.id':          orgId,
+    'org.name':        orgName,
+    'org.reference':   orgReference,
+    'created.at':      new Date().toISOString(),
+  };
+  if (fhirBaseUrl) customAttrs['org.fhir.base.url'] = fhirBaseUrl;
+  if (endpointId)  customAttrs['org.endpoint.id']   = endpointId;
+
   // L1: client_secret
   let clientSecret = null;
   if (level === 'l1') {
     clientSecret = generateSecret();
     clientPayload.clientAuthenticatorType = 'client-secret';
     clientPayload.secret = clientSecret;
+    clientPayload.attributes = customAttrs;
   }
 
   // L2: private_key_jwt via user-supplied JWKS URL
@@ -516,6 +606,7 @@ async function handleCreateClient(body, bearerToken) {
     clientPayload.attributes = {
       'use.jwks.url': 'true',
       'jwks.url':     jwksUrl,
+      ...customAttrs,
     };
   }
 
@@ -556,12 +647,181 @@ async function handleCreateClient(body, bearerToken) {
   if (level === 'l1') result.clientSecret = clientSecret;
   if (level === 'l2') result.jwksUrl = jwksUrl;
 
-  // Persist so GET /clients can list all onboarded clients
-  const stored = loadClients();
-  stored.push({ ...result, createdAt: new Date().toISOString() });
-  saveClients(stored);
-
   return { status: 201, body: result };
+}
+
+// GET /my-organisations  (admin or user role — returns caller's own orgs)
+async function handleListMyOrganisations(bearerToken) {
+  const tokenInfo = await introspectToken(bearerToken);
+  if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
+  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
+  if (!roles.includes('admin') && !roles.includes('user')) {
+    return { status: 403, body: { error: 'admin or user role required' } };
+  }
+
+  const userId     = tokenInfo.sub;
+  const adminToken = await getAdminToken();
+  const kcClients  = await kcGetClientsByCreator(userId, adminToken);
+
+  // Deduplicate by org.id — multiple clients may share the same org
+  const seen = new Map();
+  for (const kc of kcClients) {
+    const attrs = kc.attributes || {};
+    const orgId = attrs['org.id'];
+    if (orgId && !seen.has(orgId)) seen.set(orgId, attrs);
+  }
+
+  const orgs = await Promise.all(
+    [...seen.entries()].map(async ([orgId, attrs]) => {
+      try {
+        const org = await fhirGet('registry', `Organization/${orgId}`);
+        return {
+          orgId,
+          orgName:       org.name,
+          orgReference:  attrs['org.reference'],
+          orgIdentifier: org.identifier?.[0]?.value,
+          fhirBaseUrl:   attrs['org.fhir.base.url'] || undefined,
+          createdAt:     attrs['created.at'],
+        };
+      } catch {
+        return {
+          orgId,
+          orgName:      attrs['org.name'],
+          orgReference: attrs['org.reference'],
+          fhirBaseUrl:  attrs['org.fhir.base.url'] || undefined,
+          createdAt:    attrs['created.at'],
+        };
+      }
+    })
+  );
+
+  return { status: 200, body: orgs };
+}
+
+// GET /my-clients  (admin or user role — returns caller's own clients)
+async function handleListMyClients(bearerToken) {
+  const tokenInfo = await introspectToken(bearerToken);
+  if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
+  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
+  if (!roles.includes('admin') && !roles.includes('user')) {
+    return { status: 403, body: { error: 'admin or user role required' } };
+  }
+
+  const userId     = tokenInfo.sub;
+  const adminToken = await getAdminToken();
+  const kcClients  = await kcGetClientsByCreator(userId, adminToken);
+
+  const clients = await Promise.all(kcClients.map(async (kc) => {
+    const attrs = kc.attributes || {};
+    const level = kc.clientAuthenticatorType === 'client-secret' ? 'l1' : 'l2';
+
+    let clientSecret;
+    if (level === 'l1') {
+      try {
+        const secretData = await kcGet(`/clients/${kc.id}/client-secret`, adminToken);
+        clientSecret = secretData.value;
+      } catch { /* secret not retrievable */ }
+    }
+
+    return {
+      clientId:      kc.clientId,
+      level,
+      orgName:       attrs['org.name'],
+      orgId:         attrs['org.id'],
+      orgReference:  attrs['org.reference'],
+      tokenEndpoint: `${KEYCLOAK_PUBLIC_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`,
+      createdAt:     attrs['created.at'],
+      ...(clientSecret                ? { clientSecret }                       : {}),
+      ...(attrs['org.fhir.base.url']  ? { fhirBaseUrl: attrs['org.fhir.base.url'] } : {}),
+      ...(attrs['org.endpoint.id']    ? { endpointId:  attrs['org.endpoint.id']  }  : {}),
+      ...(level === 'l2' && attrs['jwks.url'] ? { jwksUrl: attrs['jwks.url'] } : {}),
+    };
+  }));
+
+  return { status: 200, body: clients };
+}
+
+// GET /organisations/:orgId/healthcare-services
+async function handleListHealthcareServices(orgId, bearerToken) {
+  const tokenInfo = await introspectToken(bearerToken);
+  if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
+  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
+  if (!roles.includes('admin') && !roles.includes('user')) {
+    return { status: 403, body: { error: 'admin or user role required' } };
+  }
+
+  // Verify caller owns the org (unless admin)
+  if (!roles.includes('admin')) {
+    const adminToken = await getAdminToken();
+    if (!await userOwnsOrg(tokenInfo.sub, orgId, adminToken)) {
+      return { status: 403, body: { error: 'You do not own this organisation' } };
+    }
+  }
+
+  const bundle = await fhirSearch('registry', 'HealthcareService', {
+    organization: `Organization/${orgId}`,
+    _count:       '100',
+  });
+
+  const services = (bundle.entry || []).map(e => {
+    const hs = e.resource;
+    const t  = hs.type?.[0]?.coding?.[0];
+    return {
+      id:          hs.id,
+      name:        hs.name,
+      typeCode:    t?.code,
+      typeDisplay: t?.display,
+      typeSystem:  t?.system,
+    };
+  });
+
+  return { status: 200, body: services };
+}
+
+// POST /organisations/:orgId/healthcare-services
+async function handleAddHealthcareService(orgId, body, bearerToken) {
+  const tokenInfo = await introspectToken(bearerToken);
+  if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
+  const roles = tokenInfo.realm_access?.roles || tokenInfo.realm_roles || [];
+  if (!roles.includes('admin') && !roles.includes('user')) {
+    return { status: 403, body: { error: 'admin or user role required' } };
+  }
+
+  // Verify caller owns the org (unless admin)
+  if (!roles.includes('admin')) {
+    const adminToken = await getAdminToken();
+    if (!await userOwnsOrg(tokenInfo.sub, orgId, adminToken)) {
+      return { status: 403, body: { error: 'You do not own this organisation' } };
+    }
+  }
+
+  const { name, typeCode, typeDisplay, typeSystem } = body;
+  if (!name || !typeCode) {
+    return { status: 400, body: { error: 'name and typeCode are required' } };
+  }
+
+  const resource = {
+    resourceType: 'HealthcareService',
+    active:       true,
+    providedBy:   { reference: `Organization/${orgId}` },
+    type: [{
+      coding: [{
+        system:  typeSystem || 'http://terminology.hl7.org/CodeSystem/service-type',
+        code:    typeCode,
+        display: typeDisplay || name,
+      }],
+    }],
+    name,
+    meta: {
+      tag: [{ system: 'https://umzhconnect.ch/tags', code: 'sandbox-onboarded' }],
+    },
+  };
+
+  const created = await fhirPost('registry', resource);
+  return {
+    status: 201,
+    body: { id: created.id, name, typeCode, typeDisplay: typeDisplay || name },
+  };
 }
 
 // ===========================================================================
@@ -751,19 +1011,43 @@ const server = http.createServer(async (req, res) => {
       return send(result.status, result.body);
     }
 
-    if (req.method === 'GET' && req.url === '/clients') {
+    if (req.method === 'GET' && req.url === '/my-clients') {
       const bearerToken = bearerFrom(req);
       if (!bearerToken) return send(401, { error: 'Authorization header required' });
-      const result = await handleListClients(bearerToken);
+      const result = await handleListMyClients(bearerToken);
       return send(result.status, result.body);
     }
 
-    if (req.method === 'POST' && req.url === '/clients') {
+    if (req.method === 'POST' && req.url === '/my-clients') {
       const bearerToken = bearerFrom(req);
       if (!bearerToken) return send(401, { error: 'Authorization header required' });
       const body   = await readBody(req);
       const result = await handleCreateClient(body, bearerToken);
       return send(result.status, result.body);
+    }
+
+    if (req.method === 'GET' && req.url === '/my-organisations') {
+      const bearerToken = bearerFrom(req);
+      if (!bearerToken) return send(401, { error: 'Authorization header required' });
+      const result = await handleListMyOrganisations(bearerToken);
+      return send(result.status, result.body);
+    }
+
+    // /organisations/:orgId/healthcare-services
+    const hsMatch = req.url.match(/^\/my-organisations\/([^/?]+)\/healthcare-services$/);
+    if (hsMatch) {
+      const orgId       = hsMatch[1];
+      const bearerToken = bearerFrom(req);
+      if (!bearerToken) return send(401, { error: 'Authorization header required' });
+      if (req.method === 'GET') {
+        const result = await handleListHealthcareServices(orgId, bearerToken);
+        return send(result.status, result.body);
+      }
+      if (req.method === 'POST') {
+        const body   = await readBody(req);
+        const result = await handleAddHealthcareService(orgId, body, bearerToken);
+        return send(result.status, result.body);
+      }
     }
 
     send(404, { error: 'Not found' });

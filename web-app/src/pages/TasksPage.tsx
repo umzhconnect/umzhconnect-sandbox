@@ -1,16 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRole } from '../contexts/RoleContext';
+import { useLog } from '../contexts/LogContext';
 import { useRegistrySearch } from '../hooks/useFhirSearch';
 import type { FhirResource, Organization, Endpoint } from '../types/fhir';
 import TaskList from '../components/fhir/TaskList';
 import CreateTaskModal from '../components/fhir/CreateTaskModal';
+import ManualCredentialForm, {
+  ManualClientToggle,
+  acquireTokenWithCredential,
+  manualCredIsReady,
+  EMPTY_MANUAL_CREDENTIAL,
+  type ManualCredential,
+} from '../components/common/ManualCredentialForm';
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TasksPage: React.FC = () => {
-  const { activeRole, partyLabel } = useRole();
+  const { activeRole, partyLabel, keycloakTokenUrl } = useRole();
+  const { addLog } = useLog();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState('');
+
+  // Manual client state
+  const [manualMode, setManualMode] = useState(false);
+  const [manualCred, setManualCred] = useState<ManualCredential>(EMPTY_MANUAL_CREDENTIAL);
 
   const { data: registryBundle } = useRegistrySearch<FhirResource>(
     'Organization',
@@ -40,6 +55,16 @@ const TasksPage: React.FC = () => {
   const remoteBaseUrl = selectedEntry?.endpoint.address ?? null;
   const remoteOrgName = selectedEntry?.org.name ?? selectedEntry?.org.alias?.[0] ?? null;
 
+  const credReady = manualMode && manualCredIsReady(manualCred);
+
+  const customGetToken = useCallback(
+    () => {
+      addLog({ type: 'info', message: `Using manual ${manualCred.level.toUpperCase()} credentials for client "${manualCred.clientId}"` });
+      return acquireTokenWithCredential(keycloakTokenUrl, manualCred);
+    },
+    [keycloakTokenUrl, manualCred, addLog],
+  );
+
   const handleSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ['all-tasks'] });
   };
@@ -63,12 +88,11 @@ const TasksPage: React.FC = () => {
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Tasks</h2>
-        <p className="text-gray-500 mt-1">
-          Select a target organisation to fetch cross-domain tasks using M2M client credentials for authorization.
-          Active role: <strong>{partyLabel}</strong>
+        <p className="text-gray-600 mt-1">
+          Create and fetch authorized tasks from partner organizations. Note that the client credentials can be set manually for non-sandbox default organizations.
         </p>
-        <p className="text-gray-500 mt-1 text-sm">
-          <strong className="text-gray-700">Note:</strong> Client credentials are hardcoded for the Placer and Fulfiller party for both security layers L1 (client_secret) and L2 (private_key_jwt).
+        <p className="text-gray-500 mt-1">
+          Active role: <strong>{partyLabel}</strong>
         </p>
 
         <button
@@ -78,6 +102,7 @@ const TasksPage: React.FC = () => {
           + Create new
         </button>
 
+        {/* Org selector */}
         <div className="mt-3 flex items-center gap-3">
           <label className="text-sm font-medium text-gray-600 shrink-0">Remote organisation:</label>
           <select
@@ -96,9 +121,26 @@ const TasksPage: React.FC = () => {
             <span className="text-xs text-gray-400 font-mono">{remoteBaseUrl}</span>
           )}
         </div>
+
+        {/* Manual client toggle */}
+        <div className="mt-4">
+          <ManualClientToggle
+            enabled={manualMode}
+            onToggle={() => setManualMode(v => !v)}
+            ready={credReady}
+            level={manualCred.level}
+          />
+          {manualMode && (
+            <ManualCredentialForm cred={manualCred} onChange={setManualCred} />
+          )}
+        </div>
       </div>
 
-      <TaskList remoteBaseUrl={remoteBaseUrl} remoteOrgName={remoteOrgName} />
+      <TaskList
+        remoteBaseUrl={remoteBaseUrl}
+        remoteOrgName={remoteOrgName}
+        customGetToken={credReady ? customGetToken : undefined}
+      />
 
       <CreateTaskModal
         open={modalOpen}

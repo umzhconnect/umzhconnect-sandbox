@@ -15,7 +15,7 @@
   "maxFailureWaitSeconds": 900,
   "minimumQuickLoginWaitSeconds": 60,
   "quickLoginCheckMilliSeconds": 1000,
-  "passwordPolicy": "length(12) and notUsername() and notEmail()",
+  "passwordPolicy": "length(8) and notUsername() and notEmail()",
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
