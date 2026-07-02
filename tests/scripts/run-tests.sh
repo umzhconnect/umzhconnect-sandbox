@@ -59,6 +59,11 @@ FULFILLER_USER_TOKEN=$("$SCRIPT_DIR/get-token.sh" fulfiller-user)
 [ -z "$FULFILLER_USER_TOKEN" ] && echo "  FATAL: could not acquire fulfiller-user token" && exit 1
 echo "  fulfiller-user            OK"
 
+# Admin token — required for privileged admin-api routes (e.g. POST /reseed).
+ADMIN_TOKEN=$("$SCRIPT_DIR/get-token.sh" admin-user)
+[ -z "$ADMIN_TOKEN" ] && echo "  FATAL: could not acquire admin token" && exit 1
+echo "  admin-user                OK"
+
 PLACER_L2_TOKEN=$("$SCRIPT_DIR/get-token.sh" placer-l2)
 [ -z "$PLACER_L2_TOKEN" ] && echo "  FATAL: could not acquire placer L2 token" && exit 1
 echo "  placer M2M L2             OK"
@@ -161,6 +166,7 @@ for hurl_file in "$HURL_DIR"/[0-9]*.hurl; do
         --variable "fulfiller_context_tumorboard_token=$EFFECTIVE_FULFILLER_CONTEXT_TUMOR_TOKEN" \
         --variable "placer_user_token=$PLACER_USER_TOKEN" \
         --variable "fulfiller_user_token=$FULFILLER_USER_TOKEN" \
+        --variable "admin_token=$ADMIN_TOKEN" \
         --variable "placer_l2_token=$PLACER_L2_TOKEN" \
         --variable "fulfiller_l2_token=$FULFILLER_L2_TOKEN" \
         --variable "fulfiller_l2_context_token=$FULFILLER_L2_CONTEXT_TOKEN" \

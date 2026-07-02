@@ -45,9 +45,10 @@ HTTP 200
 jsonpath "$.resourceType" == "Observation"
 
 
-# --- Step 2: Reseed — wipes and reloads all data ---
+# --- Step 2: Reseed — wipes and reloads all data (admin-gated) ---
 
 POST {{reseed_url}}/reseed
+Authorization: Bearer {{admin_token}}
 HTTP 200
 [Asserts]
 jsonpath "$.success" == true
