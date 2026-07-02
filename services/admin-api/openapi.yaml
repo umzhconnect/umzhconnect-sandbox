@@ -1,9 +1,10 @@
 openapi: 3.1.0
 info:
-  title: UMZH Connect Sandbox – Admin API
+  title: UMZH Connect Sandbox - Admin API
   version: 1.1.0
   license:
     name: MIT
+    url: https://opensource.org/licenses/MIT
   description: |
     Internal admin surface for the sandbox (formerly the separate onboarding-api
     and reseed-api). Self-service access provisioning plus seed-data management.
@@ -52,7 +53,6 @@ tags:
     description: Operational endpoints
 
 paths:
-
   # ---------------------------------------------------------------------------
   # GET /health
   # ---------------------------------------------------------------------------
@@ -74,6 +74,18 @@ paths:
                 ok:
                   value:
                     status: ok
+        '400':
+          description: Bad request (should not happen)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
 
   # ---------------------------------------------------------------------------
   # POST /reseed
@@ -374,6 +386,51 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+    get:
+      operationId: listMyClients
+      tags: [Clients]
+      summary: List the caller's own M2M clients
+      description: |
+        Returns all Keycloak M2M clients tagged with the authenticated caller's
+        user ID (`creator.user.id` client attribute).  For L1 clients the
+        current secret is fetched live from the Keycloak Admin API.
+
+        **Required role:** `admin` or `user`
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Array of clients owned by the caller
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MyClient'
+              examples:
+                result:
+                  value:
+                    - clientId: hospital-z-ag-l1-k3j9x
+                      level: l1
+                      orgName: Hospital Z AG
+                      orgId: 4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                      orgReference: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
+                      tokenEndpoint: http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token
+                      clientSecret: Xk9mP2rQwL8nVjZ5
+                      createdAt: '2026-06-18T14:22:05.123Z'
+        '401':
+          description: Missing or inactive Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller lacks the required role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ---------------------------------------------------------------------------
   # GET /my-organisations
   # ---------------------------------------------------------------------------
@@ -412,51 +469,6 @@ paths:
                       orgReference: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
                       orgIdentifier: '7601000000000'
                       fhirBaseUrl: http://hospital-z-gw:8080
-                      createdAt: '2026-06-18T14:22:05.123Z'
-        '401':
-          description: Missing or inactive Bearer token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Caller lacks the required role
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-    get:
-      operationId: listMyClients
-      tags: [Clients]
-      summary: List the caller's own M2M clients
-      description: |
-        Returns all Keycloak M2M clients tagged with the authenticated caller's
-        user ID (`creator.user.id` client attribute).  For L1 clients the
-        current secret is fetched live from the Keycloak Admin API.
-
-        **Required role:** `admin` or `user`
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Array of clients owned by the caller
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MyClient'
-              examples:
-                result:
-                  value:
-                    - clientId: hospital-z-ag-l1-k3j9x
-                      level: l1
-                      orgName: Hospital Z AG
-                      orgId: 4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
-                      orgReference: http://localhost:8084/fhir/Organization/4c8a1b2e-3d7f-4e1a-9b0c-5f6d7e8f9a0b
-                      tokenEndpoint: http://localhost:8180/realms/umzh-connect/protocol/openid-connect/token
-                      clientSecret: Xk9mP2rQwL8nVjZ5
                       createdAt: '2026-06-18T14:22:05.123Z'
         '401':
           description: Missing or inactive Bearer token
@@ -600,7 +612,6 @@ paths:
 # Components
 # =============================================================================
 components:
-
   securitySchemes:
     bearerAuth:
       type: http
@@ -612,7 +623,6 @@ components:
         `realm_roles`; admin-only endpoints are noted in their description.
 
   schemas:
-
     # ── POST /register ──────────────────────────────────────────────────────
 
     RegisterRequest:
@@ -802,7 +812,16 @@ components:
 
     MyClient:
       type: object
-      required: [clientId, level, orgName, orgId, orgReference, tokenEndpoint, createdAt]
+      required:
+        [
+          clientId,
+          level,
+          orgName,
+          orgId,
+          orgReference,
+          tokenEndpoint,
+          createdAt,
+        ]
       properties:
         clientId:
           type: string

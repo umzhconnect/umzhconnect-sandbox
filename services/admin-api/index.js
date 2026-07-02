@@ -266,8 +266,8 @@ async function requireUser(req) {
     return { error: { status: 401, message: 'Token is not active' } };
   }
   const roles = info.realm_access?.roles || info.realm_roles || [];
-  if (!roles.includes('admin') && !roles.includes('user')) {
-    return { error: { status: 403, message: 'admin or user role required' } };
+  if (!hasOnboardingRole(roles)) {
+    return { error: { status: 403, message: 'authenticated sandbox user required' } };
   }
   return { tokenInfo: info };
 }
@@ -309,17 +309,27 @@ function saveInvites(invites) {
 // ===========================================================================
 
 // Returns all Keycloak clients whose creator.user.id attribute matches userId.
+// Keycloak restricts attribute-based ?q= search to pre-configured keys, so we
+// list all clients and filter in-app — fine at sandbox scale.
 async function kcGetClientsByCreator(userId, adminToken) {
-  return kcGet(
-    `/clients?q=creator.user.id:${encodeURIComponent(userId)}&max=200`,
-    adminToken,
-  );
+  if (!userId) return [];
+  const all = await kcGet('/clients?max=1000', adminToken);
+  return all.filter(kc => (kc.attributes || {})['creator.user.id'] === userId);
 }
 
-// Returns true if the user owns at least one client linked to orgId.
-async function userOwnsOrg(userId, orgId, adminToken) {
-  const clients = await kcGetClientsByCreator(userId, adminToken);
-  return clients.some(kc => (kc.attributes || {})['org.id'] === orgId);
+// Returns true if the FHIR Organization carries a creator-user-id extension
+// matching userId.  This is the authoritative ownership check: the extension
+// is written for every new org regardless of which client-storage era it was
+// created in, so it covers both old (clients.json) and new (KC attribute) orgs.
+async function userOwnsOrg(userId, orgId) {
+  if (!userId || !orgId) return false;
+  try {
+    const org = await fhirGet('registry', `Organization/${orgId}`);
+    const ext = (org.extension || []).find(e => e.url === CREATOR_USER_ID_EXT);
+    return ext?.valueString === userId;
+  } catch {
+    return false;
+  }
 }
 
 // ===========================================================================
@@ -426,6 +436,12 @@ async function handleCreateClient(body, bearerToken) {
     return { status: 403, body: { error: 'admin or user role required' } };
   }
   const creatorUserId = tokenInfo.sub;
+  // Ownership is recorded from the token subject. If Keycloak isn't emitting the
+  // `sub` claim (e.g. the web-app client is missing its subject mapper), refuse
+  // rather than silently creating an unowned org the caller could never manage.
+  if (!creatorUserId) {
+    return { status: 400, body: { error: 'Token has no subject (sub) claim — cannot record ownership' } };
+  }
 
   const { orgName: bodyOrgName, orgIdentifier, fhirBaseUrl, level, jwksUrl, existingOrgId } = body;
   if (!level) {
@@ -448,7 +464,7 @@ async function handleCreateClient(body, bearerToken) {
   if (existingOrgId) {
     // ── Use existing organisation ────────────────────────────────────────
     if (!callerRoles.includes('admin')) {
-      if (!await userOwnsOrg(creatorUserId, existingOrgId, adminToken)) {
+      if (!await userOwnsOrg(creatorUserId, existingOrgId)) {
         return { status: 403, body: { error: 'You do not own this organisation' } };
       }
     }
@@ -651,6 +667,9 @@ async function handleCreateClient(body, bearerToken) {
 }
 
 // GET /my-organisations  (admin or user role — returns caller's own orgs)
+// Uses FHIR as the authoritative source: query all sandbox-onboarded Organizations
+// and filter by the creator-user-id extension.  This covers both old orgs (created
+// before the Keycloak-attribute migration) and new ones.
 async function handleListMyOrganisations(bearerToken) {
   const tokenInfo = await introspectToken(bearerToken);
   if (!tokenInfo || !tokenInfo.active) return { status: 401, body: { error: 'Token is not active' } };
@@ -659,41 +678,30 @@ async function handleListMyOrganisations(bearerToken) {
     return { status: 403, body: { error: 'admin or user role required' } };
   }
 
-  const userId     = tokenInfo.sub;
-  const adminToken = await getAdminToken();
-  const kcClients  = await kcGetClientsByCreator(userId, adminToken);
+  const userId = tokenInfo.sub;
 
-  // Deduplicate by org.id — multiple clients may share the same org
-  const seen = new Map();
-  for (const kc of kcClients) {
-    const attrs = kc.attributes || {};
-    const orgId = attrs['org.id'];
-    if (orgId && !seen.has(orgId)) seen.set(orgId, attrs);
-  }
+  const bundle = await fhirSearch('registry', 'Organization', {
+    '_tag':  'https://umzhconnect.ch/tags|sandbox-onboarded',
+    '_count': '200',
+  });
 
-  const orgs = await Promise.all(
-    [...seen.entries()].map(async ([orgId, attrs]) => {
-      try {
-        const org = await fhirGet('registry', `Organization/${orgId}`);
-        return {
-          orgId,
-          orgName:       org.name,
-          orgReference:  attrs['org.reference'],
-          orgIdentifier: org.identifier?.[0]?.value,
-          fhirBaseUrl:   attrs['org.fhir.base.url'] || undefined,
-          createdAt:     attrs['created.at'],
-        };
-      } catch {
-        return {
-          orgId,
-          orgName:      attrs['org.name'],
-          orgReference: attrs['org.reference'],
-          fhirBaseUrl:  attrs['org.fhir.base.url'] || undefined,
-          createdAt:    attrs['created.at'],
-        };
-      }
+  const orgs = (bundle.entry || [])
+    .map(e => e.resource)
+    .filter(org => {
+      const ext = (org.extension || []).find(e => e.url === CREATOR_USER_ID_EXT);
+      return ext?.valueString === userId;
     })
-  );
+    .map(org => {
+      const fhirBaseExt = (org.extension || []).find(e => e.url === FHIR_BASE_URL_EXT);
+      return {
+        orgId:         org.id,
+        orgName:       org.name,
+        orgReference:  `${REGISTRY_EXTERNAL_URL}/fhir/Organization/${org.id}`,
+        orgIdentifier: org.identifier?.[0]?.value,
+        fhirBaseUrl:   fhirBaseExt?.valueUrl || undefined,
+        createdAt:     org.meta?.lastUpdated,
+      };
+    });
 
   return { status: 200, body: orgs };
 }
@@ -752,8 +760,7 @@ async function handleListHealthcareServices(orgId, bearerToken) {
 
   // Verify caller owns the org (unless admin)
   if (!roles.includes('admin')) {
-    const adminToken = await getAdminToken();
-    if (!await userOwnsOrg(tokenInfo.sub, orgId, adminToken)) {
+    if (!await userOwnsOrg(tokenInfo.sub, orgId)) {
       return { status: 403, body: { error: 'You do not own this organisation' } };
     }
   }
@@ -789,8 +796,7 @@ async function handleAddHealthcareService(orgId, body, bearerToken) {
 
   // Verify caller owns the org (unless admin)
   if (!roles.includes('admin')) {
-    const adminToken = await getAdminToken();
-    if (!await userOwnsOrg(tokenInfo.sub, orgId, adminToken)) {
+    if (!await userOwnsOrg(tokenInfo.sub, orgId)) {
       return { status: 403, body: { error: 'You do not own this organisation' } };
     }
   }
