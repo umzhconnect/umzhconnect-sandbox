@@ -624,6 +624,9 @@ Phase 5 — Completion
 # Clone the repository and navigate to it
 cd Sandbox
 
+# Configure the project with environment variables. Modify the default values if desired.
+cp .env.example .env
+
 # Start all services
 docker compose up -d --build
 
