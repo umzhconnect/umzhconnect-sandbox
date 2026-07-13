@@ -1,0 +1,1 @@
+hurl --test --variables-file variables.properties --very-verbose sarcoma-tumor-board.hurl
