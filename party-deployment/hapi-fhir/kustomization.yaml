@@ -1,0 +1,18 @@
+namespace: hapi-fhir
+
+resources:
+  - ns-hapi-fhir.yaml
+  - managed-db-config.yaml
+  - hapi-fhir.yaml
+  - hapi-fhir-ingress.yaml
+
+# The base HAPI's application.yaml is generated from the SHARED file colocated
+# here (the same file docker compose bind-mounts). Partition creation + seeding
+# is owned by the clinical-orders/ and registry/ services, not the base.
+configMapGenerator:
+  - name: hapi-fhir-config
+    files:
+      - application.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true

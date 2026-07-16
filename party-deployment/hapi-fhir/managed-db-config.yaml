@@ -1,0 +1,15 @@
+# =============================================================================
+# Managed (external) PostgreSQL — NOT deployed in the cluster.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: managed-db-config
+data:
+  DB_HOST: managed-postgres
+  DB_PORT: '5432'
+  DB_NAME: hapi_fhir
+  DB_USERNAME: andreasahlm
+  # Local dev DB is passwordless. For a real managed DB move the password into a
+  # Secret and inject it via `env.valueFrom.secretKeyRef` instead of here.
+  DB_PASSWORD: ''

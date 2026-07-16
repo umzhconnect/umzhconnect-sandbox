@@ -1,0 +1,12 @@
+# =============================================================================
+# Kustomize entrypoint for the party's Kubernetes manifests.
+#
+#   kubectl apply -k party-deployment/      (preview: kubectl kustomize party-deployment/)
+#
+# Each service directory is self-contained: it holds its own manifests AND the
+# shared assets (application.yaml, seed files, proxy templates) that docker
+# compose also consumes, and generates its ConfigMaps from them locally — so no
+# file is referenced across directories and no --load-restrictor flag is needed.
+# =============================================================================
+resources:
+  - hapi-fhir

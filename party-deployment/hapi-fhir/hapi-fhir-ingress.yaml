@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hapi-fhir-ingress
+  labels:
+    name: hapi-fhir-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: clusterissuer-acme-nginx
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hapi-fhir.dev.umzhc.io.usz.ch
+      http:
+        paths:
+          # Whole base HAPI server (FHIR API at /fhir/{partition}/..., tester UI at /).
+          - pathType: Prefix
+            path: '/'
+            backend:
+              service:
+                name: hapi-fhir-service
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - hapi-fhir.dev.umzhc.io.usz.ch
+      secretName: hapi-fhir.dev.umzhc.io.usz.ch-cert
