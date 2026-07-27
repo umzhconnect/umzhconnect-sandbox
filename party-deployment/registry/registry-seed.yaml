@@ -1,0 +1,59 @@
+# =============================================================================
+# registry-seed — one-shot Job (registry namespace) that creates the 'registry'
+# partition on the base HAPI and merges the mCSD directory. It runs the SHARED
+# seed-registry.sh + registry-bundle.json colocated here (the same files docker
+# compose mounts), generated into the `registry-seed` ConfigMap by kustomize.
+# Targets the base HAPI cross-namespace via its FQDN.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: party-urls
+data:
+  REGISTRY_URL: 'https://registry-test.umzhconnect.ch'
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: registry-seed
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: registry-seed
+    spec:
+      restartPolicy: OnFailure
+      # Satisfy the cluster's "restricted" Pod Security Standard. curlimages/curl
+      # ships curl (+ busybox sh/sed/grep) and runs as non-root — no root-only
+      # `apk add` needed.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: curlimages/curl:8.11.1
+          command: ['sh', '/seed/seed-registry.sh']
+          env:
+            - name: FHIR_BASE
+              value: http://hapi-fhir-service.hapi-fhir.svc.cluster.local:8080/fhir
+            - name: REGISTRY_BUNDLE
+              value: /seed/registry-bundle.json
+          envFrom:
+            - configMapRef:
+                name: party-urls
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+      volumes:
+        - name: seed
+          configMap:
+            name: registry-seed
+            defaultMode: 0755

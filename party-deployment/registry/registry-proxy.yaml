@@ -1,0 +1,89 @@
+# =============================================================================
+# registry FHIR proxy — the outward-facing mCSD registry endpoint. A thin rewrite
+# in front of the partitioned base HAPI (namespace hapi-fhir): inbound
+# partition-less /fhir/* is mapped onto the base's 'registry' partition, and the
+# partition segment (and the base's internal host) are stripped back out — so the
+# partition name never appears in an outward URL.
+#
+# The nginx config is the SHARED registry-proxy.conf.template (the same file
+# docker compose uses), generated into a ConfigMap by kustomize and rendered at
+# startup by the nginx image's envsubst from the PROXY_* env below.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-fhir
+  labels:
+    app: registry-fhir
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-fhir
+  template:
+    metadata:
+      labels:
+        app: registry-fhir
+    spec:
+      # Satisfy the cluster's "restricted" Pod Security Standard. The
+      # nginx-unprivileged image runs as non-root (UID 101) and listens on 8080.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: proxy
+          image: nginxinc/nginx-unprivileged:alpine
+          env:
+            - name: PROXY_UPSTREAM
+              value: hapi-fhir-service.hapi-fhir.svc.cluster.local:8080
+            # Canonical registry URL — the SAME party-urls/REGISTRY_URL the seed
+            # bakes into stored references, so self-links and cross-references agree.
+            - name: PROXY_OUTWARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: party-urls
+                  key: REGISTRY_URL
+            # Only substitute PROXY_* so nginx's own $host/$1 are left intact.
+            - name: NGINX_ENVSUBST_FILTER
+              value: PROXY_
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+          volumeMounts:
+            - name: templates
+              mountPath: /etc/nginx/templates
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: templates
+          configMap:
+            name: registry-proxy-tpl
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-fhir-service
+  labels:
+    app: registry-fhir
+spec:
+  selector:
+    app: registry-fhir
+  ports:
+    - port: 8080
+      targetPort: 8080

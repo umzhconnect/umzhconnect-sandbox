@@ -1,0 +1,22 @@
+namespace: umzhc-registry
+
+resources:
+  - ns-registry.yaml
+  - registry-proxy.yaml
+  - registry-ingress.yaml
+  - registry-seed.yaml
+
+# Generate ConfigMaps from the SHARED files colocated here (the same files docker
+# compose uses): the proxy nginx template (mounted under /etc/nginx/templates/ for
+# the nginx image to render) and the registry seed script + bundle for the Job.
+configMapGenerator:
+  - name: registry-proxy-tpl
+    files:
+      - default.conf.template=registry-proxy.conf.template
+  - name: registry-seed
+    files:
+      - seed-registry.sh
+      - registry-bundle.json
+
+generatorOptions:
+  disableNameSuffixHash: true

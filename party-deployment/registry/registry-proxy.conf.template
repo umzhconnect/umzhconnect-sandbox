@@ -1,0 +1,63 @@
+# =============================================================================
+# registry FHIR proxy — outward, partition-less mCSD endpoint in front of the
+# partitioned base HAPI. SHARED by docker compose AND Kubernetes: this file is
+# mounted at /etc/nginx/templates/default.conf.template and rendered at container
+# start by the official nginx image's built-in envsubst. Only ${PROXY_*} are
+# substituted (NGINX_ENVSUBST_FILTER=PROXY_); nginx's own $host / $1 survive.
+#
+#   inbound   /fhir/…            → /fhir/registry/…   (on ${PROXY_UPSTREAM})
+#   outbound  the partition segment is stripped from self-links (sub_filter) and
+#             the Location header (proxy_redirect); Content-Location is dropped —
+#             so the partition never appears in an outward URL.
+#
+# READ-ONLY: this public directory only exposes GET/HEAD on Organization,
+# Endpoint and HealthcareService (plus the CapabilityStatement at /metadata).
+# Any other resource type, or any write method, is denied here — this is edge
+# policy; the base HAPI (reached by the seed Job, not through this proxy) stays
+# writable so it can be repopulated. Everything else is denied by `location /`.
+#
+# Host values (${PROXY_UPSTREAM}, ${PROXY_OUTWARD_URL}) come from the environment
+# (.env for compose; Deployment env for k8s). The partition name is structural
+# and stays literal here.
+# =============================================================================
+upstream hapi_base { server ${PROXY_UPSTREAM}; }
+
+server {
+    listen 8080;
+
+    proxy_buffering         on;
+    proxy_buffer_size       128k;
+    proxy_buffers           16 128k;
+    proxy_busy_buffers_size 256k;
+
+    # Allowlist: read-only on the mCSD directory types + the CapabilityStatement.
+    # (Query strings aren't part of the match, so /Organization?name=… is covered.)
+    location ~ ^/fhir/(metadata|Organization|Endpoint|HealthcareService)(/.*)?$ {
+        limit_except GET HEAD { deny all; }   # 403 on POST/PUT/PATCH/DELETE
+
+        # /fhir(/...)  ->  /fhir/registry(/...)  on the base.
+        rewrite ^/fhir(/.*)?$ /fhir/registry$1 break;
+        proxy_pass        http://hapi_base;
+        proxy_set_header  Host            $host;
+        proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header  Accept-Encoding "";
+
+        sub_filter_once  off;
+        sub_filter_types *;
+        # HAPI builds self-links from server_address (http://localhost:8090/fhir)
+        # + partition; rewrite that to the partition-less outward base URL.
+        sub_filter "http://localhost:8090/fhir/registry/" "${PROXY_OUTWARD_URL}/fhir/";
+        sub_filter "/fhir/registry/" "/fhir/";
+
+        # sub_filter only touches the body — also fix the Location header and drop
+        # the duplicate Content-Location (harmless here since writes are blocked).
+        proxy_redirect    "http://localhost:8090/fhir/registry/" "${PROXY_OUTWARD_URL}/fhir/";
+        proxy_hide_header Content-Location;
+    }
+
+    # Everything else (other resource types, the base endpoint / batch-transaction,
+    # $operations, etc.) is denied at the edge.
+    location / {
+        return 403;
+    }
+}

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: registry-ingress
+  labels:
+    name: registry-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: clusterissuer-acme-nginx
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: registry.dev.umzhc.io.usz.ch
+      http:
+        paths:
+          - pathType: Prefix
+            path: '/fhir'
+            backend:
+              service:
+                name: registry-fhir-service
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - registry.dev.umzhc.io.usz.ch
+      secretName: registry.dev.umzhc.io.usz.ch-cert
