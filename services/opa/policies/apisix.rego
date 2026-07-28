@@ -32,7 +32,13 @@ jwt_payload := payload if {
 }
 
 # Party config from per-instance data document (config-placer.json / config-fulfiller.json).
-required_role := data.config.required_role
+# required_role is optional: the sandbox sets it because two parties share one
+# Keycloak, and the caller's realm role is how the gateway disambiguates which
+# party is calling. A real single-party deployment has no second party to
+# disambiguate from, and the UMZH-Connect IG's authorization model doesn't
+# define a role claim at all (only scope, fhirContext, organization_reference)
+# — so a config.json without this key skips the check entirely.
+required_role := object.get(data.config, "required_role", "")
 fhir_base     := data.config.fhir_base
 
 # ---------------------------------------------------------------------------
@@ -66,9 +72,7 @@ canonical_path := input.request.path if {
 # ---------------------------------------------------------------------------
 
 allow if {
-	# Role check: the requesting M2M/user token must carry the expected realm role.
-	some r in object.get(jwt_payload, "realm_roles", [])
-	r == required_role
+	role_check_satisfied
 
 	# Evaluate existing policy with the input shape it expects.
 	data.umzh.authz.allow with input as {
@@ -83,4 +87,17 @@ allow if {
 		},
 		"fhir_base": fhir_base,
 	}
+}
+
+# The requesting M2M/user token must carry the expected realm role — unless
+# required_role is unset (real single-party deployment), in which case there's
+# nothing to check.
+role_check_satisfied if {
+	required_role == ""
+}
+
+role_check_satisfied if {
+	required_role != ""
+	some r in object.get(jwt_payload, "realm_roles", [])
+	r == required_role
 }
