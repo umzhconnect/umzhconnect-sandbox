@@ -47,7 +47,7 @@ the server. This is the bootstrap-phase reconciler — idempotent, safe to re-ru
 | `registry-proxy.conf.template` | nginx `conf.d` fragment: partition rewrite, canonical-URL `sub_filter`/`proxy_redirect`, read-only allowlist. Rendered by the nginx image's envsubst. | compose proxy + k8s proxy (as a ConfigMap) |
 | `registry-proxy.yaml` | k8s Deployment + `registry-fhir-service`. |  k8s |
 | `registry-ingress.yaml` | k8s Ingress (host + TLS). | k8s |
-| `registry-seed.yaml` | k8s Job + the `party-urls` ConfigMap (holds `REGISTRY_URL`). | k8s |
+| `registry-seed.yaml` | k8s Job + the `registry-urls` ConfigMap (holds `REGISTRY_URL`). | k8s |
 | `ns-registry.yaml`, `kustomization.yaml` | k8s namespace + kustomize entrypoint. | k8s |
 
 ## Configuration
@@ -61,8 +61,8 @@ internal ingress host; the WAF/ingress stay pure transport.
 
 | Setting | compose | k8s |
 |---|---|---|
-| Canonical URL | `.env` `REGISTRY_URL` | `party-urls` ConfigMap `REGISTRY_URL` (in `registry-seed.yaml`) |
-| Proxy outward URL | `PROXY_OUTWARD_URL: ${REGISTRY_URL}` | `PROXY_OUTWARD_URL` ← `configMapKeyRef: party-urls.REGISTRY_URL` |
+| Canonical URL | `.env` `REGISTRY_URL` | `registry-urls` ConfigMap `REGISTRY_URL` (in `registry-seed.yaml`) |
+| Proxy outward URL | `PROXY_OUTWARD_URL: ${REGISTRY_URL}` | `PROXY_OUTWARD_URL` ← `configMapKeyRef: registry-urls.REGISTRY_URL` |
 | Base HAPI upstream | `.env` `HAPI_BASE_UPSTREAM` (`hapi-fhir:8080`) | `hapi-fhir-service.hapi-fhir.svc.cluster.local:8080` (in the manifests) |
 
 ## docker-compose
@@ -113,17 +113,17 @@ Resources produced:
 | Resource | Notes |
 |---|---|
 | `Namespace umzhc-registry` | — |
-| `Deployment registry-fhir` + `Service registry-fhir-service` | Image `nginxinc/nginx-unprivileged` (non-root UID 101, `restricted` PSS). `PROXY_OUTWARD_URL` from `party-urls.REGISTRY_URL`. Mounts the generated `registry-proxy-tpl` ConfigMap. |
+| `Deployment registry-fhir` + `Service registry-fhir-service` | Image `nginxinc/nginx-unprivileged` (non-root UID 101, `restricted` PSS). `PROXY_OUTWARD_URL` from `registry-urls.REGISTRY_URL`. Mounts the generated `registry-proxy-tpl` ConfigMap. |
 | `Ingress registry-ingress` | Host `registry.dev.umzhc.io.usz.ch`, path `/fhir` → `registry-fhir-service:8080`, cert-manager TLS (`clusterissuer-acme-nginx`). |
-| `Job registry-seed` | Image `curlimages/curl` (non-root UID 100, `restricted` PSS). `FHIR_BASE` → base HAPI FQDN; `REGISTRY_URL` via `envFrom: party-urls`. |
-| `ConfigMap party-urls` | Holds `REGISTRY_URL` — consumed by both the proxy and the seed. |
+| `Job registry-seed` | Image `curlimages/curl` (non-root UID 100, `restricted` PSS). `FHIR_BASE` → base HAPI FQDN; `REGISTRY_URL` via `envFrom: registry-urls`. |
+| `ConfigMap registry-urls` | Holds `REGISTRY_URL` — consumed by both the proxy and the seed. |
 | Generated: `registry-proxy-tpl`, `registry-seed` | From the shared `*.conf.template` / `seed-registry.sh` + `registry-bundle.json` (`configMapGenerator`, stable names). |
 
-**Configure:** edit `REGISTRY_URL` in the `party-urls` ConfigMap (in
+**Configure:** edit `REGISTRY_URL` in the `registry-urls` ConfigMap (in
 `registry-seed.yaml`) and the ingress host in `registry-ingress.yaml`.
 
 **Deployment notes:**
-- `party-urls` and the generated ConfigMaps use stable names (`disableNameSuffixHash`).
+- `registry-urls` and the generated ConfigMaps use stable names (`disableNameSuffixHash`).
   Env is read at pod start, so after changing `REGISTRY_URL` do
   `kubectl -n umzhc-registry rollout restart deploy/registry-fhir` (the seed Job
   re-runs on its own).

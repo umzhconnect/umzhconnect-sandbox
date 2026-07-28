@@ -8,7 +8,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: party-urls
+  name: registry-urls
 data:
   REGISTRY_URL: 'https://registry-test.umzhconnect.ch'
 ---
@@ -44,7 +44,7 @@ spec:
               value: /seed/registry-bundle.json
           envFrom:
             - configMapRef:
-                name: party-urls
+                name: registry-urls
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

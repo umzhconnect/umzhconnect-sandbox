@@ -39,12 +39,12 @@ spec:
           env:
             - name: PROXY_UPSTREAM
               value: hapi-fhir-service.hapi-fhir.svc.cluster.local:8080
-            # Canonical registry URL — the SAME party-urls/REGISTRY_URL the seed
+            # Canonical registry URL — the SAME registry-urls/REGISTRY_URL the seed
             # bakes into stored references, so self-links and cross-references agree.
             - name: PROXY_OUTWARD_URL
               valueFrom:
                 configMapKeyRef:
-                  name: party-urls
+                  name: registry-urls
                   key: REGISTRY_URL
             # Only substitute PROXY_* so nginx's own $host/$1 are left intact.
             - name: NGINX_ENVSUBST_FILTER
