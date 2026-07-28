@@ -294,6 +294,7 @@ services:
     environment:
       PARTY: "placer"
       NGINX_OWN_PORT: "81"
+      KEYCLOAK_DISCOVERY_URL: ${KEYCLOAK_DISCOVERY_URL:-${KEYCLOAK_URL:-http://keycloak:8080}/realms/${KEYCLOAK_REALM:-umzh-connect}/.well-known/openid-configuration}
     volumes:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
@@ -359,6 +360,7 @@ services:
     environment:
       PARTY: "fulfiller"
       NGINX_OWN_PORT: "83"
+      KEYCLOAK_DISCOVERY_URL: ${KEYCLOAK_DISCOVERY_URL:-${KEYCLOAK_URL:-http://keycloak:8080}/realms/${KEYCLOAK_REALM:-umzh-connect}/.well-known/openid-configuration}
     volumes:
       - ./services/apisix/external/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./services/apisix/external/apisix.yaml:/templates/apisix.yaml:ro
