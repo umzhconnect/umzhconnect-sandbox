@@ -141,6 +141,10 @@ services:
       - VITE_FULFILLER_URL
       - VITE_FULFILLER_EXTERNAL_URL
       - VITE_REGISTRY_URL=${REGISTRY_PUBLIC_URL:-http://localhost:8084}
+      - HAPI_FHIR_BASE_URL=${HAPI_FHIR_BASE_URL:-http://hapi-fhir:8080}
+      - HAPI_FHIR_SELF_LINK_URL=${HAPI_FHIR_SELF_LINK_URL:-http://localhost:8090}
+      - HAPI_FHIR_AUTH_HEADER=${HAPI_FHIR_AUTH_HEADER:-}
+      - HAPI_FHIR_STRIP_PARTITION_PREFIX=${HAPI_FHIR_STRIP_PARTITION_PREFIX:-}
     depends_on:
       hapi-fhir:
         condition: service_started
@@ -430,7 +434,7 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       ONBOARDING_CLIENT_ID: onboarding-client
       ONBOARDING_CLIENT_SECRET: ${ONBOARDING_CLIENT_SECRET}
-      FHIR_BASE_URL: http://hapi-fhir:8080/fhir
+      FHIR_BASE_URL: ${HAPI_FHIR_BASE_URL:-http://hapi-fhir:8080}/fhir
       PLACER_EXTERNAL_URL: ${VITE_PLACER_EXTERNAL_URL:-http://localhost:8081}
       FULFILLER_EXTERNAL_URL: ${VITE_FULFILLER_EXTERNAL_URL:-http://localhost:8083}
       REGISTRY_EXTERNAL_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:8084}
