@@ -28,12 +28,14 @@ server {
     location / {
         set                      $strip_partition "${HAPI_FHIR_STRIP_PARTITION_PREFIX}";
         set                      $hapi_upstream "${HAPI_FHIR_BASE_URL}";
+        set                      $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/fhir/placer/";
         if ($strip_partition = "1") {
             rewrite ^/fhir/placer/(.*)$ /$1 break;
+            set $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/";
         }
         proxy_pass               $hapi_upstream$uri$is_args$args;
         proxy_ssl_server_name    on;
-        proxy_set_header        Host               $host;
+        proxy_set_header        Host               $proxy_host;
         proxy_set_header        X-Real-IP          $remote_addr;
         proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
         proxy_set_header        Accept-Encoding    "";
@@ -41,7 +43,7 @@ server {
 
         sub_filter_once  off;
         sub_filter_types *;
-        sub_filter "${HAPI_FHIR_SELF_LINK_URL}/fhir/placer/" "${VITE_PLACER_URL}/fhir/";
+        sub_filter "$self_link_needle" "${VITE_PLACER_URL}/fhir/";
     }
 }
 
@@ -54,12 +56,14 @@ server {
     location / {
         set                      $strip_partition "${HAPI_FHIR_STRIP_PARTITION_PREFIX}";
         set                      $hapi_upstream "${HAPI_FHIR_BASE_URL}";
+        set                      $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/fhir/placer/";
         if ($strip_partition = "1") {
             rewrite ^/fhir/placer/(.*)$ /$1 break;
+            set $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/";
         }
         proxy_pass               $hapi_upstream$uri$is_args$args;
         proxy_ssl_server_name    on;
-        proxy_set_header        Host               $host;
+        proxy_set_header        Host               $proxy_host;
         proxy_set_header        X-Real-IP          $remote_addr;
         proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
         proxy_set_header        Accept-Encoding    "";
@@ -67,7 +71,7 @@ server {
 
         sub_filter_once  off;
         sub_filter_types *;
-        sub_filter "${HAPI_FHIR_SELF_LINK_URL}/fhir/placer/" "${VITE_PLACER_EXTERNAL_URL}/fhir/";
+        sub_filter "$self_link_needle" "${VITE_PLACER_EXTERNAL_URL}/fhir/";
     }
 }
 
@@ -80,12 +84,14 @@ server {
     location / {
         set                      $strip_partition "${HAPI_FHIR_STRIP_PARTITION_PREFIX}";
         set                      $hapi_upstream "${HAPI_FHIR_BASE_URL}";
+        set                      $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/fhir/fulfiller/";
         if ($strip_partition = "1") {
             rewrite ^/fhir/fulfiller/(.*)$ /$1 break;
+            set $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/";
         }
         proxy_pass               $hapi_upstream$uri$is_args$args;
         proxy_ssl_server_name    on;
-        proxy_set_header        Host               $host;
+        proxy_set_header        Host               $proxy_host;
         proxy_set_header        X-Real-IP          $remote_addr;
         proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
         proxy_set_header        Accept-Encoding    "";
@@ -93,7 +99,7 @@ server {
 
         sub_filter_once  off;
         sub_filter_types *;
-        sub_filter "${HAPI_FHIR_SELF_LINK_URL}/fhir/fulfiller/" "${VITE_FULFILLER_URL}/fhir/";
+        sub_filter "$self_link_needle" "${VITE_FULFILLER_URL}/fhir/";
     }
 }
 
@@ -106,12 +112,14 @@ server {
     location / {
         set                      $strip_partition "${HAPI_FHIR_STRIP_PARTITION_PREFIX}";
         set                      $hapi_upstream "${HAPI_FHIR_BASE_URL}";
+        set                      $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/fhir/fulfiller/";
         if ($strip_partition = "1") {
             rewrite ^/fhir/fulfiller/(.*)$ /$1 break;
+            set $self_link_needle "${HAPI_FHIR_SELF_LINK_URL}/";
         }
         proxy_pass               $hapi_upstream$uri$is_args$args;
         proxy_ssl_server_name    on;
-        proxy_set_header        Host               $host;
+        proxy_set_header        Host               $proxy_host;
         proxy_set_header        X-Real-IP          $remote_addr;
         proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
         proxy_set_header        Accept-Encoding    "";
@@ -119,7 +127,7 @@ server {
 
         sub_filter_once  off;
         sub_filter_types *;
-        sub_filter "${HAPI_FHIR_SELF_LINK_URL}/fhir/fulfiller/" "${VITE_FULFILLER_EXTERNAL_URL}/fhir/";
+        sub_filter "$self_link_needle" "${VITE_FULFILLER_EXTERNAL_URL}/fhir/";
     }
 }
 
@@ -135,7 +143,7 @@ server {
         rewrite ^/fhir/(.*)$ /fhir/registry/$1 break;
         proxy_pass               $hapi_upstream$uri$is_args$args;
         proxy_ssl_server_name    on;
-        proxy_set_header        Host               $host;
+        proxy_set_header        Host               $proxy_host;
         proxy_set_header        X-Real-IP          $remote_addr;
         proxy_set_header        X-Forwarded-For    $proxy_add_x_forwarded_for;
         proxy_set_header        Accept-Encoding    "";
