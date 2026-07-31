@@ -1293,7 +1293,7 @@ const CreateResourceModal: React.FC<CreateResourceModalProps> = ({
     setSubmitting(true);
     setError(null);
     try {
-      const result = await client.create(draft);
+      const [result, _] = await client.create(draft);
       // Invalidate queries for this resource type so mounted list views
       // refresh immediately. Use refetchType:'active' (not 'all') to avoid
       // firing a background refetch for inactive queries — a background

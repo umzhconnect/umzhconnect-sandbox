@@ -61,10 +61,11 @@ export class FhirClient {
     });
 
     const start = Date.now();
+    let response, duration;
     try {
-      const response = await fetch(url, { headers });
+      response = await fetch(url, { headers });
       const body = await response.json();
-      const duration = Date.now() - start;
+      duration = Date.now() - start;
 
       this.log({
         type: response.ok ? 'response' : 'error',
@@ -86,6 +87,8 @@ export class FhirClient {
         method: 'GET',
         url,
         message: error instanceof Error ? error.message : 'Unknown error',
+        status: response ? response.status : undefined,
+        duration,
       });
       throw error;
     }
@@ -110,10 +113,11 @@ export class FhirClient {
     });
 
     const start = Date.now();
+    let response, duration;
     try {
-      const response = await fetch(url, { headers });
+      response = await fetch(url, { headers });
       const body = await response.json();
-      const duration = Date.now() - start;
+      duration = Date.now() - start;
 
       this.log({
         type: response.ok ? 'response' : 'error',
@@ -135,6 +139,8 @@ export class FhirClient {
         method: 'GET',
         url,
         message: error instanceof Error ? error.message : 'Unknown error',
+        status: response ? response.status : undefined,
+        duration,
       });
       throw error;
     }
@@ -143,7 +149,7 @@ export class FhirClient {
   // ---------------------------------------------------------------------------
   // Create a resource
   // ---------------------------------------------------------------------------
-  async create<T extends FhirResource>(resource: T): Promise<T> {
+  async create<T extends FhirResource>(resource: T): Promise<[T, string]> {
     const url = `${this.basePath}/${resource.resourceType}`;
     const headers = this.getHeaders();
 
@@ -156,14 +162,15 @@ export class FhirClient {
     });
 
     const start = Date.now();
+    let response, duration;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(resource),
       });
       const body = await response.json();
-      const duration = Date.now() - start;
+      duration = Date.now() - start;
 
       this.log({
         type: response.ok ? 'response' : 'error',
@@ -178,13 +185,15 @@ export class FhirClient {
         throw new Error(`FHIR create failed: ${response.status}`);
       }
 
-      return body as T;
+      return [body as T, (body as T).id!];
     } catch (error) {
       this.log({
         type: 'error',
         method: 'POST',
         url,
         message: error instanceof Error ? error.message : 'Unknown error',
+        status: response ? response.status : undefined,
+        duration,
       });
       throw error;
     }
@@ -206,14 +215,15 @@ export class FhirClient {
     });
 
     const start = Date.now();
+    let response, duration;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: 'PUT',
         headers,
         body: JSON.stringify(resource),
       });
       const body = await response.json();
-      const duration = Date.now() - start;
+      duration = Date.now() - start;
 
       this.log({
         type: response.ok ? 'response' : 'error',
@@ -235,6 +245,8 @@ export class FhirClient {
         method: 'PUT',
         url,
         message: error instanceof Error ? error.message : 'Unknown error',
+        status: response ? response.status : undefined,
+        duration,
       });
       throw error;
     }
@@ -254,14 +266,15 @@ export class FhirClient {
     this.log({ type: 'request', method: 'PATCH', url, headers, body: ops });
 
     const start = Date.now();
+    let response, duration;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(ops),
       });
       const body = await response.json();
-      const duration = Date.now() - start;
+      duration = Date.now() - start;
 
       this.log({
         type: response.ok ? 'response' : 'error',
@@ -283,6 +296,8 @@ export class FhirClient {
         method: 'PATCH',
         url,
         message: error instanceof Error ? error.message : 'Unknown error',
+        status: response ? response.status : undefined,
+        duration,
       });
       throw error;
     }

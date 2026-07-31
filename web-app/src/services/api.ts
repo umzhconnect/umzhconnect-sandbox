@@ -32,14 +32,14 @@ export async function createReferralWorkflow(
     type: 'info',
     message: 'Step 1: Creating ServiceRequest at Placer FHIR server...',
   });
-  const createdSR = await placerClient.create(serviceRequest);
+  const [createdSR, _] = await placerClient.create(serviceRequest);
 
   // Step 2: Create Consent at Placer
   onLog?.({
     type: 'info',
     message: 'Step 2: Creating Consent for the ServiceRequest...',
   });
-  const createdConsent = await placerClient.create(consent);
+  const [createdConsent, _] = await placerClient.create(consent);
 
   // Step 3: Create Task at Fulfiller — direct call to the partner's external
   // gateway, authenticated with an M2M token the caller minted in-browser.
@@ -48,7 +48,7 @@ export async function createReferralWorkflow(
     message: 'Step 3: Creating Task at Fulfiller (cross-organization)...',
   });
   const fulfillerClient = new FhirClient(partnerExternalBaseUrl, partnerM2mToken, onLog);
-  const createdTask = await fulfillerClient.create(task);
+  const [createdTask, _] = await fulfillerClient.create(task);
 
   onLog?.({
     type: 'info',

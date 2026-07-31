@@ -10,6 +10,8 @@ const statusColors: Record<string, string> = {
   'in-progress': 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800',
+  failed: 'bg-red-100 text-red-800',
+  rejected: 'bg-red-100 text-red-800',
   draft: 'bg-gray-100 text-gray-800',
   'on-hold': 'bg-orange-100 text-orange-800',
   'entered-in-error': 'bg-red-100 text-red-800',
