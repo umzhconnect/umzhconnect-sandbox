@@ -135,7 +135,7 @@ const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       // fhirContext — Task create is not fhirContext-gated) and POST directly
       // to the partner's external gateway. No internal-gateway proxy involved.
       const partner = await getPartnerClient();
-      const result = await partner.create<Task>(task);
+      const [result, _] = await partner.create<Task>(task);
 
       // Await invalidation so any CURRENTLY-ACTIVE all-tasks subscriber
       // completes its refetch first (same post-fetch injection pattern as SR).

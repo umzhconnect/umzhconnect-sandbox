@@ -1,13 +1,31 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllTasks } from '../../hooks/useFhirSearch';
-import { useFhirClient, useCrossPartyFetch } from '../../hooks/useFhirClient';
+import { useFhirClient, useCrossPartyFetch, usePartnerClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
 import { useLog } from '../../contexts/LogContext';
-import type { Task, FhirResource } from '../../types/fhir';
+import type { Task, FhirResource, TaskParameter } from '../../types/fhir';
 import StatusBadge from '../common/StatusBadge';
 import JsonViewer from '../common/JsonViewer';
 import LoadingSpinner from '../common/LoadingSpinner';
+import type { QuestionnaireNavState } from '../../pages/QuestionnairePage';
+
+// Task.output entries that point at a Questionnaire carry it as either an
+// absolute valueCanonical (the common case — see the orthopedic-surgery
+// use case) or a valueReference; both are absolute URLs per IG convention.
+const extractQuestionnaireUrl = (out: TaskParameter): string | undefined => {
+  if (out.valueCanonical?.includes('/Questionnaire/')) return out.valueCanonical;
+  if (out.valueReference?.reference?.includes('Questionnaire/')) return out.valueReference.reference;
+  return undefined;
+};
+
+// Task.input entries that point at a QuestionnaireResponse (added once the
+// placer submits the filled form — see QuestionnairePage's handleSubmit).
+const extractQuestionnaireResponseUrl = (inp: TaskParameter): string | undefined => {
+  if (inp.valueReference?.reference?.includes('/QuestionnaireResponse/')) return inp.valueReference.reference;
+  return undefined;
+};
 
 type TaskSource = 'local' | 'remote';
 interface TaggedTask extends Task {
@@ -15,11 +33,13 @@ interface TaggedTask extends Task {
 }
 
 const TaskList: React.FC = () => {
-  const { activeRole, registryBaseUrl } = useRole();
+  const { activeRole, registryBaseUrl, ownOrgRegistryRef } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const crossPartyFetch = useCrossPartyFetch();
+  const getPartnerClient = usePartnerClient();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedTask, setSelectedTask] = useState<TaggedTask | null>(null);
@@ -50,30 +70,60 @@ const TaskList: React.FC = () => {
     setEditOwner(task.owner?.reference || '');
   };
 
-  const handleUpdateTask = async () => {
+  const patchSelectedTask = async (
+    ops: Array<{ op: string; path: string; value?: unknown }>,
+    logMessage: string
+  ) => {
     if (!selectedTask) return;
     setSaving(true);
     try {
-      addLog({
-        type: 'info',
-        message: `Patching Task/${selectedTask.id}: status=${editStatus}${editOwner ? `, owner=${editOwner}` : ''}`,
-      });
-
-      const ops: Array<{ op: string; path: string; value: unknown }> = [
-        { op: 'replace', path: '/status', value: editStatus },
-      ];
-      if (editOwner) {
-        ops.push({ op: 'replace', path: '/owner', value: { reference: editOwner } });
-      }
-
-      const result = await client.patch<Task>('Task', selectedTask.id!, ops);
+      addLog({ type: 'info', message: logMessage });
+      const targetClient =
+        selectedTask._source === 'remote' ? await getPartnerClient() : client;
+      const result = await targetClient.patch<Task>('Task', selectedTask.id!, ops);
       setSelectedTask({ ...result, _source: selectedTask._source });
-      queryClient.invalidateQueries({ queryKey: ['all-tasks', activeRole] });
+      await queryClient.invalidateQueries({queryKey: ['all-tasks', activeRole]});
     } catch (err) {
       console.error('Task update failed:', err);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleMoveToPlacer = () => {
+    if (!selectedTask) return;
+    patchSelectedTask(
+      [
+        { op: 'replace', path: '/owner', value: { reference: placerOrgRef } },
+        {
+          op: 'add',
+          path: '/businessStatus',
+          value: {
+            coding: [{ system: 'http://hl7.org/fhir/uv/cow/CodeSystem/temp', code: 'awaiting-information' }],
+          },
+        },
+      ],
+      `Patching Task/${selectedTask.id}: owner=${placerOrgRef}, businessStatus=awaiting-information`
+    );
+  };
+
+  const handleMoveToFulfiller = () => {
+    if (!selectedTask) return;
+    const ops: Array<{ op: string; path: string; value?: unknown }> = [
+      { op: 'replace', path: '/owner', value: { reference: fulfillerOrgRef } },
+    ];
+    if (selectedTask.businessStatus) {
+      ops.push({ op: 'remove', path: '/businessStatus' });
+    }
+    patchSelectedTask(ops, `Patching Task/${selectedTask.id}: owner=${fulfillerOrgRef}, businessStatus removed`);
+  };
+
+  const handleSetTaskStatus = (newStatus: string) => {
+    if (!selectedTask) return;
+    patchSelectedTask(
+      [{ op: 'replace', path: '/status', value: newStatus }],
+      `Patching Task/${selectedTask.id}: status=${newStatus}`
+    );
   };
 
   const handleLoadBasedOn = async () => {
@@ -93,11 +143,12 @@ const TaskList: React.FC = () => {
       const id = ref.substring(lastSlash + 1);
       const typeBase = ref.substring(0, lastSlash); // e.g. "http://localhost:8083/fhir/ServiceRequest"
 
-      // Build an _id search with included resources so we get Patient + Practitioner in one call.
+      // Build an _id search with included resources.
       const searchUrl =
         `${typeBase}?_id=${encodeURIComponent(id)}` +
         `&_include=ServiceRequest:subject` +
-        `&_include=ServiceRequest:requester`;
+        `&_include=ServiceRequest:requester` +
+        `&_include=ServiceRequest:supporting-info`;
 
       // Mint an M2M token bound to this ServiceRequest as fhirContext, then read
       // directly from the partner external gateway (OPA validates the context).
@@ -111,10 +162,50 @@ const TaskList: React.FC = () => {
     }
   };
 
+  const handleFillQuestionnaire = (questionnaireUrl: string, readOnly: boolean) => {
+    if (!selectedTask) return;
+    const state: QuestionnaireNavState = {
+      questionnaireUrl,
+      task: selectedTask,
+      patientRef: selectedTask.for!,
+      readOnly,
+    };
+    navigate('/questionnaire', { state });
+  };
+
+  const handleViewQuestionnaireResponse = (questionnaireResponseUrl: string) => {
+    if (!selectedTask) return;
+    const state: QuestionnaireNavState = {
+      questionnaireResponseUrl,
+      task: selectedTask,
+      patientRef: selectedTask.for!,
+      readOnly: true,
+    };
+    navigate('/questionnaire', { state });
+  };
+
   const extractDisplayRef = (ref?: { reference?: string; display?: string }): string => {
     if (!ref) return '-';
     return ref.display || ref.reference || '-';
   };
+
+  const placerOrgRef = `${registryBaseUrl}/Organization/HospitalP`;
+  const fulfillerOrgRef = `${registryBaseUrl}/Organization/HospitalF`;
+
+  const isOwnTask = selectedTask?.owner?.reference === ownOrgRegistryRef;
+  const isAssignedToPlacer = selectedTask?.owner?.reference === placerOrgRef;
+  const isAssignedToFulfiller = selectedTask?.owner?.reference === fulfillerOrgRef;
+  const isOwnFulfillerTask = isAssignedToFulfiller && isOwnTask;
+  const isInProgress = selectedTask?.status === 'in-progress';
+  const canAccept = isOwnFulfillerTask && selectedTask?.status === 'requested';
+  const canReject = isOwnFulfillerTask && selectedTask?.status === 'requested';
+  const canStartWork = isOwnFulfillerTask && selectedTask?.status === 'accepted';
+  const canFail = isOwnFulfillerTask && isInProgress;
+  const canComplete = isOwnFulfillerTask && isInProgress;
+  const canFillQuestionnaire =
+        activeRole === 'placer' &&
+        selectedTask?.owner?.reference === placerOrgRef &&
+        selectedTask?.status === 'in-progress';
 
   return (
     <div className="flex gap-4 h-full">
@@ -197,38 +288,20 @@ const TaskList: React.FC = () => {
                   {selectedTask._source === 'local' ? 'Local' : 'Remote'}
                 </span>
               </div>
-              {selectedTask._source === 'remote' && (
-                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-4">
-                  This task lives on the partner's server. Updates are not available from this view.
-                </p>
-              )}
-
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value="draft">draft</option>
-                    <option value="ready">ready</option>
-                    <option value="in-progress">in-progress</option>
-                    <option value="completed">completed</option>
-                    <option value="cancelled">cancelled</option>
-                    <option value="on-hold">on-hold</option>
-                  </select>
+                  <StatusBadge status={selectedTask.status} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Owner</label>
-                  <select
-                    value={editOwner}
-                    onChange={(e) => setEditOwner(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  >
-                    <option value={`${registryBaseUrl}/Organization/HospitalP`}>HospitalP (Placer)</option>
-                    <option value={`${registryBaseUrl}/Organization/HospitalF`}>HospitalF (Fulfiller)</option>
-                  </select>
+                  <p className="text-gray-900">{extractDisplayRef(selectedTask.owner)}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Business Status</label>
+                  <p className="text-gray-900">
+                    {selectedTask.businessStatus?.coding?.[0]?.code || selectedTask.businessStatus?.text || '-'}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Intent</label>
@@ -276,11 +349,27 @@ const TaskList: React.FC = () => {
               {selectedTask.input && selectedTask.input.length > 0 && (
                 <div className="mt-4">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Inputs</label>
-                  {selectedTask.input.map((inp, i) => (
-                    <div key={i} className="text-xs font-mono text-gray-700 bg-gray-50 p-2 rounded mb-1">
-                      {inp.type?.coding?.[0]?.display || 'Input'}: {inp.valueReference?.reference || inp.valueCanonical || inp.valueString || '-'}
-                    </div>
-                  ))}
+                  {selectedTask.input.map((inp, i) => {
+                    const questionnaireResponseUrl = extractQuestionnaireResponseUrl(inp);
+                    return (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-2 text-xs font-mono text-gray-700 bg-gray-50 p-2 rounded mb-1"
+                      >
+                        <span className="truncate">
+                          {inp.type?.coding?.[0]?.display || 'Input'}: {inp.valueReference?.reference || inp.valueCanonical || inp.valueString || '-'}
+                        </span>
+                        {questionnaireResponseUrl && (
+                          <button
+                            onClick={() => handleViewQuestionnaireResponse(questionnaireResponseUrl)}
+                            className="flex-shrink-0 text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-sans"
+                          >
+                            See Questionnaire Response
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -288,22 +377,111 @@ const TaskList: React.FC = () => {
               {selectedTask.output && selectedTask.output.length > 0 && (
                 <div className="mt-4">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Outputs</label>
-                  {selectedTask.output.map((out, i) => (
-                    <div key={i} className="text-xs font-mono text-gray-700 bg-gray-50 p-2 rounded mb-1">
-                      {out.type?.coding?.[0]?.display || 'Output'}: {out.valueReference?.reference || out.valueCanonical || out.valueString || '-'}
-                    </div>
-                  ))}
+                  {selectedTask.output.map((out, i) => {
+                    const questionnaireUrl = extractQuestionnaireUrl(out);
+                    return (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between gap-2 text-xs font-mono text-gray-700 bg-gray-50 p-2 rounded mb-1"
+                      >
+                        <span className="truncate">
+                          {out.type?.coding?.[0]?.display || 'Output'}: {out.valueReference?.reference || out.valueCanonical || out.valueString || '-'}
+                        </span>
+                        {questionnaireUrl && canFillQuestionnaire && (
+                          <button
+                            onClick={() => handleFillQuestionnaire(questionnaireUrl, false)}
+                            className="flex-shrink-0 text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-sans"
+                          >
+                            Fill Questionnaire
+                          </button>
+                        )}
+                        {questionnaireUrl && !canFillQuestionnaire && (
+                          <button
+                            onClick={() => handleFillQuestionnaire(questionnaireUrl, true)}
+                            className="flex-shrink-0 text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 transition-colors font-sans"
+                          >
+                            See Questionnaire
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
               <div className="mt-4 flex gap-2">
-                <button
-                  onClick={handleUpdateTask}
-                  disabled={saving || selectedTask._source === 'remote'}
-                  className="btn-primary disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Update Task'}
-                </button>
+                {canAccept && (
+                  <button
+                    onClick={() => handleSetTaskStatus('accepted')}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Accept Task'}
+                  </button>
+                )}
+                {canAccept && (
+                  <button
+                    onClick={() => handleSetTaskStatus('in-progress')}
+                  disabled={saving}
+                  className="btn-secondary disabled:opacity-50"
+              >
+                  {saving ? 'Saving...' : 'Accept Task and Start Work'}
+              </button>
+                )}
+                {canReject && (
+                  <button
+                    onClick={() => handleSetTaskStatus('rejected')}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Reject Task'}
+                  </button>
+                )}
+                {canStartWork && (
+                  <button
+                    onClick={() => handleSetTaskStatus('in-progress')}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Start work'}
+                  </button>
+                )}
+                {canFail && (
+                  <button
+                    onClick={() => handleSetTaskStatus('failed')}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Fail Task'}
+                  </button>
+                )}
+                {canComplete && (
+                  <button
+                    onClick={() => handleSetTaskStatus('completed')}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Complete Task'}
+                  </button>
+                )}
+                {isOwnFulfillerTask && isInProgress && (
+                  <button
+                    onClick={handleMoveToPlacer}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Assign Task to placer'}
+                  </button>
+                )}
+                {isAssignedToPlacer && isOwnTask && isInProgress && (
+                  <button
+                    onClick={handleMoveToFulfiller}
+                    disabled={saving}
+                    className="btn-secondary disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Assign Task to fulfiller'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -332,6 +510,8 @@ const TaskList: React.FC = () => {
                   Includes: <span className="font-mono">ServiceRequest:subject</span>
                   {' · '}
                   <span className="font-mono">ServiceRequest:requester</span>
+                  {' · '}
+                  <span className="font-mono">ServiceRequest:supporting-info</span>
                 </p>
               </div>
               <button

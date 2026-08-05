@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
-import { TASK_STATUSES } from '../../types/fhir';
+import {TASK_STATUSES} from '../../types/fhir';
 import type {
   Endpoint,
   FhirResource,
@@ -15,8 +15,10 @@ import type {
   TaskParameter,
   Condition,
   Consent,
+  Questionnaire,
 } from '../../types/fhir';
 import ResourcePickerModal, { getResourceLabel } from './ResourcePickerModal';
+import { BaseRenderer, RendererThemeProvider, useBuildForm, useRendererQueryClient } from "@aehrc/smart-forms-renderer";
 
 // =============================================================================
 // Constants
@@ -31,6 +33,7 @@ export const SUPPORTED_EDIT_TYPES = [
   'Task',
   'Condition',
   'Consent',
+  'Questionnaire',
 ];
 
 const SR_STATUSES = [
@@ -1245,6 +1248,36 @@ const ConsentForm: React.FC<{
 };
 
 // =============================================================================
+// Questionnaire form
+// =============================================================================
+
+const QuestionnaireForm: React.FC<{
+    draft: Questionnaire;
+}> = ({ draft }) => {
+    // The renderer needs a query client to make API calls
+    const queryClient = useRendererQueryClient();
+
+    // This hook builds the form based on the questionnaire
+    const isBuilding = useBuildForm({
+        questionnaire: draft,
+        readOnly: false,
+    });
+
+    if (isBuilding) {
+        return <div>Loading...</div>;
+    }
+
+    return (
+        // The RendererThemeProvider provides the default renderer theme based on Material UI
+        <RendererThemeProvider>
+            <QueryClientProvider client={queryClient}>
+                <BaseRenderer />
+            </QueryClientProvider>
+        </RendererThemeProvider>
+    );
+}
+
+// =============================================================================
 // Main: ResourceEditForm
 // =============================================================================
 
@@ -1414,6 +1447,10 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
           serviceRequests={serviceRequests}
           organizations={organizations}
           registryBaseUrl={registryBaseUrl}
+        />
+      ) : resource.resourceType === 'Questionnaire' ? (
+        <QuestionnaireForm
+          draft={draft as Questionnaire}
         />
       ) : null}
     </div>

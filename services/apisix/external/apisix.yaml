@@ -54,9 +54,9 @@ routes:
       umzh-capability-guard:
         allow_params: ["owner", "requester", "status", "_id"]
         allow_includes:
-          - "Task:ch-umzhconnectig-task-inputreference"
-          - "Task:ch-umzhconnectig-task-outputreference"
-          - "Task:ch-umzhconnectig-task-outputcanonical"
+          - "Task:input-value-reference"
+          - "Task:output-value-reference"
+          - "Task:output-value-canonical"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"
@@ -162,9 +162,9 @@ routes:
           - "ServiceRequest:patient"
           - "ServiceRequest:subject"
           - "ServiceRequest:requester"
-          - "ServiceRequest:ch-umzhconnectig-servicerequest-reasonreference"
-          - "ServiceRequest:ch-umzhconnectig-servicerequest-supportinginfo"
-          - "ServiceRequest:ch-umzhconnectig-servicerequest-insurance"
+          - "ServiceRequest:reason-reference"
+          - "ServiceRequest:supporting-info"
+          - "ServiceRequest:insurance"
       opa:
         host: "http://opa-${PARTY}:8181"
         policy: "umzh/authz/apisix"

@@ -128,6 +128,7 @@ export interface Task extends FhirResource {
   lastModified?: string;
   requester?: Reference;
   owner?: Reference;
+  businessStatus?: CodeableConcept;
   input?: TaskParameter[];
   output?: TaskParameter[];
 }

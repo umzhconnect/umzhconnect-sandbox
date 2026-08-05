@@ -70,6 +70,7 @@ end
 -- 400 + FHIR OperationOutcome. issue_code is a FHIR issue-type code
 -- ("not-supported", "required", "invalid").
 local function reject(issue_code, msg)
+  core.log.warn("Error 400 [", issue_code, "]: ", msg)
   return 400, {
     resourceType = "OperationOutcome",
     issue = { {

@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import ResourcesPage from './pages/ResourcesPage';
 import TasksPage from './pages/TasksPage';
 import CredentialsPage from './pages/CredentialsPage';
+import QuestionnairePage from './pages/QuestionnairePage';
 import { useRole } from './contexts/RoleContext';
 
 const App: React.FC = () => {
@@ -23,6 +24,7 @@ const App: React.FC = () => {
             <Route path="/resources" element={<ResourcesPage key={activeRole} />} />
             <Route path="/tasks" element={<TasksPage key={activeRole} />} />
             <Route path="/credentials" element={<CredentialsPage />} />
+            <Route path="/questionnaire" element={<QuestionnairePage />} />
           </Routes>
         </main>
         <ProtocolLogPanel />
