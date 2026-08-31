@@ -35,9 +35,8 @@ const WizardResourceViewModal: React.FC<{
 }> = ({ open, title, resource, onContinue, onClose }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
@@ -63,9 +62,8 @@ const WizardUpdateModal: React.FC<{
 }> = ({ open, resource, onClose, onSuccess }) => {
   if (!open || !resource) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">
             Update {resource.resourceType}/{resource.id}
@@ -86,13 +84,43 @@ const WizardTaskSelectModal: React.FC<{
   onClose: () => void;
   onSelect: (task: TaggedTask) => void;
 }> = ({ open, onClose, onSelect }) => {
+  const { activeRole } = useRole();
   const [statusFilter, setStatusFilter] = useState('');
   const [selected, setSelected] = useState<TaggedTask | null>(null);
+  const [selectedRemoteOrgId, setSelectedRemoteOrgId] = useState('');
 
   const searchParams: Record<string, string> = {};
   if (statusFilter) searchParams['status'] = statusFilter;
 
-  const { data: allTasksData, isLoading } = useAllTasks(searchParams);
+  // Registry orgs + endpoints (only fetched while modal is open)
+  const { data: registryBundle } = useRegistrySearch<FhirResource>(
+    'Organization',
+    { '_revinclude': 'Endpoint:organization' },
+    open
+  );
+  const organizations = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Organization => r?.resourceType === 'Organization')) ?? [];
+  const endpoints = (registryBundle?.entry
+    ?.map((e) => e.resource)
+    .filter((r): r is Endpoint => r?.resourceType === 'Endpoint')) ?? [];
+
+  const ownAlias = activeRole === 'placer' ? 'HospitalP' : 'HospitalF';
+  const targetableOrgs = organizations
+    .filter((org) => !org.alias?.includes(ownAlias))
+    .flatMap((org) => {
+      const endpoint = endpoints.find(
+        (ep) =>
+          ep.managingOrganization?.reference?.endsWith(`/Organization/${org.id}`) ||
+          ep.managingOrganization?.reference?.endsWith(`Organization/${org.id}`)
+      );
+      return endpoint ? [{ org, endpoint }] : [];
+    });
+
+  const selectedEntry = targetableOrgs.find((t) => t.org.id === selectedRemoteOrgId) ?? null;
+  const remoteBaseUrl = selectedEntry?.endpoint.address ?? null;
+
+  const { data: allTasksData, isLoading } = useAllTasks(searchParams, remoteBaseUrl);
 
   const tasks: TaggedTask[] = [
     ...((allTasksData?.local?.entry?.map((e) => e.resource).filter(Boolean) as Task[]) ?? []).map(
@@ -108,10 +136,14 @@ const WizardTaskSelectModal: React.FC<{
 
   if (!open) return null;
 
+  const handleOrgChange = (orgId: string) => {
+    setSelectedRemoteOrgId(orgId);
+    setSelected(null);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -119,24 +151,43 @@ const WizardTaskSelectModal: React.FC<{
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
-        {/* Status filter */}
-        <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-3">
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setSelected(null); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">All statuses</option>
-            <option value="ready">Ready</option>
-            <option value="in-progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          {selected && (
-            <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">
-              Selected: Task/{selected.id}
-            </span>
-          )}
+        {/* Filters */}
+        <div className="px-6 py-3 border-b border-gray-100 space-y-2">
+          {/* Remote org selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 shrink-0">Remote org:</label>
+            <select
+              value={selectedRemoteOrgId}
+              onChange={(e) => handleOrgChange(e.target.value)}
+              className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="">— local tasks only —</option>
+              {targetableOrgs.map(({ org }) => (
+                <option key={org.id} value={org.id!}>
+                  {org.name ?? org.alias?.[0] ?? org.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Status + selection indicator */}
+          <div className="flex items-center gap-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setSelected(null); }}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="">All statuses</option>
+              <option value="ready">Ready</option>
+              <option value="in-progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            {selected && (
+              <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">
+                Selected: Task/{selected.id}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Task rows */}
@@ -204,7 +255,7 @@ const WizardTaskSelectModal: React.FC<{
 // ---------------------------------------------------------------------------
 
 const WorkflowWizard: React.FC = () => {
-  const { activeRole, registryBaseUrl } = useRole();
+  const { activeRole, partyLabel, registryBaseUrl } = useRole();
   const { addLog } = useLog();
   const client = useFhirClient();
   const crossPartyFetch = useCrossPartyFetch();
@@ -212,7 +263,7 @@ const WorkflowWizard: React.FC = () => {
 
   const { data: registryBundle } = useRegistrySearch<FhirResource>(
     'Organization',
-    { '_include': 'Organization:endpoint' }
+    { '_revinclude': 'Endpoint:organization' }
   );
   const organizations = (registryBundle?.entry
     ?.map((e) => e.resource)
@@ -594,6 +645,9 @@ const WorkflowWizard: React.FC = () => {
         <p className="text-gray-500 mt-1">
           Step-by-step walkthrough of the clinical order workflow from the{' '}
           <strong>{activeRole === 'placer' ? 'Placer' : 'Fulfiller'}</strong> perspective.
+        </p>
+        <p className="text-gray-500 mt-0.5 text-sm">
+          Active role: <strong>{partyLabel}</strong> · Clinical order workflow sandbox
         </p>
       </div>
 

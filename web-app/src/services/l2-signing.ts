@@ -17,6 +17,7 @@
 // =============================================================================
 
 import type { LogEntry } from '../types/fhir';
+import { readBodyForLog } from './http';
 
 type LogCallback = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 
@@ -151,12 +152,13 @@ export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<str
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
-  const data = await res.json();
+  const data = await readBodyForLog(res);
   onLog?.({ type: res.ok ? 'response' : 'error', method: 'POST', url: keycloakTokenUrl,
     status: res.status, body: data });
 
-  if (!res.ok || typeof data.access_token !== 'string') {
+  const accessToken = (data as { access_token?: unknown } | undefined)?.access_token;
+  if (!res.ok || typeof accessToken !== 'string') {
     throw new Error(`M2M token request failed: ${res.status}`);
   }
-  return data.access_token;
+  return accessToken;
 }

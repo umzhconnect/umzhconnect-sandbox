@@ -11,8 +11,11 @@ sandbox.umzh-connect.ch {
     reverse_proxy localhost:3000
 }
 
-# Keycloak authorization server
+# Keycloak authorization server — /admin console and admin REST API blocked
 auth.sandbox.umzh-connect.ch {
+    @admin path /admin* /admin
+    respond @admin 403
+
     reverse_proxy localhost:8180 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host {host}
@@ -22,6 +25,12 @@ auth.sandbox.umzh-connect.ch {
 # Public mCSD registry (no auth)
 registry.sandbox.umzh-connect.ch {
     reverse_proxy localhost:8084
+}
+
+# Admin API (reseed + onboarding). Privileged routes are gated by Keycloak
+# token introspection + the `admin` realm role inside the service itself.
+admin.sandbox.umzh-connect.ch {
+    reverse_proxy localhost:9000
 }
 
 # Placer hospital — external gateway (cross-party, used by fulfiller)

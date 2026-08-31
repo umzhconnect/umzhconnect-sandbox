@@ -55,7 +55,7 @@ This is a reference implementation of a two-party healthcare order workflow (Pla
 | `apisix-placer-external` / `apisix-fulfiller-external` | APISIX 3.9.0 | External gateways (ports 8081/8083) for cross-party access |
 | `opa-placer` / `opa-fulfiller` | OPA 0.70.0 | Consent-based policy enforcement (Rego) |
 | `nginx-proxy` | nginx:alpine | Self-link URL rewriting (ports 80–84); port 84 = public registry gateway |
-| `reseed-api` | Node.js | Admin HTTP API to expunge + reload all FHIR seed data (port 9001) |
+| `admin-api` | Node.js | Admin HTTP API (port 9000): reseed FHIR data + self-service user/M2M-client onboarding |
 | `postgres` | PostgreSQL 16 | Shared DB for HAPI FHIR + Keycloak |
 
 ### Dual-Gateway Pattern
@@ -125,7 +125,7 @@ Keycloak admin: `admin/admin` at http://localhost:8180/admin
 - Registry (public): http://localhost:8084
 - Placer/Fulfiller L2 JWKS: http://localhost:8081/jwks.json / :8083/jwks.json (served by the external gateways)
 - OPA Placer/Fulfiller: http://localhost:8181 / :8182
-- Reseed API: http://localhost:9001
+- Admin API (reseed + onboarding): http://localhost:9000
 
 ### Test Suite
 

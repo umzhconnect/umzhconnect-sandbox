@@ -3,10 +3,13 @@ import { Routes, Route } from 'react-router-dom';
 import Header from './components/layout/Header';
 import Sidebar from './components/layout/Sidebar';
 import ProtocolLogPanel from './components/layout/ProtocolLogPanel';
+import IntroPage from './pages/IntroPage';
 import Dashboard from './pages/Dashboard';
 import ResourcesPage from './pages/ResourcesPage';
 import TasksPage from './pages/TasksPage';
 import CredentialsPage from './pages/CredentialsPage';
+import OnboardingPage from './pages/OnboardingPage';
+import RegistryPage from './pages/RegistryPage';
 import { useRole } from './contexts/RoleContext';
 
 const App: React.FC = () => {
@@ -19,10 +22,14 @@ const App: React.FC = () => {
         <Sidebar />
         <main className="flex-1 p-6 overflow-auto">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<IntroPage />} />
+            <Route path="/intro" element={<IntroPage />} />
+            <Route path="/workflow" element={<Dashboard />} />
             <Route path="/resources" element={<ResourcesPage key={activeRole} />} />
             <Route path="/tasks" element={<TasksPage key={activeRole} />} />
             <Route path="/credentials" element={<CredentialsPage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/registry" element={<RegistryPage />} />
           </Routes>
         </main>
         <ProtocolLogPanel />

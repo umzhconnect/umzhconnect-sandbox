@@ -51,8 +51,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           authenticated,
           loading: false,
           token: keycloak.token,
-          username: keycloak.tokenParsed?.preferred_username,
-          email: keycloak.tokenParsed?.email,
+          username: keycloak.tokenParsed?.preferred_username
+            ?? keycloak.idTokenParsed?.preferred_username,
+          email: keycloak.tokenParsed?.email ?? keycloak.idTokenParsed?.email,
           roles: keycloak.tokenParsed?.realm_roles || [],
         });
       })

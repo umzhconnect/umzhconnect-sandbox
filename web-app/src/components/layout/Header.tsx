@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRole } from '../../contexts/RoleContext';
+import { VITE_ADMIN_API_URL } from '../../config/env';
 
 type ReseedStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const Header: React.FC = () => {
-  const { authenticated, username, login, logout } = useAuth();
-  const { activeRole, switchRole, partyLabel } = useRole();
+  const { authenticated, username, roles, login, logout, getToken } = useAuth();
+  const { activeRole, switchRole } = useRole();
 
   const [reseedStatus, setReseedStatus] = useState<ReseedStatus>('idle');
 
@@ -14,13 +15,16 @@ const Header: React.FC = () => {
     if (reseedStatus === 'loading') return;
     setReseedStatus('loading');
     try {
-      const res = await fetch('http://localhost:9001/reseed', { method: 'POST' });
+      const token = await getToken();
+      const res = await fetch(`${VITE_ADMIN_API_URL}/reseed`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
       const json = await res.json();
       setReseedStatus(json.success ? 'success' : 'error');
     } catch {
       setReseedStatus('error');
     }
-    // Reset to idle after 3 s
     setTimeout(() => setReseedStatus('idle'), 3000);
   };
 
@@ -73,42 +77,37 @@ const Header: React.FC = () => {
             >
               HospitalF (Fulfiller)
             </button>
-            <button
-              onClick={() => switchRole('registry')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                activeRole === 'registry'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Registry
-            </button>
           </div>
 
           {/* User & Auth */}
           <div className="flex items-center gap-4">
-            {/* Reseed button */}
-            <button
-              onClick={handleReseed}
-              disabled={reseedStatus === 'loading'}
-              title="Delete all FHIR data and reload seed bundles"
-              className={`btn-secondary text-xs ${reseedCls}`}
-            >
-              {reseedLabel}
-            </button>
+            {/* Reseed button — admin only */}
+            {roles.includes('admin') && (
+              <button
+                onClick={handleReseed}
+                disabled={reseedStatus === 'loading'}
+                title="Delete all FHIR data and reload seed bundles"
+                className={`btn-secondary text-xs ${reseedCls}`}
+              >
+                {reseedLabel}
+              </button>
+            )}
 
-            <div
-              className={`text-xs px-3 py-1 rounded-full font-medium ${
-                activeRole === 'placer'    ? 'bg-blue-100 text-blue-800'
-                : activeRole === 'fulfiller' ? 'bg-green-100 text-green-800'
-                : 'bg-purple-100 text-purple-800'
-              }`}
-            >
-              {partyLabel}
-            </div>
             {authenticated ? (
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600">{username}</span>
+                <div
+                  className="relative group cursor-default select-none text-right"
+                  title={roles.join(', ') || 'no roles'}
+                >
+                  <p className="text-xs text-gray-500 leading-tight">Logged in as</p>
+                  <p className="text-sm font-medium text-gray-900 leading-tight">{username}</p>
+                  <div className="absolute right-0 top-full mt-1.5 hidden group-hover:block z-50 bg-gray-800 text-white text-xs rounded-md px-3 py-2 whitespace-nowrap shadow-lg">
+                    <p className="font-medium mb-1 text-gray-300">Roles</p>
+                    {roles.length > 0 ? roles.map((r) => (
+                      <p key={r} className="font-mono">{r}</p>
+                    )) : <p className="italic text-gray-400">no roles</p>}
+                  </div>
+                </div>
                 <button onClick={logout} className="btn-secondary text-xs">
                   Logout
                 </button>

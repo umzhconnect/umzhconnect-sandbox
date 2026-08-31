@@ -28,10 +28,10 @@ services:
       APISIX_FULFILLER_EXT_URL: http://apisix-fulfiller-external:9080
       HAPI_FHIR_URL: http://hapi-fhir:8080
       REGISTRY_URL: http://nginx-proxy:84
-      ORG_CANONICAL_URL: ${VITE_REGISTRY_URL:-http://localhost:8084}
+      ORG_CANONICAL_URL: ${REGISTRY_PUBLIC_URL:-http://localhost:8084}
       OPA_PLACER_URL: http://opa-placer:8181
       OPA_FULFILLER_URL: http://opa-fulfiller:8181
-      RESEED_API_URL: http://reseed-api:9001
+      ADMIN_API_URL: http://admin-api:9000
       WEB_APP_URL: http://web-app:80
       KEY_CUSTODIAN_PLACER_URL: http://key-custodian-placer:8000
       KEY_CUSTODIAN_FULFILLER_URL: http://key-custodian-fulfiller:8000

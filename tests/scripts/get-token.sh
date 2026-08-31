@@ -124,6 +124,9 @@ case "$CLIENT_TYPE" in
   fulfiller-user)
     fetch_token "grant_type=password&client_id=web-app&username=fulfiller-user&password=fulfiller123&scope=openid"
     ;;
+  admin-user)
+    fetch_token "grant_type=password&client_id=web-app&username=admin-user&password=admin123&scope=openid"
+    ;;
   placer-l2)
     fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" ""
     ;;
@@ -141,7 +144,7 @@ case "$CLIENT_TYPE" in
       '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
     ;;
   *)
-    echo "Usage: get-token.sh <placer|fulfiller|fulfiller-context|placer-context|placer-user|fulfiller-user|placer-l2|fulfiller-l2|fulfiller-l2-context|placer-l2-context> [resource_id]" >&2
+    echo "Usage: get-token.sh <placer|fulfiller|fulfiller-context|placer-context|placer-user|fulfiller-user|admin-user|placer-l2|fulfiller-l2|fulfiller-l2-context|placer-l2-context> [resource_id]" >&2
     exit 1
     ;;
 esac

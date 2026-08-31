@@ -26,12 +26,74 @@ routes:
         uri: /fhir/${PARTY}/metadata
 
   # ─── Own FHIR data — JWT + realm-role + URL rewrite ──────────────────
-  # Serves only this party's own partition. The web-app authenticates cross-party
-  # calls itself (in-browser client_credentials) and talks directly to the
-  # partner's external gateway.
-  - id: int-fhir
+  # Serves only this party's own partition. Cross-party access is no longer
+  # proxied here — the web-app authenticates cross-domain calls itself (in-browser
+  # client_credentials) and talks to the partner's external gateway directly.
+  #
+  # Two routes split by method so read-only 'user' tokens are accepted on GETs
+  # while writes remain restricted to the party's own role (placer/fulfiller).
+
+  - id: int-fhir-read
     uri: /fhir/*
-    methods: [GET, POST, PUT, PATCH, DELETE]
+    methods: [GET]
+    priority: 2
+    upstream_id: hapi-${PARTY}
+    plugins:
+      openid-connect:
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        allowed_roles: ["${PARTY}", "user"]
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/${PARTY}/$1"]
+
+  # User-role permitted creates: ServiceRequest and Consent (POST only, higher priority)
+  - id: int-fhir-servicerequest-create
+    uri: /fhir/ServiceRequest
+    methods: [POST]
+    priority: 10
+    upstream_id: hapi-${PARTY}
+    plugins:
+      openid-connect:
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        allowed_roles: ["${PARTY}", "user"]
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/${PARTY}/$1"]
+
+  - id: int-fhir-consent-create
+    uri: /fhir/Consent
+    methods: [POST]
+    priority: 10
+    upstream_id: hapi-${PARTY}
+    plugins:
+      openid-connect:
+        discovery: "${KEYCLOAK_DISCOVERY_URL}"
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        set_userinfo_header: false
+        client_id: "unused"
+        client_secret: "unused"
+      umzh-role-check:
+        allowed_roles: ["${PARTY}", "user"]
+      proxy-rewrite:
+        regex_uri: ["^/fhir/(.*)$", "/fhir/${PARTY}/$1"]
+
+  - id: int-fhir-write
+    uri: /fhir/*
+    methods: [POST, PUT, PATCH, DELETE]
     priority: 1
     upstream_id: hapi-${PARTY}
     plugins:

@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { FhirClient } from '../services/fhir-client';
+import { readBodyForLog } from '../services/http';
 import { acquireM2mToken } from '../services/l2-signing';
 import { useAuth } from '../contexts/AuthContext';
 import { useRole } from '../contexts/RoleContext';
@@ -86,14 +87,20 @@ export function usePartnerClient(): (fhirContextRef?: string) => Promise<FhirCli
  * authenticated with a freshly-minted M2M token. Used for cross-party reads
  * where the search URL is built by hand (e.g. multi-valued _include). Pass the
  * fhirContextRef so OPA's fhirContext gate permits the read.
+ *
+ * Supply overrideGetToken to substitute the default L2 signing with custom
+ * credentials (e.g. manual L1 secret or pre-signed L2 assertion).
  */
-export function useCrossPartyFetch(): <T>(absoluteUrl: string, fhirContextRef?: string) => Promise<T> {
+export function useCrossPartyFetch(
+  overrideGetToken?: (fhirContextRef?: string) => Promise<string>,
+): <T>(absoluteUrl: string, fhirContextRef?: string) => Promise<T> {
   const { addLog } = useLog();
   const getM2mToken = useM2mToken();
+  const effectiveGetToken = overrideGetToken ?? getM2mToken;
 
   return useCallback(
     async <T,>(absoluteUrl: string, fhirContextRef?: string): Promise<T> => {
-      const token = await getM2mToken(fhirContextRef);
+      const token = await effectiveGetToken(fhirContextRef);
       const headers = {
         Accept: 'application/fhir+json',
         Authorization: `Bearer ${token}`,
@@ -102,12 +109,12 @@ export function useCrossPartyFetch(): <T>(absoluteUrl: string, fhirContextRef?: 
         message: 'Cross-party read (direct to partner external gateway)' });
       const start = Date.now();
       const res = await fetch(absoluteUrl, { headers });
-      const body = await res.json();
+      const body = await readBodyForLog(res);
       addLog({ type: res.ok ? 'response' : 'error', method: 'GET', url: absoluteUrl,
         status: res.status, body, duration: Date.now() - start });
       if (!res.ok) throw new Error(`Cross-party fetch failed: ${res.status}`);
       return body as T;
     },
-    [addLog, getM2mToken]
+    [addLog, effectiveGetToken]
   );
 }

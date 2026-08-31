@@ -70,6 +70,7 @@ export interface Organization extends FhirResource {
   address?: { line?: string[]; city?: string; postalCode?: string; country?: string }[];
   telecom?: { system?: string; value?: string }[];
   endpoint?: Reference[];
+  extension?: { url: string; valueUrl?: string; valueString?: string }[];
 }
 
 // --- HealthcareService ---

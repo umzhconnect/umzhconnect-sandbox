@@ -16,3 +16,5 @@ export const VITE_PLACER_EXTERNAL_URL = env('VITE_PLACER_EXTERNAL_URL', 'http://
 export const VITE_FULFILLER_URL       = env('VITE_FULFILLER_URL',       'http://localhost:8082');
 export const VITE_FULFILLER_EXTERNAL_URL = env('VITE_FULFILLER_EXTERNAL_URL', 'http://localhost:8083');
 export const VITE_REGISTRY_URL        = env('VITE_REGISTRY_URL',        'http://localhost:8084');
+// Merged admin surface (onboarding + reseed), exposed at admin.<host> in prod.
+export const VITE_ADMIN_API_URL       = env('VITE_ADMIN_API_URL',       'http://localhost:9000');

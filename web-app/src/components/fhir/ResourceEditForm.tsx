@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFhirSearch, useRegistrySearch } from '../../hooks/useFhirSearch';
 import { useFhirClient } from '../../hooks/useFhirClient';
 import { useRole } from '../../contexts/RoleContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { TASK_STATUSES } from '../../types/fhir';
 import type {
   Endpoint,
@@ -519,6 +520,8 @@ const HealthcareServiceForm: React.FC<{
 // Organization form
 // =============================================================================
 
+const FHIR_BASE_URL_EXT = 'https://umzhconnect.ch/ext/fhir-base-url';
+
 const OrganizationForm: React.FC<{
   draft: Organization;
   setDraft: (o: Organization) => void;
@@ -526,6 +529,15 @@ const OrganizationForm: React.FC<{
   const addr = draft.address?.[0] ?? {};
   const phone = draft.telecom?.find((t) => t.system === 'phone');
   const email = draft.telecom?.find((t) => t.system === 'email');
+  const fhirBaseUrl = draft.extension?.find((e) => e.url === FHIR_BASE_URL_EXT)?.valueUrl ?? '';
+
+  const setFhirBaseUrl = (value: string) => {
+    const rest = (draft.extension ?? []).filter((e) => e.url !== FHIR_BASE_URL_EXT);
+    setDraft({
+      ...draft,
+      extension: value ? [...rest, { url: FHIR_BASE_URL_EXT, valueUrl: value }] : rest,
+    });
+  };
 
   const patchAddr = (patch: object) =>
     setDraft({ ...draft, address: [{ ...addr, ...patch }] });
@@ -620,6 +632,18 @@ const OrganizationForm: React.FC<{
             onChange={(e) => patchTelecom('email', e.target.value)}
           />
         </div>
+      </div>
+
+      <SectionHeader title="Interoperability" />
+      <div>
+        <Label text="FHIR API Base URL" hint="e.g. https://fhir.example.org/fhir" />
+        <input
+          type="url"
+          className={textInputCls}
+          value={fhirBaseUrl}
+          onChange={(e) => setFhirBaseUrl(e.target.value)}
+          placeholder="https://"
+        />
       </div>
     </div>
   );
@@ -1256,7 +1280,12 @@ interface ResourceEditFormProps {
 
 const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, onSavedResource }) => {
   const { activeRole, registryBaseUrl } = useRole();
+  const { roles } = useAuth();
   const client = useFhirClient();
+
+  const canSaveEdit =
+    activeRole !== 'registry' &&
+    (roles.includes('placer') || roles.includes('fulfiller'));
   const queryClient = useQueryClient();
 
   const [draft, setDraft] = useState<FhirResource>(() => cloneResource(resource));
@@ -1324,7 +1353,7 @@ const ResourceEditForm: React.FC<ResourceEditFormProps> = ({ resource, onSaved, 
         <p className="text-xs font-mono text-gray-400 truncate">
           {resource.resourceType}/{resource.id}
         </p>
-        {isSupported && (
+        {isSupported && canSaveEdit && (
           <div className="flex gap-2 flex-shrink-0">
             <button
               onClick={handleDiscard}
