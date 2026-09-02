@@ -1,4 +1,5 @@
 import React from 'react';
+import { SMART_SCOPES } from '../../services/l2-signing';
 
 export type ManualLevel = 'l1' | 'l2';
 
@@ -25,6 +26,9 @@ export async function acquireTokenWithCredential(
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id:  cred.clientId,
+    // SMART scopes are OPTIONAL on the M2M clients (no defaults), so request
+    // the full read catalogue or the token carries no system/* scopes.
+    scope:      SMART_SCOPES,
   });
   if (cred.level === 'l1') {
     body.set('client_secret', cred.clientSecret);

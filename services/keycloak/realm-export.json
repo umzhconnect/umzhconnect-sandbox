@@ -138,7 +138,7 @@
       "protocolMappers": []
     },
     {
-      "name": "system/QuestionnaireResponse.cru",
+      "name": "system/QuestionnaireResponse.r",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true"
@@ -184,6 +184,30 @@
         "include.in.token.scope": "true"
       },
       "protocolMappers": []
+    },
+    {
+      "name": "system/DocumentReference.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Questionnaire.rs",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
+    },
+    {
+      "name": "system/Medication.r",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": []
     }
   ],
   "clients": [
@@ -207,7 +231,10 @@
         "http://localhost:3000",
         "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
-      "defaultClientScopes": ["profile", "email"],
+      "defaultClientScopes": [
+        "profile",
+        "email"
+      ],
       "optionalClientScopes": [],
       "protocolMappers": [
         {
@@ -268,9 +295,11 @@
         "http://localhost:3000",
         "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
-      "defaultClientScopes": [
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
         "system/Task.crus",
         "system/ServiceRequest.rs",
+        "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
         "system/MedicationStatement.r",
@@ -280,11 +309,16 @@
         "system/Procedure.r",
         "system/Immunization.r",
         "system/DiagnosticReport.r",
-        "system/QuestionnaireResponse.cru",
+        "system/DocumentReference.r",
+        "system/QuestionnaireResponse.r",
+        "system/Questionnaire.rs",
         "system/ImagingStudy.r",
-        "system/Appointment.r"
+        "system/Organization.r",
+        "system/Practitioner.r",
+        "system/PractitionerRole.r",
+        "system/Appointment.r",
+        "system/Medication.r"
       ],
-      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -353,8 +387,10 @@
         "http://localhost:3000",
         "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
-      "defaultClientScopes": [
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
         "system/Task.crus",
+        "system/ServiceRequest.rs",
         "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
@@ -365,13 +401,16 @@
         "system/Procedure.r",
         "system/Immunization.r",
         "system/DiagnosticReport.r",
-        "system/QuestionnaireResponse.cru",
+        "system/DocumentReference.r",
+        "system/QuestionnaireResponse.r",
+        "system/Questionnaire.rs",
         "system/ImagingStudy.r",
         "system/Organization.r",
         "system/Practitioner.r",
-        "system/PractitionerRole.r"
+        "system/PractitionerRole.r",
+        "system/Appointment.r",
+        "system/Medication.r"
       ],
-      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -426,8 +465,8 @@
     },
     {
       "clientId": "placer-client-l2",
-      "name": "Placer (HospitalP) Machine Client \u2014 Level 2",
-      "description": "M2M client for HospitalP \u2014 private_key_jwt baseline",
+      "name": "Placer (HospitalP) Machine Client — Level 2",
+      "description": "M2M client for HospitalP — private_key_jwt baseline",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -443,9 +482,11 @@
         "http://localhost:3000",
         "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
-      "defaultClientScopes": [
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
         "system/Task.crus",
         "system/ServiceRequest.rs",
+        "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
         "system/MedicationStatement.r",
@@ -455,11 +496,16 @@
         "system/Procedure.r",
         "system/Immunization.r",
         "system/DiagnosticReport.r",
-        "system/QuestionnaireResponse.cru",
+        "system/DocumentReference.r",
+        "system/QuestionnaireResponse.r",
+        "system/Questionnaire.rs",
         "system/ImagingStudy.r",
-        "system/Appointment.r"
+        "system/Organization.r",
+        "system/Practitioner.r",
+        "system/PractitionerRole.r",
+        "system/Appointment.r",
+        "system/Medication.r"
       ],
-      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",
@@ -514,8 +560,8 @@
     },
     {
       "clientId": "fulfiller-client-l2",
-      "name": "Fulfiller (HospitalF) Machine Client \u2014 Level 2",
-      "description": "M2M client for HospitalF \u2014 private_key_jwt baseline",
+      "name": "Fulfiller (HospitalF) Machine Client — Level 2",
+      "description": "M2M client for HospitalF — private_key_jwt baseline",
       "enabled": true,
       "publicClient": false,
       "standardFlowEnabled": false,
@@ -531,8 +577,10 @@
         "http://localhost:3000",
         "${WEB_APP_PUBLIC_URL:http://localhost:3000}"
       ],
-      "defaultClientScopes": [
+      "defaultClientScopes": [],
+      "optionalClientScopes": [
         "system/Task.crus",
+        "system/ServiceRequest.rs",
         "system/ServiceRequest.r",
         "system/Patient.r",
         "system/Condition.r",
@@ -543,13 +591,16 @@
         "system/Procedure.r",
         "system/Immunization.r",
         "system/DiagnosticReport.r",
-        "system/QuestionnaireResponse.cru",
+        "system/DocumentReference.r",
+        "system/QuestionnaireResponse.r",
+        "system/Questionnaire.rs",
         "system/ImagingStudy.r",
         "system/Organization.r",
         "system/Practitioner.r",
-        "system/PractitionerRole.r"
+        "system/PractitionerRole.r",
+        "system/Appointment.r",
+        "system/Medication.r"
       ],
-      "optionalClientScopes": [],
       "protocolMappers": [
         {
           "name": "org-reference-mapper",

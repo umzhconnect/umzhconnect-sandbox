@@ -38,7 +38,7 @@ default http_status := 200
 http_status := 403 if { not allow }
 
 # ---------------------------------------------------------------------------
-# Input structure expected from APISIX (`apisix.rego` adapter) / API Gateway:
+# Input structure expected from the gateway/PEP adapter (`gateway.rego`):
 # {
 #   "method": "GET",
 #   "path": "/fhir/Patient/123",
@@ -204,6 +204,15 @@ fhir_context_task_refs contains ref if {
 # Consent resolution — search by fhirContext reference
 # ==========================================================================
 
+# Headers OPA sends on its FHIR fetches. Always Accept JSON; additionally carry
+# Authorization when the FHIR server requires it — input.fhir_authorization is the
+# full header value, injected by the adapter (gateway.rego) from the OPA
+# environment. Empty/absent ⇒ Accept-only, unchanged behaviour.
+_fhir_headers := {"Accept": "application/fhir+json", "Authorization": auth} if {
+	auth := object.get(input, "fhir_authorization", "")
+	auth != ""
+} else := {"Accept": "application/fhir+json"}
+
 # Search for active Consents whose provision.data references <sr_ref>.
 # Not cached: the Consent must be re-read live on every request so that
 # revocation (status=inactive) and expiry take effect immediately.
@@ -212,7 +221,7 @@ consent_search(sr_ref) := resp if {
 	resp := http.send({
 		"method":            "GET",
 		"url":               url,
-		"headers":           {"Accept": "application/fhir+json"},
+		"headers":           _fhir_headers,
 		"force_json_decode": true,
 	})
 	resp.status_code == 200
@@ -268,7 +277,7 @@ fetched_task(task_id) := task if {
 	resp := http.send({
 		"method":            "GET",
 		"url":               url,
-		"headers":           {"Accept": "application/fhir+json"},
+		"headers":           _fhir_headers,
 		"force_json_decode": true,
 	})
 	resp.status_code == 200
@@ -282,7 +291,7 @@ fetched_service_request(sr_ref) := sr if {
 	resp := http.send({
 		"method":            "GET",
 		"url":               url,
-		"headers":           {"Accept": "application/fhir+json"},
+		"headers":           _fhir_headers,
 		"force_json_decode": true,
 		"cache":             true,
 	})

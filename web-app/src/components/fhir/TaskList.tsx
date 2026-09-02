@@ -99,11 +99,17 @@ const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName, custo
       const id = ref.substring(lastSlash + 1);
       const typeBase = ref.substring(0, lastSlash); // e.g. "http://localhost:8083/fhir/ServiceRequest"
 
-      // Build an _id search with included resources so we get Patient + Practitioner in one call.
+      // Build an _id search that pulls the whole ServiceRequest graph in one
+      // call. _include targets the SearchParameter *code* (FHIR spec): the IG
+      // custom params are reason-reference / supporting-info / insurance.
       const searchUrl =
         `${typeBase}?_id=${encodeURIComponent(id)}` +
+        `&_include=ServiceRequest:patient` +
         `&_include=ServiceRequest:subject` +
-        `&_include=ServiceRequest:requester`;
+        `&_include=ServiceRequest:requester` +
+        `&_include=ServiceRequest:reason-reference` +
+        `&_include=ServiceRequest:supporting-info` +
+        `&_include=ServiceRequest:insurance`;
 
       // Mint an M2M token bound to this ServiceRequest as fhirContext, then read
       // directly from the partner external gateway (OPA validates the context).
@@ -334,9 +340,20 @@ const TaskList: React.FC<TaskListProps> = ({ remoteBaseUrl, remoteOrgName, custo
                   {selectedTask?.basedOn?.[0]?.reference}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Includes: <span className="font-mono">ServiceRequest:subject</span>
-                  {' · '}
-                  <span className="font-mono">ServiceRequest:requester</span>
+                  Includes:{' '}
+                  {[
+                    'ServiceRequest:patient',
+                    'ServiceRequest:subject',
+                    'ServiceRequest:requester',
+                    'ServiceRequest:reason-reference',
+                    'ServiceRequest:supporting-info',
+                    'ServiceRequest:insurance',
+                  ].map((inc, i) => (
+                    <React.Fragment key={inc}>
+                      {i > 0 && ' · '}
+                      <span className="font-mono">{inc}</span>
+                    </React.Fragment>
+                  ))}
                 </p>
               </div>
               <button

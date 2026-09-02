@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import JsonViewer from '../components/common/JsonViewer';
 import { useLog } from '../contexts/LogContext';
 import { useAuth } from '../contexts/AuthContext';
-import { importPrivateKey, buildClientAssertion } from '../services/l2-signing';
+import { importPrivateKey, buildClientAssertion, SMART_SCOPES } from '../services/l2-signing';
 import type { AssertionParts } from '../services/l2-signing';
 import { listMyClients, type OnboardedClient } from '../services/onboarding-api';
 import {
@@ -40,6 +40,9 @@ function buildCurlCommand(party: Party, level: Level, tokenUrl: string, ref: str
   const authDetails = trimmedRef
     ? `\\\n  -d 'authorization_details=[{"type":"umzh-connect-context","identifier":"${trimmedRef}"}]'`
     : '';
+  // SMART scopes are OPTIONAL on the M2M clients (no defaults) — the request
+  // must enumerate them or the token carries none.
+  const scopeLine = `\\\n  -d 'scope=${SMART_SCOPES}'`;
 
   if (level === 'l1') {
     return (
@@ -48,7 +51,7 @@ function buildCurlCommand(party: Party, level: Level, tokenUrl: string, ref: str
   -H 'Content-Type: application/x-www-form-urlencoded' \\
   -d 'grant_type=client_credentials' \\
   -d 'client_id=${cfg.l1.clientId}' \\
-  -d 'client_secret=${cfg.l1.clientSecret}'${authDetails}`
+  -d 'client_secret=${cfg.l1.clientSecret}'${scopeLine}${authDetails}`
     );
   }
 
@@ -66,7 +69,7 @@ curl -s -X POST \\
   -d 'grant_type=client_credentials' \\
   -d 'client_id=${cfg.l2.clientId}' \\
   -d 'client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer' \\
-  -d 'client_assertion=<signed-JWT-from-step-1>'${authDetails}`
+  -d 'client_assertion=<signed-JWT-from-step-1>'${scopeLine}${authDetails}`
   );
 }
 
@@ -214,13 +217,15 @@ const CredentialsPage: React.FC = () => {
       let data: Record<string, unknown>;
 
       if (activeLevel === 'l1') {
-        // M2M flow — no `openid` scope. There's no user to attest to and no
-        // meaningful ID token in client_credentials. The token's system/*
-        // scopes come from the client's defaultClientScopes in Keycloak.
+        // M2M flow — no `openid` scope (there's no user to attest to and no
+        // meaningful ID token in client_credentials). SMART system scopes are
+        // registered OPTIONAL on the client (no defaults), so the request must
+        // enumerate them or the token carries none.
         const body = new URLSearchParams({
           grant_type:    'client_credentials',
           client_id:     cfg.l1.clientId,
           client_secret: cfg.l1.clientSecret,
+          scope:         SMART_SCOPES,
         });
         if (ref) body.set('authorization_details',
           JSON.stringify([{ type: 'umzh-connect-context', identifier: ref }]));

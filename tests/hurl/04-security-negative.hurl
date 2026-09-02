@@ -53,20 +53,16 @@ Authorization: Bearer {{placer_token}}
 HTTP 404
 
 
-# --- ext-task-create enforces OPA Rule 1c (realm role + system/Task.c scope) ---
-# A valid bearer alone is not sufficient to create a Task at the external gateway.
+# --- ext-task-create enforces OPA Rule 1c (system/Task.c scope) ---
+# A valid bearer alone is not sufficient to create a Task at the external gateway;
+# the token must carry the system/Task.c scope. The coarse realm-role gate was
+# removed to align with the umzhconnect-cow gateway policy — authorization is
+# SMART-scope + context centric (organization_reference / consent), so there is
+# no separate wrong-realm-role denial to assert here.
 
 # Realm user token (role=placer) carries no system/Task.c scope -> 403.
 POST {{fulfiller_ext_url}}/fhir/Task
 Authorization: Bearer {{placer_user_token}}
-Content-Type: application/fhir+json
-{"resourceType":"Task","status":"requested","intent":"order","owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
-HTTP 403
-
-# Wrong realm role: a fulfiller token at the fulfiller external gateway
-# (required_role=placer) has system/Task.c but the wrong role -> 403.
-POST {{fulfiller_ext_url}}/fhir/Task
-Authorization: Bearer {{fulfiller_token}}
 Content-Type: application/fhir+json
 {"resourceType":"Task","status":"requested","intent":"order","owner":{"reference":"{{org_url}}/fhir/Organization/HospitalF"}}
 HTTP 403

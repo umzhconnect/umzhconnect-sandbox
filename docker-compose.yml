@@ -3,14 +3,17 @@ services:
   # PostgreSQL - Shared database for HAPI FHIR and Keycloak
   # ===========================================================================
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: umzh-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # postgres:18 changed the data-dir layout: mount the volume at
+      # /var/lib/postgresql (data lands in a major-version subdir) rather than
+      # at /var/lib/postgresql/data. See docker-library/postgres#1259.
+      - postgres_data:/var/lib/postgresql
       - ./services/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
@@ -45,7 +48,7 @@ services:
   # Keycloak - Authorization Server (shared by both parties)
   # ===========================================================================
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.1
+    image: quay.io/keycloak/keycloak:26.7.3
     container_name: umzh-keycloak
     command: start-dev --import-realm
     environment:
@@ -78,6 +81,14 @@ services:
       KC_HOSTNAME_STRICT: 'false'
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true'
       KC_PROXY_HEADERS: xforwarded
+      # Keycloak 26.6.2+ (CVE-2026-37979) enforces that the client calling the
+      # introspection endpoint appears in the token's audience. This sandbox's
+      # model is "any valid client may introspect" (M2M tokens carry no aud;
+      # APISIX/OPA authorize via JWKS + fhirContext, not introspection), and
+      # admin-api introspects user tokens with the onboarding-client. Restore
+      # the pre-CVE permissive introspection behavior server-wide.
+      # Backwards-compat option from keycloak/keycloak#49131.
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_ALLOW_TOKEN_INTROSPECTION_WITHOUT_AUDIENCE_CHECK: 'true'
     volumes:
       - ./services/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
       - ./services/keycloak/providers:/opt/keycloak/providers
@@ -106,7 +117,7 @@ services:
   #   /fhir/fulfiller -> HospitalF partition
   # ===========================================================================
   hapi-fhir:
-    image: hapiproject/hapi:v8.10.0-1
+    image: hapiproject/hapi:v8.10.0-3
     container_name: umzh-hapi-fhir
     environment:
       SPRING_CONFIG_LOCATION: file:///app/config/application.yaml
@@ -201,7 +212,7 @@ services:
   # OPA - Policy Engine for HospitalP (Placer)
   # ===========================================================================
   opa-placer:
-    image: openpolicyagent/opa:0.70.0
+    image: openpolicyagent/opa:1.20.1
     platform: linux/amd64
     container_name: umzh-opa-placer
     command:
@@ -221,7 +232,7 @@ services:
   # OPA - Policy Engine for HospitalF (Fulfiller)
   # ===========================================================================
   opa-fulfiller:
-    image: openpolicyagent/opa:0.70.0
+    image: openpolicyagent/opa:1.20.1
     platform: linux/amd64
     container_name: umzh-opa-fulfiller
     command:
@@ -252,7 +263,7 @@ services:
   #   apisix-fulfiller-external (external) — consumed by placer to read fulfiller data
   # ===========================================================================
   apisix-placer-internal:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.18.0-debian
     container_name: umzh-apisix-placer-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -284,7 +295,7 @@ services:
       - umzh-net
 
   apisix-placer-external:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.18.0-debian
     container_name: umzh-apisix-placer-external
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -317,7 +328,7 @@ services:
       - umzh-net
 
   apisix-fulfiller-internal:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.18.0-debian
     container_name: umzh-apisix-fulfiller-internal
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
@@ -349,7 +360,7 @@ services:
       - umzh-net
 
   apisix-fulfiller-external:
-    image: apache/apisix:3.9.0-debian
+    image: apache/apisix:3.18.0-debian
     container_name: umzh-apisix-fulfiller-external
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:

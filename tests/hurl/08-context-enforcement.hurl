@@ -28,19 +28,6 @@
 
 
 # ---------------------------------------------------------------------------
-# Setup — Refresh Consent end date so the test is time-independent
-# ---------------------------------------------------------------------------
-
-PATCH {{placer_url}}/fhir/Consent/ConsentOrthopedicReferral
-Authorization: Bearer {{placer_user_token}}
-Content-Type: application/json-patch+json
-[
-  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
-]
-HTTP 200
-
-
-# ---------------------------------------------------------------------------
 # Step 1 — Context-scoped token for ReferralOrthopedicSurgery
 # Injected as fulfiller_context_token (L1 by default, L2 under -l2); carries a
 # fhirContext claim derived from authorization_details.
@@ -324,19 +311,6 @@ jsonpath "$.id" == "SuspectedACLRupture"
 
 
 # ---------------------------------------------------------------------------
-# Setup — Refresh Task-rooted Consent end date
-# ---------------------------------------------------------------------------
-
-PATCH {{fulfiller_url}}/fhir/Consent/ConsentTaskOrthopedicReferral
-Authorization: Bearer {{fulfiller_user_token}}
-Content-Type: application/json-patch+json
-[
-  {"op": "replace", "path": "/provision/period/end", "value": "{{consent_end}}"}
-]
-HTTP 200
-
-
-# ---------------------------------------------------------------------------
 # POSITIVE — Placer reads Task output resource at fulfiller-external
 # ---------------------------------------------------------------------------
 
@@ -368,7 +342,7 @@ jsonpath "$.id"           == "TaskOrthopedicReferral"
 # search grant, not a separate graph check.
 # ---------------------------------------------------------------------------
 
-GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:output-value-reference
 Authorization: Bearer {{placer_task_context_token}}
 HTTP 200
 [Asserts]
@@ -536,7 +510,7 @@ HTTP 403
 # the injected edge.
 # ---------------------------------------------------------------------------
 
-GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:ch-umzhconnectig-task-outputreference
+GET {{fulfiller_ext_url}}/fhir/Task?_include=Task:output-value-reference
 Authorization: Bearer {{placer_task_context_token}}
 HTTP 200
 [Asserts]

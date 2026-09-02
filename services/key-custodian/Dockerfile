@@ -8,7 +8,7 @@
 #
 # DEMO ONLY: /sign has no authentication. Production would gate it with mTLS,
 # a bootstrap secret, or per-caller policy. See services/key-custodian/README.md.
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 ARG BUILD_INSECURE=
 RUN pip install --no-cache-dir \

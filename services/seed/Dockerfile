@@ -1,4 +1,4 @@
-FROM alpine:3.19
+FROM alpine:3.22
 
 # Set BUILD_INSECURE=1 (build arg) to fetch packages over the http mirror — a
 # local escape hatch for networks with a TLS-intercepting proxy. Unset in CI,

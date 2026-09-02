@@ -34,6 +34,13 @@ KEY_CUSTODIAN_PLACER_URL="${KEY_CUSTODIAN_PLACER_URL:-http://localhost:8087}"
 KEY_CUSTODIAN_FULFILLER_URL="${KEY_CUSTODIAN_FULFILLER_URL:-http://localhost:8089}"
 CLIENT_ASSERTION_TYPE="urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
 
+# All SMART scopes are registered OPTIONAL on the M2M clients (mirrors
+# ../umzhconnect-auth keycloak-config/scopes.yaml — least privilege per request,
+# no scope is granted by default). Every M2M token request must therefore
+# enumerate the scopes it wants. The test harness requests the full catalogue.
+SMART_SCOPES="system/Task.crus system/ServiceRequest.rs system/ServiceRequest.r system/Patient.r system/Condition.r system/MedicationStatement.r system/AllergyIntolerance.r system/Coverage.r system/Observation.r system/Procedure.r system/Immunization.r system/DiagnosticReport.r system/DocumentReference.r system/QuestionnaireResponse.r system/Questionnaire.rs system/ImagingStudy.r system/Organization.r system/Practitioner.r system/PractitionerRole.r system/Appointment.r system/Medication.r"
+SMART_SCOPES_ENC=$(echo "$SMART_SCOPES" | sed 's/ /+/g')
+
 CLIENT_TYPE="$1"
 SR_ID="$2"
 
@@ -86,9 +93,10 @@ fetch_l2_token() {
 
     body="grant_type=client_credentials&client_id=${l2_cid}"
     body="${body}&client_assertion_type=${CLIENT_ASSERTION_TYPE}&client_assertion=${assertion}"
-    # Skip scope param when empty so Keycloak applies the client's defaults
-    # only. M2M flows don't take `openid` — the access token's `system/*`
-    # scopes come from defaultClientScopes regardless.
+    # SMART scopes are OPTIONAL on the M2M clients (no defaults), so the
+    # requested `system/*` scopes must be enumerated here or the access token
+    # carries none. M2M flows don't take `openid`. Empty scope → no system/*
+    # scopes (used only for negative tests).
     [ -n "$l2_scope" ] && body="${body}&scope=$(echo "$l2_scope" | sed 's/ /+/g')"
     [ -n "$auth_details" ] && body="${body}&authorization_details=$(url_encode "$auth_details")"
 
@@ -97,17 +105,17 @@ fetch_l2_token() {
 
 case "$CLIENT_TYPE" in
   placer)
-    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025"
+    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&scope=${SMART_SCOPES_ENC}"
     ;;
   fulfiller)
-    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025"
+    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&scope=${SMART_SCOPES_ENC}"
     ;;
   fulfiller-context)
     # RFC 9396 authorization_details token for cross-party reads
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
     AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
-    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
+    fetch_token "grant_type=client_credentials&client_id=fulfiller-client&client_secret=fulfiller-secret-2025&scope=${SMART_SCOPES_ENC}&authorization_details=${AUTH_DETAILS_ENC}"
     ;;
   placer-context)
     # RFC 9396 authorization_details token — placer reading Task output resources
@@ -115,7 +123,7 @@ case "$CLIENT_TYPE" in
     TASK="${SR_ID:-TaskOrthopedicReferral}"
     AUTH_DETAILS='[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
     AUTH_DETAILS_ENC=$(url_encode "$AUTH_DETAILS")
-    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&authorization_details=${AUTH_DETAILS_ENC}"
+    fetch_token "grant_type=client_credentials&client_id=placer-client&client_secret=placer-secret-2025&scope=${SMART_SCOPES_ENC}&authorization_details=${AUTH_DETAILS_ENC}"
     ;;
   placer-user)
     # User flow — openid IS appropriate here (authenticates a user; an ID token is meaningful)
@@ -128,19 +136,19 @@ case "$CLIENT_TYPE" in
     fetch_token "grant_type=password&client_id=web-app&username=admin-user&password=admin123&scope=openid"
     ;;
   placer-l2)
-    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" ""
+    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "$SMART_SCOPES"
     ;;
   fulfiller-l2)
-    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" ""
+    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "$SMART_SCOPES"
     ;;
   fulfiller-l2-context)
     SR="${SR_ID:-ReferralOrthopedicSurgery}"
-    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "" \
+    fetch_l2_token fulfiller-client-l2 "$KEY_CUSTODIAN_FULFILLER_URL" "$SMART_SCOPES" \
       '[{"type":"umzh-connect-context","identifier":"ServiceRequest/'"$SR"'"}]'
     ;;
   placer-l2-context)
     TASK="${SR_ID:-TaskOrthopedicReferral}"
-    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "" \
+    fetch_l2_token placer-client-l2 "$KEY_CUSTODIAN_PLACER_URL" "$SMART_SCOPES" \
       '[{"type":"umzh-connect-context","identifier":"Task/'"$TASK"'"}]'
     ;;
   *)

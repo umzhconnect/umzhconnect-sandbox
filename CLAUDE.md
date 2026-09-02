@@ -105,7 +105,7 @@ OPA policies are in `services/opa/policies/`.
 - `docker-compose.yml` — all service definitions with env-var substitution
 - `services/apisix/{placer,fulfiller}-{internal,external}/apisix.yaml` — route + plugin config per gateway instance
 - `services/apisix/{placer,fulfiller}-{internal,external}/config.yaml` — APISIX global config (plugin list, nginx snippets)
-- `services/opa/config-{placer,fulfiller}.json` — per-party OPA data (fhir_base, required_role) read by `apisix.rego`
+- `services/opa/config-{placer,fulfiller}.json` — per-party OPA data (fhir_base) read by `gateway.rego`
 - `services/keycloak/realm-export.json` — full realm config including `consent:*` dynamic scopes
 - `services/hapi-fhir/application.yaml` — FHIR R4 multitenancy, partitioning, CORS
 

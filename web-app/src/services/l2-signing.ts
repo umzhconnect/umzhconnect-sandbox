@@ -21,6 +21,21 @@ import { readBodyForLog } from './http';
 
 type LogCallback = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 
+// SMART system scopes the M2M clients may request. All are registered OPTIONAL
+// on the clients (no defaults) — mirrors ../umzhconnect-auth scopes.yaml — so
+// the token request must enumerate them. Cross-party graph reads span these
+// resource types, so we request the full read catalogue.
+export const SMART_SCOPES = [
+  'system/Task.crus', 'system/ServiceRequest.rs', 'system/ServiceRequest.r',
+  'system/Patient.r', 'system/Condition.r', 'system/MedicationStatement.r',
+  'system/AllergyIntolerance.r', 'system/Coverage.r', 'system/Observation.r',
+  'system/Procedure.r', 'system/Immunization.r', 'system/DiagnosticReport.r',
+  'system/DocumentReference.r', 'system/QuestionnaireResponse.r',
+  'system/Questionnaire.rs', 'system/ImagingStudy.r', 'system/Organization.r',
+  'system/Practitioner.r', 'system/PractitionerRole.r', 'system/Appointment.r',
+  'system/Medication.r',
+].join(' ');
+
 // ─── Web Crypto helpers ──────────────────────────────────────────────────────
 
 export function base64url(buf: ArrayBuffer): string {
@@ -129,6 +144,10 @@ export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<str
     client_id: clientId,
     client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
     client_assertion: assertion.jwt,
+    // SMART scopes are registered OPTIONAL on the M2M clients (no defaults, per
+    // ../umzhconnect-auth) — a token carries a scope only if the request asks
+    // for it. Enumerate the full read catalogue the cross-party graph reads need.
+    scope: SMART_SCOPES,
   });
   if (fhirContextRef) {
     body.set('authorization_details',
@@ -143,6 +162,7 @@ export async function acquireM2mToken(opts: AcquireM2mTokenOptions): Promise<str
       client_id: clientId,
       client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
       client_assertion: `${assertion.jwt.slice(0, 40)}… (RS256-signed JWT)`,
+      scope: SMART_SCOPES,
       ...(fhirContextRef ? { authorization_details: `fhirContext=${fhirContextRef}` } : {}),
     },
   });

@@ -1,6 +1,5 @@
 {
   "config": {
-    "required_role": "placer",
     "fhir_base": "http://nginx-proxy:83/fhir/fulfiller"
   }
 }
